@@ -203,13 +203,21 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     const branch = branchName.trim();
     
     // Fetch latest changes from remote without merging
-    await execAsync(`git fetch origin ${branch}`);
+    await execAsync(`git fetch origin ${escapeShellArg(branch)}`);
+    
+    // Check if the remote ref exists
+    try {
+      await execAsync(`git rev-parse --verify origin/${escapeShellArg(branch)}`);
+    } catch (verifyError) {
+      // Remote branch doesn't exist yet - this is OK for a new repo
+      return;
+    }
     
     // Get the remote version of the data file using git show
-    // This will fail gracefully if the file doesn't exist on remote
+    // This will fail if the file doesn't exist on remote
     try {
       const { stdout: remoteContent } = await execAsync(
-        `git show origin/${branch}:${escapeShellArg(dataFilePath)}`
+        `git show origin/${escapeShellArg(branch)}:${escapeShellArg(dataFilePath)}`
       );
       
       // Write the remote content to the local file
@@ -217,15 +225,9 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
       // the sync logic will merge local in-memory state with this remote state
       fs.writeFileSync(dataFilePath, remoteContent, 'utf-8');
     } catch (showError) {
-      // File might not exist on remote yet - that's OK, treat as empty
-      // Check if this is actually a "path not in commit" error
-      const errorMessage = (showError as Error).message;
-      if (errorMessage.includes('does not exist') || errorMessage.includes('path') || errorMessage.includes('not in')) {
-        // File doesn't exist on remote - this is fine for a new repo
-        return;
-      }
-      // Re-throw other errors
-      throw showError;
+      // File doesn't exist on remote yet - that's OK, treat as empty
+      // This is expected for a new file that hasn't been pushed to remote
+      return;
     }
   } catch (error) {
     throw new Error(`Failed to pull from git: ${(error as Error).message}`);
