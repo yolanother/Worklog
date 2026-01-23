@@ -58,6 +58,65 @@ function formatValue(value: any): string {
   return String(value);
 }
 
+// Priority ordering for sorting work items (higher number = higher priority)
+const PRIORITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 } as const;
+const DEFAULT_PRIORITY = PRIORITY_ORDER.medium; // Fallback for unknown priorities
+
+// Helper function to sort items by priority and creation date
+function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
+  // Higher priority comes first (descending order)
+  const aPriority = PRIORITY_ORDER[a.priority] ?? DEFAULT_PRIORITY;
+  const bPriority = PRIORITY_ORDER[b.priority] ?? DEFAULT_PRIORITY;
+  const priorityDiff = bPriority - aPriority;
+  if (priorityDiff !== 0) return priorityDiff;
+  // If priorities are equal, sort by creation time (oldest first, ascending order)
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
+// Helper to display work items in a tree structure
+function displayItemTree(items: WorkItem[]): void {
+  // Create a set of item IDs for O(1) lookup
+  const itemIds = new Set(items.map(i => i.id));
+  
+  // Display root items (those without parents or whose parents are not in the filtered list)
+  const rootItems = items.filter(item => {
+    if (item.parentId === null) return true;
+    // If parent is not in the filtered list, treat as root
+    return !itemIds.has(item.parentId);
+  });
+  
+  // Sort by priority and creation date
+  rootItems.sort(sortByPriorityAndDate);
+  
+  rootItems.forEach((item, index) => {
+    const isLastItem = index === rootItems.length - 1;
+    displayItemNode(item, items, '', isLastItem);
+  });
+}
+
+function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
+  // Display the current item
+  const prefix = indent + (isLast ? '└── ' : '├── ');
+  console.log(`${prefix}${item.title} ${chalk.bold(`(${item.id})`)}`);
+  
+  const detailIndent = indent + (isLast ? '    ' : '│   ');
+  console.log(`${detailIndent}Priority: ${item.priority}`);
+  if (item.assignee) console.log(`${detailIndent}Assignee: ${item.assignee}`);
+  if (item.tags.length > 0) console.log(`${detailIndent}Tags: ${item.tags.join(', ')}`);
+  
+  // Find and display children
+  const children = allItems.filter(i => i.parentId === item.id);
+  if (children.length > 0) {
+    // Sort children by priority and creation date
+    children.sort(sortByPriorityAndDate);
+    
+    children.forEach((child, childIndex) => {
+      const isLastChild = childIndex === children.length - 1;
+      displayItemNode(child, allItems, detailIndent, isLastChild);
+    });
+  }
+}
+
 // Display detailed conflict information with color coding
 function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): void {
   if (result.conflictDetails.length === 0) {
@@ -984,6 +1043,38 @@ program
       // For now, we just display the ID prominently
       console.log(`Work item ID: ${chalk.green.bold(result.workItem.id)}`);
       console.log(`(Copy the ID above to use it in other commands)`);
+    }
+  });
+
+// List in-progress work items
+program
+  .command('in-progress')
+  .description('List all in-progress work items in a tree layout showing dependencies')
+  .option('-a, --assignee <assignee>', 'Filter by assignee')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+    
+    // Query for all in-progress items
+    const query: WorkItemQuery = { status: 'in-progress' as WorkItemStatus };
+    if (options.assignee) {
+      query.assignee = options.assignee;
+    }
+    const items = db.list(query);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, count: items.length, workItems: items });
+    } else {
+      if (items.length === 0) {
+        console.log('No in-progress work items found');
+        return;
+      }
+      
+      console.log(`\nFound ${items.length} in-progress work item(s):\n`);
+      displayItemTree(items);
+      console.log();
     }
   });
 

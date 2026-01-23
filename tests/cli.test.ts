@@ -843,4 +843,102 @@ describe('CLI Integration Tests', () => {
       expect(typeof result.reason).toBe('string');
     });
   });
+
+  describe('in-progress command', () => {
+    it('should list in-progress work items in JSON mode', async () => {
+      // Create some work items with different statuses
+      await execAsync(`tsx ${cliPath} create -t "Open task" -s open`);
+      const { stdout: ip1Stdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress 1" -s in-progress -p high`);
+      const { stdout: ip2Stdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress 2" -s in-progress -p medium`);
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed`);
+
+      const ip1 = JSON.parse(ip1Stdout);
+      const ip2 = JSON.parse(ip2Stdout);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+      expect(result.workItems).toHaveLength(2);
+      
+      const ids = result.workItems.map((item: any) => item.id);
+      expect(ids).toContain(ip1.workItem.id);
+      expect(ids).toContain(ip2.workItem.id);
+    });
+
+    it('should return empty list when no in-progress items exist', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Open task" -s open`);
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(0);
+      expect(result.workItems).toHaveLength(0);
+    });
+
+    it('should display in-progress items with parent-child relationships', async () => {
+      // Create a parent item
+      const { stdout: parentStdout } = await execAsync(`tsx ${cliPath} --json create -t "Parent task" -s in-progress -p high`);
+      const parent = JSON.parse(parentStdout);
+      
+      // Create a child item
+      await execAsync(`tsx ${cliPath} --json create -t "Child task" -s in-progress -p medium -P ${parent.workItem.id}`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(2);
+      
+      // Verify parent-child relationship
+      const childItem = result.workItems.find((item: any) => item.title === 'Child task');
+      expect(childItem).toBeDefined();
+      expect(childItem.parentId).toBe(parent.workItem.id);
+    });
+
+    it('should display human-readable output in non-JSON mode', async () => {
+      await execAsync(`tsx ${cliPath} create -t "In progress task" -s in-progress -p high`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
+      
+      expect(stdout).toContain('Found 1 in-progress work item');
+      expect(stdout).toContain('In progress task');
+    });
+
+    it('should show no items message when list is empty in non-JSON mode', async () => {
+      const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
+      
+      expect(stdout).toContain('No in-progress work items found');
+    });
+
+    it('should filter by assignee', async () => {
+      await execAsync(`tsx ${cliPath} --json create -t "Alice task" -s in-progress -a "alice"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Bob task" -s in-progress -a "bob"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Unassigned task" -s in-progress`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress --assignee alice`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
+      expect(result.workItems[0].title).toBe('Alice task');
+      expect(result.workItems[0].assignee).toBe('alice');
+    });
+
+    it('should show output in new format Title (ID)', async () => {
+      const { stdout: createStdout } = await execAsync(`tsx ${cliPath} --json create -t "Test Task" -s in-progress`);
+      const created = JSON.parse(createStdout);
+      const itemId = created.workItem.id;
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
+      
+      // Should show "Test Task (ID)" format
+      expect(stdout).toContain('Test Task');
+      expect(stdout).toContain(`(${itemId})`);
+      expect(stdout).not.toMatch(new RegExp(`${itemId}\\s+Test Task`)); // Should not have "ID Title" format
+    });
+  });
 });
