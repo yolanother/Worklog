@@ -450,18 +450,41 @@ async function fetchRemote(remote: string): Promise<void> {
   await execAsync(`git fetch ${escapeShellArg(remote)}`);
 }
 
-async function remoteBranchExists(remote: string, branch: string): Promise<boolean> {
-  // `git show-ref` is local-only; depends on fetch having populated refs/remotes.
-  // Support both simple branch names and explicit refs.
-  const ref = branch.startsWith('refs/')
-    ? `refs/remotes/${remote}/${branch.slice('refs/'.length)}`
-    : `refs/remotes/${remote}/${branch}`;
+function getRemoteTrackingRef(remote: string, branchOrRef: string): string {
+  // For a named branch like "worklog-data", track it as refs/remotes/origin/worklog-data.
+  // For an explicit ref like "refs/worklog/data", track it as refs/remotes/origin/worklog/data.
+  const suffix = branchOrRef.startsWith('refs/') ? branchOrRef.slice('refs/'.length) : branchOrRef;
+  return `refs/remotes/${remote}/${suffix}`;
+}
+
+async function refExists(ref: string): Promise<boolean> {
   try {
     await execAsync(`git show-ref --verify --quiet ${escapeShellArg(ref)}`);
     return true;
   } catch {
     return false;
   }
+}
+
+async function fetchTargetRef(target: GitTarget): Promise<{ hasRemote: boolean; remoteTrackingRef: string }> {
+  const remoteTrackingRef = getRemoteTrackingRef(target.remote, target.branch);
+
+  if (target.branch.startsWith('refs/')) {
+    // Default git fetch refspec does not include custom refs/*, so fetch it explicitly.
+    // If it doesn't exist yet, treat as "no remote".
+    try {
+      await execAsync(
+        `git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(`${target.branch}:${remoteTrackingRef}`)}`
+      );
+    } catch {
+      return { hasRemote: false, remoteTrackingRef };
+    }
+    return { hasRemote: await refExists(remoteTrackingRef), remoteTrackingRef };
+  }
+
+  // Standard branch fetch. This will populate refs/remotes/<remote>/<branch>.
+  await execAsync(`git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(target.branch)}`);
+  return { hasRemote: await refExists(remoteTrackingRef), remoteTrackingRef };
 }
 
 function getRepoRelativePath(repoRootPath: string, filePath: string): { absolutePath: string; relativePath: string } {
@@ -477,16 +500,12 @@ export async function getRemoteDataFileContent(dataFilePath: string, target: Git
   const repoRootPath = await getRepoRoot();
   const { relativePath } = getRepoRelativePath(repoRootPath, dataFilePath);
 
-  await fetchRemote(target.remote);
-  if (!(await remoteBranchExists(target.remote, target.branch))) {
+  const { hasRemote, remoteTrackingRef } = await fetchTargetRef(target);
+  if (!hasRemote) {
     return null;
   }
 
-  const remoteRef = target.branch.startsWith('refs/')
-    ? `${target.remote}/${target.branch.slice('refs/'.length)}`
-    : `${target.remote}/${target.branch}`;
-
-  const refAndPath = `${remoteRef}:${relativePath}`;
+  const refAndPath = `${remoteTrackingRef}:${relativePath}`;
   try {
     const { stdout } = await execAsync(`git show ${escapeShellArg(refAndPath)}`);
     return stdout;
@@ -523,20 +542,14 @@ async function withTempWorktree<T>(
   const tmpRoot = fs.mkdtempSync(path.join(worklogDir, 'tmp-worktree-'));
   const worktreePath = path.join(tmpRoot, 'wt');
 
-  const remoteRef = target.branch.startsWith('refs/')
-    ? `${target.remote}/${target.branch.slice('refs/'.length)}`
-    : `${target.remote}/${target.branch}`;
-
-  // Fetch and decide starting point
-  await fetchRemote(target.remote);
-  const hasRemoteBranch = await remoteBranchExists(target.remote, target.branch);
-  const baseRef = hasRemoteBranch ? remoteRef : 'HEAD';
+  const { hasRemote, remoteTrackingRef } = await fetchTargetRef(target);
+  const baseRef = hasRemote ? remoteTrackingRef : 'HEAD';
 
   try {
     await execAsync(`git worktree add --detach ${escapeShellArg(worktreePath)} ${escapeShellArg(baseRef)}`);
 
     // If remote branch doesn't exist, create an orphan branch in the temp worktree.
-    if (!hasRemoteBranch) {
+    if (!hasRemote) {
       // Create an orphan local branch name; it doesn't need to include refs/.
       const localBranchName = target.branch.startsWith('refs/') ? target.branch.slice('refs/'.length) : target.branch;
       await execAsync(`git -C ${escapeShellArg(worktreePath)} checkout --orphan ${escapeShellArg(localBranchName)}`);
