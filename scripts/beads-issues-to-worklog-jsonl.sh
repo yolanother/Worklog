@@ -4,10 +4,13 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  beads-issues-to-worklog-jsonl.sh <issues.jsonl> <worklog-data.jsonl>
+  beads-issues-to-worklog-jsonl.sh <issues.jsonl> [worklog-data.jsonl]
 
 Converts a Beads issues.jsonl file to Worklog's worklog-data.jsonl format.
 Writes both work items and comment records.
+
+If worklog-data.jsonl is omitted, defaults to:
+  .worklog/worklog-data.jsonl
 
 Notes:
 - Beads timestamps with nanoseconds and offsets are normalized to ISO Z.
@@ -30,13 +33,13 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -lt 1 || $# -gt 2 ]]; then
   usage >&2
   exit 2
 fi
 
 in_path=$1
-out_path=$2
+out_path=${2:-.worklog/worklog-data.jsonl}
 
 if [[ ! -f "$in_path" ]]; then
   echo "Input file not found: $in_path" >&2
