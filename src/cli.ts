@@ -13,6 +13,29 @@ import * as fs from 'fs';
 
 const program = new Command();
 
+// Output formatting helpers
+function outputJson(data: any) {
+  console.log(JSON.stringify(data, null, 2));
+}
+
+function outputSuccess(message: string, jsonData?: any) {
+  const isJsonMode = program.opts().json;
+  if (isJsonMode) {
+    outputJson(jsonData || { success: true, message });
+  } else {
+    console.log(message);
+  }
+}
+
+function outputError(message: string, jsonData?: any) {
+  const isJsonMode = program.opts().json;
+  if (isJsonMode) {
+    console.error(JSON.stringify(jsonData || { success: false, error: message }, null, 2));
+  } else {
+    console.error(message);
+  }
+}
+
 // Get prefix from config or use default
 function getPrefix(overridePrefix?: string): string {
   if (overridePrefix) {
@@ -47,26 +70,51 @@ function saveData() {
 program
   .name('worklog')
   .description('CLI for Worklog - a simple issue tracker')
-  .version('1.0.0');
+  .version('1.0.0')
+  .option('--json', 'Output in JSON format (machine-readable)');
 
 // Initialize configuration
 program
   .command('init')
   .description('Initialize worklog configuration')
   .action(async () => {
+    const isJsonMode = program.opts().json;
+    
     if (configExists()) {
       const config = loadConfig();
-      console.log('Configuration already exists:');
-      console.log(`  Project: ${config?.projectName}`);
-      console.log(`  Prefix: ${config?.prefix}`);
-      console.log('\nTo reinitialize, delete .worklog/config.yaml first.');
+      if (isJsonMode) {
+        outputJson({
+          success: false,
+          message: 'Configuration already exists',
+          config: {
+            projectName: config?.projectName,
+            prefix: config?.prefix
+          }
+        });
+      } else {
+        console.log('Configuration already exists:');
+        console.log(`  Project: ${config?.projectName}`);
+        console.log(`  Prefix: ${config?.prefix}`);
+        console.log('\nTo reinitialize, delete .worklog/config.yaml first.');
+      }
       return;
     }
     
     try {
       await initConfig();
+      const config = loadConfig();
+      if (isJsonMode) {
+        outputJson({
+          success: true,
+          message: 'Configuration initialized',
+          config: {
+            projectName: config?.projectName,
+            prefix: config?.prefix
+          }
+        });
+      }
     } catch (error) {
-      console.error('Error:', (error as Error).message);
+      outputError('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
       process.exit(1);
     }
   });
@@ -99,8 +147,14 @@ program
     });
     
     saveData();
-    console.log('Created work item:');
-    console.log(JSON.stringify(item, null, 2));
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, workItem: item });
+    } else {
+      console.log('Created work item:');
+      console.log(JSON.stringify(item, null, 2));
+    }
   });
 
 // List work items
@@ -131,22 +185,27 @@ program
     
     const items = db.list(query);
     
-    if (items.length === 0) {
-      console.log('No work items found');
-      return;
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, count: items.length, workItems: items });
+    } else {
+      if (items.length === 0) {
+        console.log('No work items found');
+        return;
+      }
+      
+      console.log(`Found ${items.length} work item(s):\n`);
+      items.forEach(item => {
+        console.log(`[${item.id}] ${item.title}`);
+        console.log(`  Status: ${item.status} | Priority: ${item.priority}`);
+        if (item.parentId) console.log(`  Parent: ${item.parentId}`);
+        if (item.assignee) console.log(`  Assignee: ${item.assignee}`);
+        if (item.stage) console.log(`  Stage: ${item.stage}`);
+        if (item.tags.length > 0) console.log(`  Tags: ${item.tags.join(', ')}`);
+        if (item.description) console.log(`  ${item.description}`);
+        console.log();
+      });
     }
-    
-    console.log(`Found ${items.length} work item(s):\n`);
-    items.forEach(item => {
-      console.log(`[${item.id}] ${item.title}`);
-      console.log(`  Status: ${item.status} | Priority: ${item.priority}`);
-      if (item.parentId) console.log(`  Parent: ${item.parentId}`);
-      if (item.assignee) console.log(`  Assignee: ${item.assignee}`);
-      if (item.stage) console.log(`  Stage: ${item.stage}`);
-      if (item.tags.length > 0) console.log(`  Tags: ${item.tags.join(', ')}`);
-      if (item.description) console.log(`  ${item.description}`);
-      console.log();
-    });
   });
 
 // Show a specific work item
@@ -160,19 +219,29 @@ program
     
     const item = db.get(id);
     if (!item) {
-      console.error(`Work item not found: ${id}`);
+      outputError(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
       process.exit(1);
     }
     
-    console.log(JSON.stringify(item, null, 2));
-    
-    if (options.children) {
-      const children = db.getChildren(id);
-      if (children.length > 0) {
-        console.log('\nChildren:');
-        children.forEach(child => {
-          console.log(`  [${child.id}] ${child.title} (${child.status})`);
-        });
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      const result: any = { success: true, workItem: item };
+      if (options.children) {
+        const children = db.getChildren(id);
+        result.children = children;
+      }
+      outputJson(result);
+    } else {
+      console.log(JSON.stringify(item, null, 2));
+      
+      if (options.children) {
+        const children = db.getChildren(id);
+        if (children.length > 0) {
+          console.log('\nChildren:');
+          children.forEach(child => {
+            console.log(`  [${child.id}] ${child.title} (${child.status})`);
+          });
+        }
       }
     }
   });
@@ -205,13 +274,19 @@ program
     
     const item = db.update(id, updates);
     if (!item) {
-      console.error(`Work item not found: ${id}`);
+      outputError(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
       process.exit(1);
     }
     
     saveData();
-    console.log('Updated work item:');
-    console.log(JSON.stringify(item, null, 2));
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, workItem: item });
+    } else {
+      console.log('Updated work item:');
+      console.log(JSON.stringify(item, null, 2));
+    }
   });
 
 // Delete a work item
@@ -224,12 +299,18 @@ program
     
     const deleted = db.delete(id);
     if (!deleted) {
-      console.error(`Work item not found: ${id}`);
+      outputError(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
       process.exit(1);
     }
     
     saveData();
-    console.log(`Deleted work item: ${id}`);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, message: `Deleted work item: ${id}`, deletedId: id });
+    } else {
+      console.log(`Deleted work item: ${id}`);
+    }
   });
 
 // Export data
@@ -243,7 +324,19 @@ program
     const items = db.getAll();
     const comments = db.getAllComments();
     exportToJsonl(items, comments, options.file);
-    console.log(`Exported ${items.length} work items and ${comments.length} comments to ${options.file}`);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ 
+        success: true, 
+        message: `Exported ${items.length} work items and ${comments.length} comments`,
+        itemsCount: items.length,
+        commentsCount: comments.length,
+        file: options.file
+      });
+    } else {
+      console.log(`Exported ${items.length} work items and ${comments.length} comments to ${options.file}`);
+    }
   });
 
 // Import data
@@ -258,7 +351,19 @@ program
     db.import(items);
     db.importComments(comments);
     saveData();
-    console.log(`Imported ${items.length} work items and ${comments.length} comments from ${options.file}`);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ 
+        success: true, 
+        message: `Imported ${items.length} work items and ${comments.length} comments`,
+        itemsCount: items.length,
+        commentsCount: comments.length,
+        file: options.file
+      });
+    } else {
+      console.log(`Imported ${items.length} work items and ${comments.length} comments from ${options.file}`);
+    }
   });
 
 // Sync with git
@@ -270,21 +375,26 @@ program
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
+    const isJsonMode = program.opts().json;
+    
     try {
       // Load current local data
       loadData(options.prefix);
       const localItems = db.getAll();
       const localComments = db.getAllComments();
       
-      console.log(`Starting sync for ${options.file}...`);
-      console.log(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
-      
-      if (options.dryRun) {
-        console.log('\n[DRY RUN MODE - No changes will be made]');
+      if (!isJsonMode) {
+        console.log(`Starting sync for ${options.file}...`);
+        console.log(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
+        
+        if (options.dryRun) {
+          console.log('\n[DRY RUN MODE - No changes will be made]');
+        }
+        
+        // Pull latest from git
+        console.log('\nPulling latest changes from git...');
       }
       
-      // Pull latest from git
-      console.log('\nPulling latest changes from git...');
       if (!options.dryRun) {
         await gitPullDataFile(options.file);
       }
@@ -297,17 +407,25 @@ program
         const remoteData = importFromJsonl(options.file);
         remoteItems = remoteData.items;
         remoteComments = remoteData.comments;
-        console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
+        if (!isJsonMode) {
+          console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
+        }
       } else {
-        console.log('No remote data file found - treating as empty');
+        if (!isJsonMode) {
+          console.log('No remote data file found - treating as empty');
+        }
       }
       
       // Merge work items
-      console.log('\nMerging work items...');
+      if (!isJsonMode) {
+        console.log('\nMerging work items...');
+      }
       const itemMergeResult = mergeWorkItems(localItems, remoteItems);
       
       // Merge comments
-      console.log('Merging comments...');
+      if (!isJsonMode) {
+        console.log('Merging comments...');
+      }
       const commentMergeResult = mergeComments(localComments, remoteComments);
       
       // Calculate statistics
@@ -320,28 +438,54 @@ program
         conflicts: itemMergeResult.conflicts
       };
       
-      // Display conflicts
-      if (result.conflicts.length > 0) {
-        console.log('\nConflict resolution:');
-        result.conflicts.forEach(conflict => {
-          console.log(`  - ${conflict}`);
-        });
+      if (isJsonMode) {
+        if (options.dryRun) {
+          outputJson({
+            success: true,
+            dryRun: true,
+            sync: {
+              file: options.file,
+              localState: {
+                workItems: localItems.length,
+                comments: localComments.length
+              },
+              remoteState: {
+                workItems: remoteItems.length,
+                comments: remoteComments.length
+              },
+              summary: result
+            }
+          });
+          return;
+        }
       } else {
-        console.log('\nNo conflicts detected');
+        // Display conflicts
+        if (result.conflicts.length > 0) {
+          console.log('\nConflict resolution:');
+          result.conflicts.forEach(conflict => {
+            console.log(`  - ${conflict}`);
+          });
+        } else {
+          console.log('\nNo conflicts detected');
+        }
+        
+        // Display summary
+        console.log('\nSync summary:');
+        console.log(`  Work items added: ${result.itemsAdded}`);
+        console.log(`  Work items updated: ${result.itemsUpdated}`);
+        console.log(`  Work items unchanged: ${result.itemsUnchanged}`);
+        console.log(`  Comments added: ${result.commentsAdded}`);
+        console.log(`  Comments unchanged: ${result.commentsUnchanged}`);
+        console.log(`  Total work items: ${itemMergeResult.merged.length}`);
+        console.log(`  Total comments: ${commentMergeResult.merged.length}`);
+        
+        if (options.dryRun) {
+          console.log('\n[DRY RUN MODE - No changes were made]');
+          return;
+        }
       }
       
-      // Display summary
-      console.log('\nSync summary:');
-      console.log(`  Work items added: ${result.itemsAdded}`);
-      console.log(`  Work items updated: ${result.itemsUpdated}`);
-      console.log(`  Work items unchanged: ${result.itemsUnchanged}`);
-      console.log(`  Comments added: ${result.commentsAdded}`);
-      console.log(`  Comments unchanged: ${result.commentsUnchanged}`);
-      console.log(`  Total work items: ${itemMergeResult.merged.length}`);
-      console.log(`  Total comments: ${commentMergeResult.merged.length}`);
-      
       if (options.dryRun) {
-        console.log('\n[DRY RUN MODE - No changes were made]');
         return;
       }
       
@@ -354,20 +498,47 @@ program
       
       // Save merged data
       saveData();
-      console.log('\nMerged data saved locally');
+      if (!isJsonMode) {
+        console.log('\nMerged data saved locally');
+      }
       
       // Push to git if requested
       if (options.push !== false) {
-        console.log('\nPushing changes to git...');
+        if (!isJsonMode) {
+          console.log('\nPushing changes to git...');
+        }
         await gitPushDataFile(options.file, 'Sync work items and comments');
-        console.log('Changes pushed successfully');
+        if (!isJsonMode) {
+          console.log('Changes pushed successfully');
+        }
       } else {
-        console.log('\nSkipping git push (--no-push flag)');
+        if (!isJsonMode) {
+          console.log('\nSkipping git push (--no-push flag)');
+        }
       }
       
-      console.log('\n✓ Sync completed successfully');
+      if (isJsonMode) {
+        outputJson({
+          success: true,
+          message: 'Sync completed successfully',
+          sync: {
+            file: options.file,
+            summary: result,
+            pushed: options.push !== false
+          }
+        });
+      } else {
+        console.log('\n✓ Sync completed successfully');
+      }
     } catch (error) {
-      console.error('\n✗ Sync failed:', (error as Error).message);
+      if (isJsonMode) {
+        outputJson({
+          success: false,
+          error: (error as Error).message
+        });
+      } else {
+        console.error('\n✗ Sync failed:', (error as Error).message);
+      }
       process.exit(1);
     }
   });
@@ -392,13 +563,19 @@ program
     });
     
     if (!comment) {
-      console.error(`Work item not found: ${workItemId}`);
+      outputError(`Work item not found: ${workItemId}`, { success: false, error: `Work item not found: ${workItemId}` });
       process.exit(1);
     }
     
     saveData();
-    console.log('Created comment:');
-    console.log(JSON.stringify(comment, null, 2));
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, comment });
+    } else {
+      console.log('Created comment:');
+      console.log(JSON.stringify(comment, null, 2));
+    }
   });
 
 // List comments for a work item
@@ -411,26 +588,31 @@ program
     
     const workItem = db.get(workItemId);
     if (!workItem) {
-      console.error(`Work item not found: ${workItemId}`);
+      outputError(`Work item not found: ${workItemId}`, { success: false, error: `Work item not found: ${workItemId}` });
       process.exit(1);
     }
     
     const comments = db.getCommentsForWorkItem(workItemId);
     
-    if (comments.length === 0) {
-      console.log('No comments found for this work item');
-      return;
-    }
-    
-    console.log(`Found ${comments.length} comment(s) for ${workItemId}:\n`);
-    comments.forEach(comment => {
-      console.log(`[${comment.id}] by ${comment.author} at ${comment.createdAt}`);
-      console.log(`  ${comment.comment}`);
-      if (comment.references.length > 0) {
-        console.log(`  References: ${comment.references.join(', ')}`);
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, count: comments.length, workItemId, comments });
+    } else {
+      if (comments.length === 0) {
+        console.log('No comments found for this work item');
+        return;
       }
-      console.log();
-    });
+      
+      console.log(`Found ${comments.length} comment(s) for ${workItemId}:\n`);
+      comments.forEach(comment => {
+        console.log(`[${comment.id}] by ${comment.author} at ${comment.createdAt}`);
+        console.log(`  ${comment.comment}`);
+        if (comment.references.length > 0) {
+          console.log(`  References: ${comment.references.join(', ')}`);
+        }
+        console.log();
+      });
+    }
   });
 
 // Show a specific comment
@@ -443,11 +625,16 @@ program
     
     const comment = db.getComment(commentId);
     if (!comment) {
-      console.error(`Comment not found: ${commentId}`);
+      outputError(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
       process.exit(1);
     }
     
-    console.log(JSON.stringify(comment, null, 2));
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, comment });
+    } else {
+      console.log(JSON.stringify(comment, null, 2));
+    }
   });
 
 // Update a comment
@@ -468,13 +655,19 @@ program
     
     const comment = db.updateComment(commentId, updates);
     if (!comment) {
-      console.error(`Comment not found: ${commentId}`);
+      outputError(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
       process.exit(1);
     }
     
     saveData();
-    console.log('Updated comment:');
-    console.log(JSON.stringify(comment, null, 2));
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, comment });
+    } else {
+      console.log('Updated comment:');
+      console.log(JSON.stringify(comment, null, 2));
+    }
   });
 
 // Delete a comment
@@ -487,12 +680,18 @@ program
     
     const deleted = db.deleteComment(commentId);
     if (!deleted) {
-      console.error(`Comment not found: ${commentId}`);
+      outputError(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
       process.exit(1);
     }
     
     saveData();
-    console.log(`Deleted comment: ${commentId}`);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({ success: true, message: `Deleted comment: ${commentId}`, deletedId: commentId });
+    } else {
+      console.log(`Deleted comment: ${commentId}`);
+    }
   });
 
 program.parse();

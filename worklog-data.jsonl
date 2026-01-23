@@ -8,3 +8,5 @@
 {"type":"comment","data":{"id":"TEST-C1","workItemId":"TEST-4","author":"John Doe","comment":"This is my **updated** first comment!","createdAt":"2026-01-23T07:07:23.165Z","references":["TEST-1","src/api.ts","https://github.com/example/repo"]}}
 {"type":"comment","data":{"id":"TEST-C2","workItemId":"TEST-1","author":"Final Tester","comment":"Testing persistence of comments in JSONL","createdAt":"2026-01-23T07:11:05.920Z","references":["README.md"]}}
 {"type":"comment","data":{"id":"TEST-C3","workItemId":"TEST-2","author":"Security Check","comment":"Testing after security improvements","createdAt":"2026-01-23T07:13:35.097Z","references":[]}}
+{"type":"comment","data":{"id":"TEST-C0MKQNAJQ41GACZKM","workItemId":"TEST-1","author":"Test Author","comment":"Test comment","createdAt":"2026-01-23T08:55:00.701Z","references":[]}}
+{"type":"comment","data":{"id":"TEST-C0MKQNAO2F1AOTO4D","workItemId":"TEST-1","author":"Test Author 2","comment":"Test comment 2","createdAt":"2026-01-23T08:55:06.327Z","references":[]}}
