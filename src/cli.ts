@@ -192,6 +192,9 @@ program
       // Write initialization semaphore with version
       writeInitSemaphore(WORKLOG_VERSION);
       
+      // Read it back to get the exact timestamp
+      const initInfo = readInitSemaphore();
+      
       if (isJsonMode) {
         outputJson({
           success: true,
@@ -200,7 +203,8 @@ program
             projectName: config?.projectName,
             prefix: config?.prefix
           },
-          version: WORKLOG_VERSION
+          version: WORKLOG_VERSION,
+          initializedAt: initInfo?.initializedAt
         });
       }
     } catch (error) {

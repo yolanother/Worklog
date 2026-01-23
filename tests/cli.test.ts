@@ -367,8 +367,7 @@ describe('CLI Integration Tests', () => {
       
       try {
         await execAsync(`tsx ${cliPath} --json status`);
-        // Should not reach here
-        expect(true).toBe(false);
+        throw new Error('Expected status command to fail, but it succeeded');
       } catch (error: any) {
         const result = JSON.parse(error.stdout || '{}');
         expect(result.success).toBe(false);
