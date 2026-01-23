@@ -2,7 +2,7 @@
  * Core types for the Worklog system
  */
 
-export type WorkItemStatus = 'open' | 'in-progress' | 'completed' | 'blocked';
+export type WorkItemStatus = 'open' | 'in-progress' | 'completed' | 'blocked' | 'deleted';
 export type WorkItemPriority = 'low' | 'medium' | 'high' | 'critical';
 
 /**
@@ -20,6 +20,12 @@ export interface WorkItem {
   tags: string[];
   assignee: string;
   stage: string;
+
+  // Optional metadata for import/interoperability with other issue trackers
+  issueType: string;
+  createdBy: string;
+  deletedBy: string;
+  deleteReason: string;
 }
 
 /**
@@ -34,6 +40,11 @@ export interface CreateWorkItemInput {
   tags?: string[];
   assignee?: string;
   stage?: string;
+
+  issueType?: string;
+  createdBy?: string;
+  deletedBy?: string;
+  deleteReason?: string;
 }
 
 /**
@@ -48,6 +59,11 @@ export interface UpdateWorkItemInput {
   tags?: string[];
   assignee?: string;
   stage?: string;
+
+  issueType?: string;
+  createdBy?: string;
+  deletedBy?: string;
+  deleteReason?: string;
 }
 
 /**
@@ -60,6 +76,11 @@ export interface WorkItemQuery {
   tags?: string[];
   assignee?: string;
   stage?: string;
+
+  issueType?: string;
+  createdBy?: string;
+  deletedBy?: string;
+  deleteReason?: string;
 }
 
 /**

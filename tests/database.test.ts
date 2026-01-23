@@ -39,6 +39,10 @@ describe('WorklogDatabase', () => {
       expect(item.tags).toEqual([]);
       expect(item.assignee).toBe('');
       expect(item.stage).toBe('');
+      expect(item.issueType).toBe('');
+      expect(item.createdBy).toBe('');
+      expect(item.deletedBy).toBe('');
+      expect(item.deleteReason).toBe('');
       expect(item.createdAt).toBeDefined();
       expect(item.updatedAt).toBeDefined();
     });
@@ -52,6 +56,8 @@ describe('WorklogDatabase', () => {
         tags: ['feature', 'backend'],
         assignee: 'john.doe',
         stage: 'development',
+        issueType: 'task',
+        createdBy: 'john.doe',
       });
 
       expect(item.title).toBe('Full task');
@@ -61,6 +67,8 @@ describe('WorklogDatabase', () => {
       expect(item.tags).toEqual(['feature', 'backend']);
       expect(item.assignee).toBe('john.doe');
       expect(item.stage).toBe('development');
+      expect(item.issueType).toBe('task');
+      expect(item.createdBy).toBe('john.doe');
     });
 
     it('should create a work item with a parent', () => {
@@ -336,6 +344,10 @@ describe('WorklogDatabase', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
         {
           id: 'TEST-002',
@@ -349,6 +361,10 @@ describe('WorklogDatabase', () => {
           tags: ['test'],
           assignee: 'alice',
           stage: 'done',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 

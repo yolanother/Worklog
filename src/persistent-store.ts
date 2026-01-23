@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -73,9 +73,31 @@ export class SqlitePersistentStore {
         updatedAt TEXT NOT NULL,
         tags TEXT NOT NULL,
         assignee TEXT NOT NULL,
-        stage TEXT NOT NULL
+        stage TEXT NOT NULL,
+        issueType TEXT NOT NULL,
+        createdBy TEXT NOT NULL,
+        deletedBy TEXT NOT NULL,
+        deleteReason TEXT NOT NULL
       )
     `);
+
+    // Minimal migration for existing databases: add missing columns.
+    // We keep this intentionally simple (no destructive ops), since this is a local repo DB.
+    const schemaVersionRaw = this.getMetadata('schemaVersion');
+    const existingVersion = schemaVersionRaw ? parseInt(schemaVersionRaw, 10) : 1;
+    if (existingVersion < 2) {
+      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
+      const existingCols = new Set(cols.map(c => String(c.name)));
+      const maybeAdd = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+        }
+      };
+      maybeAdd('issueType');
+      maybeAdd('createdBy');
+      maybeAdd('deletedBy');
+      maybeAdd('deleteReason');
+    }
 
     // Create comments table
     this.db.exec(`
@@ -104,6 +126,11 @@ export class SqlitePersistentStore {
     
     if (!versionRow) {
       this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
+    } else {
+      const current = parseInt(versionRow.value, 10);
+      if (current < SCHEMA_VERSION) {
+        this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
+      }
     }
   }
 
@@ -150,8 +177,8 @@ export class SqlitePersistentStore {
   saveWorkItem(item: WorkItem): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO workitems 
-      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     stmt.run(
@@ -165,7 +192,11 @@ export class SqlitePersistentStore {
       item.updatedAt,
       JSON.stringify(item.tags),
       item.assignee,
-      item.stage
+      item.stage,
+      item.issueType,
+      item.createdBy,
+      item.deletedBy,
+      item.deleteReason
     );
   }
 
@@ -330,6 +361,11 @@ export class SqlitePersistentStore {
         tags: JSON.parse(row.tags),
         assignee: row.assignee,
         stage: row.stage,
+
+        issueType: row.issueType || '',
+        createdBy: row.createdBy || '',
+        deletedBy: row.deletedBy || '',
+        deleteReason: row.deleteReason || '',
       };
     } catch (error) {
       console.error(`Error parsing work item ${row.id}:`, error);
@@ -346,6 +382,11 @@ export class SqlitePersistentStore {
         tags: [],
         assignee: row.assignee,
         stage: row.stage,
+
+        issueType: row.issueType || '',
+        createdBy: row.createdBy || '',
+        deletedBy: row.deletedBy || '',
+        deleteReason: row.deleteReason || '',
       };
     }
   }

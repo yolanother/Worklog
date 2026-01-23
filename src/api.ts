@@ -103,6 +103,20 @@ export function createAPI(db: WorklogDatabase) {
       query.stage = req.query.stage as string;
     }
 
+    // Interoperability metadata filters
+    if (req.query.issueType) {
+      (query as any).issueType = req.query.issueType as string;
+    }
+    if (req.query.createdBy) {
+      (query as any).createdBy = req.query.createdBy as string;
+    }
+    if (req.query.deletedBy) {
+      (query as any).deletedBy = req.query.deletedBy as string;
+    }
+    if (req.query.deleteReason) {
+      (query as any).deleteReason = req.query.deleteReason as string;
+    }
+
     const items = db.list(query);
     res.json(items);
   });
@@ -256,6 +270,20 @@ export function createAPI(db: WorklogDatabase) {
     }
     if (req.query.stage) {
       query.stage = req.query.stage as string;
+    }
+
+    // Interoperability metadata filters
+    if (req.query.issueType) {
+      (query as any).issueType = req.query.issueType as string;
+    }
+    if (req.query.createdBy) {
+      (query as any).createdBy = req.query.createdBy as string;
+    }
+    if (req.query.deletedBy) {
+      (query as any).deletedBy = req.query.deletedBy as string;
+    }
+    if (req.query.deleteReason) {
+      (query as any).deleteReason = req.query.deleteReason as string;
     }
 
     const items = db.list(query);

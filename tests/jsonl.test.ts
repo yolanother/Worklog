@@ -37,6 +37,11 @@ describe('JSONL Import/Export', () => {
           tags: ['tag1', 'tag2'],
           assignee: 'john',
           stage: 'dev',
+
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
         {
           id: 'WI-002',
@@ -50,6 +55,11 @@ describe('JSONL Import/Export', () => {
           tags: [],
           assignee: '',
           stage: '',
+
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 
@@ -122,6 +132,11 @@ describe('JSONL Import/Export', () => {
           tags: ['test'],
           assignee: 'john',
           stage: 'dev',
+
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         }}),
         JSON.stringify({ type: 'comment', data: {
           id: 'WI-C001',
@@ -250,6 +265,11 @@ describe('JSONL Import/Export', () => {
           tags: ['feature', 'urgent', 'backend'],
           assignee: 'john.doe@example.com',
           stage: 'development',
+
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
         {
           id: 'WI-002',
@@ -263,6 +283,11 @@ describe('JSONL Import/Export', () => {
           tags: [],
           assignee: '',
           stage: '',
+
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 

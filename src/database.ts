@@ -164,6 +164,11 @@ export class WorklogDatabase {
       tags: input.tags || [],
       assignee: input.assignee || '',
       stage: input.stage || '',
+
+      issueType: input.issueType || '',
+      createdBy: input.createdBy || '',
+      deletedBy: input.deletedBy || '',
+      deleteReason: input.deleteReason || '',
     };
 
     this.store.saveWorkItem(item);
@@ -237,6 +242,18 @@ export class WorklogDatabase {
       }
       if (query.stage) {
         items = items.filter(item => item.stage === query.stage);
+      }
+      if (query.issueType) {
+        items = items.filter(item => item.issueType === query.issueType);
+      }
+      if (query.createdBy) {
+        items = items.filter(item => item.createdBy === query.createdBy);
+      }
+      if (query.deletedBy) {
+        items = items.filter(item => item.deletedBy === query.deletedBy);
+      }
+      if (query.deleteReason) {
+        items = items.filter(item => item.deleteReason === query.deleteReason);
       }
     }
 

@@ -495,12 +495,16 @@ program
   .description('Create a new work item')
   .requiredOption('-t, --title <title>', 'Title of the work item')
   .option('-d, --description <description>', 'Description of the work item', '')
-  .option('-s, --status <status>', 'Status (open, in-progress, completed, blocked)', 'open')
+  .option('-s, --status <status>', 'Status (open, in-progress, completed, blocked, deleted)', 'open')
   .option('-p, --priority <priority>', 'Priority (low, medium, high, critical)', 'medium')
   .option('-P, --parent <parentId>', 'Parent work item ID')
   .option('--tags <tags>', 'Comma-separated list of tags')
   .option('-a, --assignee <assignee>', 'Assignee of the work item')
   .option('--stage <stage>', 'Stage of the work item in the workflow')
+  .option('--issue-type <issueType>', 'Issue type (interoperability field)')
+  .option('--created-by <createdBy>', 'Created by (interoperability field)')
+  .option('--deleted-by <deletedBy>', 'Deleted by (interoperability field)')
+  .option('--delete-reason <deleteReason>', 'Delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     const db = getDatabase(options.prefix);
@@ -514,6 +518,10 @@ program
       tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
       assignee: options.assignee || '',
       stage: options.stage || '',
+      issueType: options.issueType || '',
+      createdBy: options.createdBy || '',
+      deletedBy: options.deletedBy || '',
+      deleteReason: options.deleteReason || '',
     });
     
     const isJsonMode = program.opts().json;
@@ -626,6 +634,10 @@ program
   .option('--tags <tags>', 'New tags (comma-separated)')
   .option('-a, --assignee <assignee>', 'New assignee')
   .option('--stage <stage>', 'New stage')
+  .option('--issue-type <issueType>', 'New issue type (interoperability field)')
+  .option('--created-by <createdBy>', 'New created by (interoperability field)')
+  .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
+  .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
     const db = getDatabase(options.prefix);
@@ -639,6 +651,10 @@ program
     if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
     if (options.assignee !== undefined) updates.assignee = options.assignee;
     if (options.stage !== undefined) updates.stage = options.stage;
+    if (options.issueType !== undefined) updates.issueType = options.issueType;
+    if (options.createdBy !== undefined) updates.createdBy = options.createdBy;
+    if (options.deletedBy !== undefined) updates.deletedBy = options.deletedBy;
+    if (options.deleteReason !== undefined) updates.deleteReason = options.deleteReason;
     
     const item = db.update(id, updates);
     if (!item) {

@@ -94,6 +94,18 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if (item.stage === undefined) {
           item.stage = '';
         }
+        if ((item as any).issueType === undefined) {
+          (item as any).issueType = '';
+        }
+        if ((item as any).createdBy === undefined) {
+          (item as any).createdBy = '';
+        }
+        if ((item as any).deletedBy === undefined) {
+          (item as any).deletedBy = '';
+        }
+        if ((item as any).deleteReason === undefined) {
+          (item as any).deleteReason = '';
+        }
         items.push(item);
       } else if (parsed.type === 'comment' && parsed.data) {
         const comment = parsed.data as Comment;
@@ -107,6 +119,18 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         }
         if (item.stage === undefined) {
           item.stage = '';
+        }
+        if ((item as any).issueType === undefined) {
+          (item as any).issueType = '';
+        }
+        if ((item as any).createdBy === undefined) {
+          (item as any).createdBy = '';
+        }
+        if ((item as any).deletedBy === undefined) {
+          (item as any).deletedBy = '';
+        }
+        if ((item as any).deleteReason === undefined) {
+          (item as any).deleteReason = '';
         }
         items.push(item);
       }

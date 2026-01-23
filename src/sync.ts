@@ -10,6 +10,32 @@ import { promisify } from 'util';
 
 const execAsync = promisify(childProcess.exec);
 
+// git show of large JSONL can exceed Node's exec() maxBuffer.
+// Use spawn to stream the output when reading remote content.
+async function execGitCaptureStdout(args: string[], options?: { cwd?: string }): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const child = childProcess.spawn('git', args, {
+      cwd: options?.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      err += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) return resolve(out);
+      reject(new Error(err.trim() || `git ${args.join(' ')} failed with code ${code}`));
+    });
+  });
+}
+
 export interface GitTarget {
   remote: string;
   branch: string; // may be a branch name or a full ref (e.g. refs/worklog/data)
@@ -51,6 +77,10 @@ function isDefaultValue(value: any, field: string): boolean {
     return true;
   }
   if (field === 'priority' && value === 'medium') {
+    return true;
+  }
+  // Treat empty strings as default for these metadata fields
+  if ((field === 'issueType' || field === 'createdBy' || field === 'deletedBy' || field === 'deleteReason') && value === '') {
     return true;
   }
   return false;
@@ -123,7 +153,7 @@ export function mergeWorkItems(
         // This avoids "permanent divergence" across instances where the record differs but
         // timestamps prevent a clear winner.
         const merged: WorkItem = { ...localItem };
-        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
         const mergedFields: string[] = [];
         const fieldDetails: ConflictFieldDetail[] = [];
 
@@ -224,7 +254,7 @@ export function mergeWorkItems(
         // Different timestamps - perform field-by-field intelligent merge
         const isRemoteNewer = remoteUpdated > localUpdated;
         const merged: WorkItem = { ...localItem };  // Start with local
-        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
         
         const mergedFields: string[] = [];
         const conflictedFields: string[] = [];
@@ -477,9 +507,45 @@ async function fetchTargetRef(target: GitTarget): Promise<{ hasRemote: boolean; 
         `git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(`${target.branch}:${remoteTrackingRef}`)}`
       );
     } catch {
+      // Avoid silently treating fetch failures as "ref missing"; that can lead to overwriting
+      // an existing remote data ref from an orphan branch.
+      let remoteExists = false;
+      try {
+        const { stdout } = await execAsync(
+          `git ls-remote --exit-code ${escapeShellArg(target.remote)} ${escapeShellArg(target.branch)}`
+        );
+        remoteExists = !!stdout.trim();
+      } catch {
+        remoteExists = false;
+      }
+
+      if (remoteExists) {
+        throw new Error(`Failed to fetch existing remote ref ${target.branch} from ${target.remote}`);
+      }
+
       return { hasRemote: false, remoteTrackingRef };
     }
-    return { hasRemote: await refExists(remoteTrackingRef), remoteTrackingRef };
+
+    const hasRemote = await refExists(remoteTrackingRef);
+    if (!hasRemote) {
+      // If the remote ref exists but we can't materialize a local tracking ref,
+      // treat it as an error to avoid overwriting the remote from an orphan branch.
+      let remoteExists = false;
+      try {
+        const { stdout } = await execAsync(
+          `git ls-remote --exit-code ${escapeShellArg(target.remote)} ${escapeShellArg(target.branch)}`
+        );
+        remoteExists = !!stdout.trim();
+      } catch {
+        remoteExists = false;
+      }
+
+      if (remoteExists) {
+        throw new Error(`Failed to create local tracking ref for ${target.branch} from ${target.remote}`);
+      }
+    }
+
+    return { hasRemote, remoteTrackingRef };
   }
 
   // Standard branch fetch. This will populate refs/remotes/<remote>/<branch>.
@@ -507,8 +573,8 @@ export async function getRemoteDataFileContent(dataFilePath: string, target: Git
 
   const refAndPath = `${remoteTrackingRef}:${relativePath}`;
   try {
-    const { stdout } = await execAsync(`git show ${escapeShellArg(refAndPath)}`);
-    return stdout;
+    // Avoid exec() maxBuffer issues for large JSONL.
+    return await execGitCaptureStdout(['show', refAndPath]);
   } catch {
     return null;
   }
@@ -675,8 +741,10 @@ export async function gitPushDataFileToBranch(
     const escapedMsg = escapeShellArg(commitMessage);
     const escapedRel = escapeShellArg(relativePath);
 
-    // Stage and commit only the JSONL file
-    await execAsync(`git -C ${escapeShellArg(worktreePath)} add -- ${escapedRel}`);
+    // Stage and commit only the JSONL file.
+    // The data file typically lives under `.worklog/`, which is commonly gitignored in the main repo.
+    // Force-add so this dedicated ref can still track it.
+    await execAsync(`git -C ${escapeShellArg(worktreePath)} add -f -- ${escapedRel}`);
     const { stdout: staged } = await execAsync(
       `git -C ${escapeShellArg(worktreePath)} diff --cached --name-only -- ${escapedRel}`
     );

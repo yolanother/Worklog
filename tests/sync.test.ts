@@ -23,6 +23,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 
@@ -47,6 +51,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 
@@ -63,6 +71,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 
@@ -86,6 +98,10 @@ describe('Sync Operations', () => {
         tags: ['tag1', 'tag2'],
         assignee: 'john',
         stage: 'dev',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([item], [item]);
@@ -108,6 +124,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -122,6 +142,10 @@ describe('Sync Operations', () => {
         tags: ['feature'],
         assignee: 'alice',
         stage: 'development',
+        issueType: 'task',
+        createdBy: 'alice',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -148,6 +172,10 @@ describe('Sync Operations', () => {
         tags: ['backend'],
         assignee: 'bob',
         stage: 'testing',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -162,6 +190,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -188,6 +220,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -202,6 +238,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -227,6 +267,10 @@ describe('Sync Operations', () => {
         tags: ['local-tag', 'shared-tag'],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -241,6 +285,10 @@ describe('Sync Operations', () => {
         tags: ['remote-tag', 'shared-tag'],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -262,6 +310,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: 'alice',
         stage: 'dev',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -276,6 +328,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: 'bob',
         stage: 'testing',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -300,6 +356,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const remoteItem: WorkItem = {
@@ -314,6 +374,10 @@ describe('Sync Operations', () => {
         tags: [],
         assignee: '',
         stage: '',
+        issueType: '',
+        createdBy: '',
+        deletedBy: '',
+        deleteReason: '',
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -335,6 +399,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
         {
           id: 'WI-002',
@@ -348,6 +416,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 
@@ -364,6 +436,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
         {
           id: 'WI-003',
@@ -377,6 +453,10 @@ describe('Sync Operations', () => {
           tags: [],
           assignee: '',
           stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
         },
       ];
 

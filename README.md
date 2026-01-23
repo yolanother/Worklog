@@ -282,7 +282,7 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 - **id**: Unique identifier (auto-generated)
 - **title**: Short title of the work item
 - **description**: Detailed description
-- **status**: `open`, `in-progress`, `completed`, or `blocked`
+- **status**: `open`, `in-progress`, `completed`, `blocked`, or `deleted`
 - **priority**: `low`, `medium`, `high`, or `critical`
 - **parentId**: ID of parent work item (null for root items)
 - **createdAt**: ISO timestamp of creation
@@ -290,6 +290,10 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 - **tags**: Array of string tags
 - **assignee**: Person assigned to the work item
 - **stage**: Current stage of the work item in the workflow
+- **issueType**: Optional interoperability field for imported issue types
+- **createdBy**: Optional interoperability field for imported creator/actor
+- **deletedBy**: Optional interoperability field for imported deleter/actor
+- **deleteReason**: Optional interoperability field for imported deletion reason
 
 ### Comment Structure
 
