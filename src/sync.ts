@@ -5,6 +5,7 @@
 import { WorkItem, Comment } from './types.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
 import { promisify } from 'util';
 
 const execAsync = promisify(childProcess.exec);
@@ -198,6 +199,16 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     // Check if we're in a git repository
     await execAsync('git rev-parse --git-dir');
     
+    // Get the repository root directory
+    const { stdout: repoRoot } = await execAsync('git rev-parse --show-toplevel');
+    const repoRootPath = repoRoot.trim();
+    
+    // Convert data file path to repository-relative path for git show
+    // git show requires a path relative to the repository root, not an absolute path
+    // path.resolve ensures we have an absolute path even if dataFilePath is relative
+    const absolutePath = path.resolve(dataFilePath);
+    const relativePath = path.relative(repoRootPath, absolutePath);
+    
     // Get the current branch name
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
@@ -219,15 +230,15 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
       // Note: git show uses the syntax "ref:path" where the path is relative to the repo root
       // We escape the entire "ref:path" as a single unit to protect against special characters
       // in both the branch name and file path. Git correctly parses the ref:path even when quoted.
-      const refAndPath = `origin/${branch}:${dataFilePath}`;
+      const refAndPath = `origin/${branch}:${relativePath}`;
       const { stdout: remoteContent } = await execAsync(
         `git show ${escapeShellArg(refAndPath)}`
       );
       
-      // Write the remote content to the local file
+      // Write the remote content to the local file (using the absolute path)
       // This overwrites any local uncommitted changes, but that's OK because
       // the sync logic will merge local in-memory state with this remote state
-      fs.writeFileSync(dataFilePath, remoteContent, 'utf8');
+      fs.writeFileSync(absolutePath, remoteContent, 'utf8');
     } catch (showError) {
       // File doesn't exist on remote yet - that's OK, treat as empty
       // This is expected for a new file that hasn't been pushed to remote
