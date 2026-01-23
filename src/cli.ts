@@ -544,9 +544,11 @@ program
   });
 
 // Comment commands
+const commentCommand = program.command('comment').description('Manage comments on work items');
+
 // Create a comment
-program
-  .command('comment-create <workItemId>')
+commentCommand
+  .command('create <workItemId>')
   .description('Create a comment on a work item')
   .requiredOption('-a, --author <author>', 'Author of the comment')
   .requiredOption('-c, --comment <comment>', 'Comment text (markdown supported)')
@@ -579,8 +581,8 @@ program
   });
 
 // List comments for a work item
-program
-  .command('comment-list <workItemId>')
+commentCommand
+  .command('list <workItemId>')
   .description('List all comments for a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((workItemId, options) => {
@@ -616,8 +618,8 @@ program
   });
 
 // Show a specific comment
-program
-  .command('comment-show <commentId>')
+commentCommand
+  .command('show <commentId>')
   .description('Show details of a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
@@ -638,8 +640,8 @@ program
   });
 
 // Update a comment
-program
-  .command('comment-update <commentId>')
+commentCommand
+  .command('update <commentId>')
   .description('Update a comment')
   .option('-a, --author <author>', 'New author')
   .option('-c, --comment <comment>', 'New comment text')
@@ -671,8 +673,8 @@ program
   });
 
 // Delete a comment
-program
-  .command('comment-delete <commentId>')
+commentCommand
+  .command('delete <commentId>')
   .description('Delete a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
