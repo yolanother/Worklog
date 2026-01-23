@@ -346,6 +346,9 @@ program
       }
       
       // Update database with merged data
+      // Note: import() clears and replaces, which is correct here because
+      // itemMergeResult.merged already contains the complete merged dataset
+      // (all local items + all remote items, with conflicts resolved)
       db.import(itemMergeResult.merged);
       db.importComments(commentMergeResult.merged);
       

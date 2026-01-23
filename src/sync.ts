@@ -10,6 +10,14 @@ import { promisify } from 'util';
 const execAsync = promisify(childProcess.exec);
 
 /**
+ * Escape a string for safe use in shell commands
+ */
+function escapeShellArg(arg: string): string {
+  // Use single quotes and escape any single quotes within the string
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
+
+/**
  * Result of a sync operation
  */
 export interface SyncResult {
@@ -127,8 +135,11 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
     // Check if we're in a git repository
     await execAsync('git rev-parse --git-dir');
     
+    // Escape the file path for safe shell usage
+    const escapedFilePath = escapeShellArg(dataFilePath);
+    
     // Check if there are changes to commit
-    const { stdout: statusOutput } = await execAsync(`git status --porcelain ${dataFilePath}`);
+    const { stdout: statusOutput } = await execAsync(`git status --porcelain ${escapedFilePath}`);
     
     if (!statusOutput.trim()) {
       // No changes to commit
@@ -136,17 +147,18 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
     }
     
     // Add the file
-    await execAsync(`git add ${dataFilePath}`);
+    await execAsync(`git add ${escapedFilePath}`);
     
-    // Commit the changes
-    await execAsync(`git commit -m "${commitMessage}"`);
+    // Commit the changes with escaped message
+    const escapedMessage = escapeShellArg(commitMessage);
+    await execAsync(`git commit -m ${escapedMessage}`);
     
     // Get the current branch name
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
     
     // Push to remote on the current branch
-    await execAsync(`git push origin ${branch}`);
+    await execAsync(`git push origin ${escapeShellArg(branch)}`);
   } catch (error) {
     throw new Error(`Failed to push to git: ${(error as Error).message}`);
   }
