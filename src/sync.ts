@@ -216,14 +216,17 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     // Get the remote version of the data file using git show
     // This will fail if the file doesn't exist on remote
     try {
+      // Note: git show uses the syntax "ref:path" where the path is relative to the repo root
+      // We need to escape the entire ref:path as a unit for the shell
+      const refAndPath = `origin/${branch}:${dataFilePath}`;
       const { stdout: remoteContent } = await execAsync(
-        `git show origin/${escapeShellArg(branch)}:${escapeShellArg(dataFilePath)}`
+        `git show ${escapeShellArg(refAndPath)}`
       );
       
       // Write the remote content to the local file
       // This overwrites any local uncommitted changes, but that's OK because
       // the sync logic will merge local in-memory state with this remote state
-      fs.writeFileSync(dataFilePath, remoteContent, 'utf-8');
+      fs.writeFileSync(dataFilePath, remoteContent, 'utf8');
     } catch (showError) {
       // File doesn't exist on remote yet - that's OK, treat as empty
       // This is expected for a new file that hasn't been pushed to remote
