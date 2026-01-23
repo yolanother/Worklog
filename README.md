@@ -48,12 +48,29 @@ If no configuration exists, the system defaults to using `WI` as the prefix.
 
 The CLI tool allows you to manage work items from the command line. All commands support the `--prefix` flag to override the default prefix from configuration.
 
+#### Output Formats
+
+By default, commands output human-readable content. You can use the `--json` flag to get machine-readable JSON output instead, which is useful for scripting and automation:
+
+```bash
+# Human-readable output (default)
+npm run cli -- list
+
+# Machine-readable JSON output
+npm run cli -- --json list
+```
+
+#### Examples
+
 ```bash
 # Initialize project configuration (run this first)
 npm run cli -- init
 
 # Create a new work item
 npm run cli -- create -t "My first task" -d "Description here" -s open -p high
+
+# Create with JSON output
+npm run cli -- --json create -t "My first task" -d "Description here" -s open -p high
 
 # Create with a custom prefix override
 npm run cli -- create -t "Task for another project" --prefix OTHER
