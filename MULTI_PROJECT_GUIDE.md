@@ -9,7 +9,7 @@ This document demonstrates how to use Worklog with multiple projects, each with 
 First, initialize your project configuration:
 
 ```bash
-npm run cli -- init
+worklog init
 ```
 
 When prompted:
@@ -35,7 +35,7 @@ All CLI commands will use the prefix from your config by default:
 
 ```bash
 # Create a work item - will use WEB prefix
-npm run cli -- create -t "Add user authentication"
+worklog create -t "Add user authentication"
 
 # Output: Created work item with id WEB-0J8L1JQ3H8ZQ2K6D
 ```
@@ -48,16 +48,16 @@ You can override the default prefix for any command using the `--prefix` flag:
 
 ```bash
 # Create work items for different projects
-npm run cli -- create -t "API: Add login endpoint" --prefix API
-npm run cli -- create -t "Frontend: Create login form" --prefix FRONT
-npm run cli -- create -t "Backend: Setup database" --prefix BACK
+worklog create -t "API: Add login endpoint" --prefix API
+worklog create -t "Frontend: Create login form" --prefix FRONT
+worklog create -t "Backend: Setup database" --prefix BACK
 
 # List items from a specific project
-npm run cli -- list --prefix API
+worklog list --prefix API
 
 # Update items from different projects
-npm run cli -- update API-0J8L1JQ3H8ZQ2K6D -s completed --prefix API
-npm run cli -- update FRONT-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix FRONT
+worklog update API-0J8L1JQ3H8ZQ2K6D -s completed --prefix API
+worklog update FRONT-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix FRONT
 ```
 
 ### Using API with Custom Prefix
@@ -107,32 +107,32 @@ Here's a complete workflow using multiple projects:
 
 ```bash
 # Initialize main project
-npm run cli -- init
+worklog init
 # Project name: WebApp
 # Prefix: WEB
 
 # Create main web app tasks
-npm run cli -- create -t "Setup project structure"
-npm run cli -- create -t "Create homepage"
+worklog create -t "Setup project structure"
+worklog create -t "Create homepage"
 
 # Create API tasks with custom prefix
-npm run cli -- create -t "Design REST API" --prefix API
-npm run cli -- create -t "Implement user endpoints" --prefix API
+worklog create -t "Design REST API" --prefix API
+worklog create -t "Implement user endpoints" --prefix API
 
 # Create mobile tasks with custom prefix
-npm run cli -- create -t "Setup React Native" --prefix MOB
-npm run cli -- create -t "Create login screen" --prefix MOB
+worklog create -t "Setup React Native" --prefix MOB
+worklog create -t "Create login screen" --prefix MOB
 
 # List all tasks (shows all prefixes)
-npm run cli -- list
+worklog list
 
 # List tasks for specific project
-npm run cli -- list --prefix API
+worklog list --prefix API
 
 # Update status
-npm run cli -- update WEB-0J8L1JQ3H8ZQ2K6D -s completed
-npm run cli -- update API-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix API
-npm run cli -- update MOB-0J8L1JQ3H8ZQ2K6D -s completed --prefix MOB
+worklog update WEB-0J8L1JQ3H8ZQ2K6D -s completed
+worklog update API-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix API
+worklog update MOB-0J8L1JQ3H8ZQ2K6D -s completed --prefix MOB
 ```
 
 ## Best Practices

@@ -15,9 +15,28 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 
 ## Installation
 
+### For Development
+
 ```bash
 npm install
+npm run build
 ```
+
+### As a Global CLI Tool
+
+To install the CLI globally so you can use `worklog` or `wl` commands from anywhere:
+
+```bash
+npm install -g .
+```
+
+Or, for local development with live updates:
+
+```bash
+npm link
+```
+
+This will make the `worklog` and `wl` commands available globally.
 
 ## Configuration
 
@@ -31,8 +50,12 @@ Worklog uses a two-tier configuration system:
 Before using Worklog, initialize your project configuration:
 
 ```bash
-npm run cli -- init
+worklog init
+# or use the short alias
+wl init
 ```
+
+**Note:** If you haven't installed the CLI globally, you can still use `npm run cli -- init` for development.
 
 This will prompt you for:
 - **Project name**: A descriptive name for your project
@@ -59,7 +82,7 @@ The system loads configuration in this order:
 
 **For teams**: Commit `.worklog/config.defaults.yaml` to share default settings. Team members can then create their own `.worklog/config.yaml` to override specific values as needed.
 
-**For individual users**: If no defaults file exists, just use `npm run cli -- init` to create your local `config.yaml`.
+**For individual users**: If no defaults file exists, just use `worklog init` to create your local `config.yaml`.
 
 If no configuration exists at all, the system defaults to using `WI` as the prefix.
 
@@ -109,10 +132,10 @@ The JSONL format enables team collaboration:
 git pull
 
 # Your next CLI/API call automatically refreshes from the updated JSONL
-npm run cli -- list
+worklog list
 
 # Make changes
-npm run cli -- create -t "New task"
+worklog create -t "New task"
 
 # JSONL is automatically updated, commit and push
 git add .worklog/worklog-data.jsonl
@@ -124,10 +147,10 @@ The `sync` command provides automated Git workflow:
 
 ```bash
 # Pull, merge, and push in one command
-npm run cli -- sync
+worklog sync
 
 # Dry run to preview changes
-npm run cli -- sync --dry-run
+worklog sync --dry-run
 ```
 
 ## Usage
@@ -142,73 +165,79 @@ By default, commands output human-readable content. You can use the `--json` fla
 
 ```bash
 # Human-readable output (default)
-npm run cli -- list
+worklog list
 
 # Machine-readable JSON output
-npm run cli -- --json list
+worklog --json list
 ```
+
+**Note:** For development, you can also use `npm run cli -- <command>` if you haven't installed the CLI globally.
 
 #### Examples
 
 ```bash
 # Initialize project configuration (run this first)
-npm run cli -- init
+worklog init
 
 # Create a new work item
-npm run cli -- create -t "My first task" -d "Description here" -s open -p high
+worklog create -t "My first task" -d "Description here" -s open -p high
 
 # Create with JSON output
-npm run cli -- --json create -t "My first task" -d "Description here" -s open -p high
+worklog --json create -t "My first task" -d "Description here" -s open -p high
 
 # Create with a custom prefix override
-npm run cli -- create -t "Task for another project" --prefix OTHER
+worklog create -t "Task for another project" --prefix OTHER
 
 # List all work items
-npm run cli -- list
+worklog list
 
 # List with filters
-npm run cli -- list -s open -p high
+worklog list -s open -p high
 
 # Show a specific work item
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D
+worklog show WI-0J8L1JQ3H8ZQ2K6D
 
 # Show with children
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 
 # Update a work item
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Delete a work item
-npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6D
+worklog delete WI-0J8L1JQ3H8ZQ2K6D
 
 # Create a comment on a work item
-npm run cli -- comment-create WI-0J8L1JQ3H8ZQ2K6D -a "John Doe" -c "This is a comment with **markdown**" -r "WI-0J8L1JQ3H8ZQ2K6E,src/api.ts,https://example.com"
+worklog comment-create WI-0J8L1JQ3H8ZQ2K6D -a "John Doe" -c "This is a comment with **markdown**" -r "WI-0J8L1JQ3H8ZQ2K6E,src/api.ts,https://example.com"
 
 # List comments for a work item
-npm run cli -- comment-list WI-0J8L1JQ3H8ZQ2K6D
+worklog comment-list WI-0J8L1JQ3H8ZQ2K6D
 
 # Show a specific comment
-npm run cli -- comment-show WI-C0J8L1JQ3H8ZQ2K6F
+worklog comment-show WI-C0J8L1JQ3H8ZQ2K6F
 
 # Update a comment
-npm run cli -- comment-update WI-C0J8L1JQ3H8ZQ2K6F -c "Updated comment text"
+worklog comment-update WI-C0J8L1JQ3H8ZQ2K6F -c "Updated comment text"
 
 # Delete a comment
-npm run cli -- comment-delete WI-C0J8L1JQ3H8ZQ2K6F
+worklog comment-delete WI-C0J8L1JQ3H8ZQ2K6F
 
 # Export data
-npm run cli -- export -f backup.jsonl
+worklog export -f backup.jsonl
 
 # Import data
-npm run cli -- import -f backup.jsonl
+worklog import -f backup.jsonl
 
 # Sync with git (pull, merge with conflict resolution, and push)
-npm run cli -- sync
+worklog sync
 
 # Sync with options
-npm run cli -- sync --dry-run        # Preview changes without applying
-npm run cli -- sync --no-push        # Pull and merge but don't push
-npm run cli -- sync -f custom.jsonl  # Sync a different file
+worklog sync --dry-run        # Preview changes without applying
+worklog sync --no-push        # Pull and merge but don't push
+worklog sync -f custom.jsonl  # Sync a different file
+
+# Using the short alias 'wl'
+wl list                       # Same as 'worklog list'
+wl create -t "Quick task"     # Same as 'worklog create -t "Quick task"'
 ```
 
 ### API Server (Optional)

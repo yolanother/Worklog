@@ -8,81 +8,81 @@ This document provides practical examples of using the Worklog system.
 
 ```bash
 # Create a root work item
-npm run cli -- create -t "Build authentication system" -d "Implement user login and registration" -s open -p high --tags "security,backend"
+worklog create -t "Build authentication system" -d "Implement user login and registration" -s open -p high --tags "security,backend"
 
 # Create a child work item
-npm run cli -- create -t "Design database schema" -d "Define user and session tables" -s open -p medium -P WI-0J8L1JQ3H8ZQ2K6D
+worklog create -t "Design database schema" -d "Define user and session tables" -s open -p medium -P WI-0J8L1JQ3H8ZQ2K6D
 
 # Create with minimal info
-npm run cli -- create -t "Fix bug in login"
+worklog create -t "Fix bug in login"
 ```
 
 ### Listing and Filtering
 
 ```bash
 # List all work items
-npm run cli -- list
+worklog list
 
 # List only root items (no parent)
-npm run cli -- list -P null
+worklog list -P null
 
 # Filter by status
-npm run cli -- list -s in-progress
+worklog list -s in-progress
 
 # Filter by priority
-npm run cli -- list -p high
+worklog list -p high
 
 # Filter by tags
-npm run cli -- list --tags "backend,api"
+worklog list --tags "backend,api"
 
 # Combine filters
-npm run cli -- list -s open -p high
+worklog list -s open -p high
 ```
 
 ### Viewing Work Items
 
 ```bash
 # Show a specific item
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D
+worklog show WI-0J8L1JQ3H8ZQ2K6D
 
 # Show with children
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### Updating Work Items
 
 ```bash
 # Update status
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Update priority
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -p critical
+worklog update WI-0J8L1JQ3H8ZQ2K6D -p critical
 
 # Update multiple fields
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "Implementation finished and tested"
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "Implementation finished and tested"
 
 # Change parent (move in hierarchy)
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6F -P WI-0J8L1JQ3H8ZQ2K6E
+worklog update WI-0J8L1JQ3H8ZQ2K6F -P WI-0J8L1JQ3H8ZQ2K6E
 
 # Add tags
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D --tags "urgent,reviewed"
+worklog update WI-0J8L1JQ3H8ZQ2K6D --tags "urgent,reviewed"
 ```
 
 ### Deleting Work Items
 
 ```bash
 # Delete a work item
-npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6G
+worklog delete WI-0J8L1JQ3H8ZQ2K6G
 ```
 
 ### Import/Export
 
 ```bash
 # Export to a specific file
-npm run cli -- export -f backup-2024-01-23.jsonl
+worklog export -f backup-2024-01-23.jsonl
 
 # Import from a file
-npm run cli -- import -f backup-2024-01-23.jsonl
+worklog import -f backup-2024-01-23.jsonl
 ```
 
 ## API Examples
@@ -181,9 +181,9 @@ await fetch(`http://localhost:3000/items/${newItem.id}`, {
 
 ```bash
 # 1. Create some work items
-npm run cli -- create -t "Feature: User profiles" -s open -p high
-npm run cli -- create -t "Design profile layout" -P WI-0J8L1JQ3H8ZQ2K6D
-npm run cli -- create -t "Implement profile API" -P WI-0J8L1JQ3H8ZQ2K6D
+worklog create -t "Feature: User profiles" -s open -p high
+worklog create -t "Design profile layout" -P WI-0J8L1JQ3H8ZQ2K6D
+worklog create -t "Implement profile API" -P WI-0J8L1JQ3H8ZQ2K6D
 
 # 2. Commit to Git
 git add .worklog/worklog-data.jsonl
@@ -194,7 +194,7 @@ git push origin main
 
 # 4. Team member pulls and updates
 git pull origin main
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 
 # 5. Commit the update
 git add .worklog/worklog-data.jsonl
@@ -208,26 +208,26 @@ Here's an example of creating a hierarchical project structure:
 
 ```bash
 # Create epic
-npm run cli -- create -t "MVP Release" -d "First production release" -s open -p critical
+worklog create -t "MVP Release" -d "First production release" -s open -p critical
 
 # Create features under the epic
-npm run cli -- create -t "User Management" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
-npm run cli -- create -t "Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
-npm run cli -- create -t "Reporting" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p medium
+worklog create -t "User Management" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
+worklog create -t "Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
+worklog create -t "Reporting" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p medium
 
 # Create tasks under features
-npm run cli -- create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
-npm run cli -- create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
-npm run cli -- create -t "Password reset" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p medium
+worklog create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
+worklog create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
+worklog create -t "Password reset" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p medium
 
-npm run cli -- create -t "Dashboard layout" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p high
-npm run cli -- create -t "Dashboard widgets" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p medium
+worklog create -t "Dashboard layout" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p high
+worklog create -t "Dashboard widgets" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p medium
 
 # List root items to see the hierarchy
-npm run cli -- list -P null
+worklog list -P null
 
 # View a feature with its tasks
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6E -c
+worklog show WI-0J8L1JQ3H8ZQ2K6E -c
 ```
 
 This creates a structure like:
