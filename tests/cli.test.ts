@@ -518,6 +518,45 @@ describe('CLI Integration Tests', () => {
     });
   });
 
+  describe('verbose flag', () => {
+    it('should suppress debug messages by default', async () => {
+      // When verbose is not specified, debug messages should be suppressed
+      const { stdout, stderr } = await execAsync(
+        `tsx ${cliPath} --json create -t "Test task"`
+      );
+
+      // Parse the JSON output
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      
+      // Check that the "Refreshing database" message is NOT in stderr or stdout
+      const output = stdout + stderr;
+      expect(output).not.toContain('Refreshing database from');
+    });
+
+    it('should show debug messages when --verbose is specified', async () => {
+      // First create a work item to generate JSONL file
+      await execAsync(`tsx ${cliPath} --json create -t "Initial task"`);
+      
+      // Remove the database so refresh will be triggered
+      const dbPath = path.join('.worklog', 'worklog.db');
+      if (fs.existsSync(dbPath)) {
+        fs.unlinkSync(dbPath);
+      }
+      
+      // When verbose is specified, debug messages should be shown
+      // Note: We use verbose without --json since JSON mode suppresses all debug output
+      const { stdout, stderr } = await execAsync(
+        `tsx ${cliPath} --verbose create -t "Test task verbose"`
+      );
+
+      // Check that the "Refreshing database" or "Loaded" message IS in stderr or stdout
+      const output = stdout + stderr;
+      const hasDebugMessage = output.includes('Refreshing database from') || output.includes('Loaded');
+      expect(hasDebugMessage).toBe(true);
+    });
+  });
+
   describe('initialization check', () => {
     beforeEach(() => {
       // Remove worklog directory to simulate uninitialized state

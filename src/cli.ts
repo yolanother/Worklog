@@ -163,9 +163,11 @@ function getDatabase(prefix?: string): WorklogDatabase {
   // 1. Connect to persistent SQLite storage
   // 2. Check if JSONL is newer than DB and refresh if needed
   // 3. Auto-export to JSONL on all write operations (if autoExport is enabled)
-  // When in JSON mode, suppress console output to avoid interfering with JSON parsing
+  // When in JSON mode or when verbose is not enabled, suppress console output
   const isJsonMode = program.opts().json;
-  db = new WorklogDatabase(actualPrefix, undefined, undefined, autoExport, isJsonMode);
+  const isVerbose = program.opts().verbose;
+  const silent = isJsonMode || !isVerbose;
+  db = new WorklogDatabase(actualPrefix, undefined, undefined, autoExport, silent);
   return db;
 }
 
@@ -343,7 +345,8 @@ program
   .name('worklog')
   .description('CLI for Worklog - a simple issue tracker')
   .version(WORKLOG_VERSION)
-  .option('--json', 'Output in JSON format (machine-readable)');
+  .option('--json', 'Output in JSON format (machine-readable)')
+  .option('--verbose', 'Show verbose output including debug messages');
 
 // Initialize configuration
 program
