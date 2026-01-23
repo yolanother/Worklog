@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
 import { WorklogDatabase } from '../src/database.js';
 import { createTempDir, cleanupTempDir, createTempJsonlPath, createTempDbPath } from './test-utils.js';
 
@@ -379,8 +380,6 @@ describe('WorklogDatabase', () => {
 
   describe('autoExport', () => {
     it('should export to JSONL when autoExport is enabled', () => {
-      const fs = require('fs');
-      
       // Create with autoExport enabled (default)
       const dbWithExport = new WorklogDatabase('TEST', dbPath, jsonlPath, true, true);
       
@@ -397,8 +396,6 @@ describe('WorklogDatabase', () => {
     });
 
     it('should not export to JSONL when autoExport is disabled', () => {
-      const fs = require('fs');
-      
       // Create with autoExport disabled
       const dbWithoutExport = new WorklogDatabase('TEST', dbPath, jsonlPath, false, true);
       
