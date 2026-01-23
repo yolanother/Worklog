@@ -40,6 +40,8 @@ This will prompt you for:
 
 The configuration is saved to `.worklog/config.yaml` as your local configuration.
 
+After creating the configuration, `init` will automatically sync the database with the remote repository to pull any existing work items and comments.
+
 **Example:**
 ```
 Project name: MyProject
