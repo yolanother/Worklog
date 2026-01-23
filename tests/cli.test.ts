@@ -550,7 +550,9 @@ describe('CLI Integration Tests', () => {
         `tsx ${cliPath} --verbose create -t "Test task verbose"`
       );
 
-      // Check that the "Refreshing database" or "Loaded" message IS in stderr or stdout
+      // Check that at least one of the debug messages is shown
+      // We check for both "Refreshing database" (when DB is rebuilt) and "Loaded" 
+      // (when data is imported) since the exact message depends on the database state
       const output = stdout + stderr;
       const hasDebugMessage = output.includes('Refreshing database from') || output.includes('Loaded');
       expect(hasDebugMessage).toBe(true);
