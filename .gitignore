@@ -143,3 +143,8 @@ vite.config.ts.timestamp-*
 
 # Data file (user's work items and comments)
 .worklog/worklog-data.jsonl
+
+# SQLite database (persistent storage)
+.worklog/worklog.db
+.worklog/worklog.db-shm
+.worklog/worklog.db-wal

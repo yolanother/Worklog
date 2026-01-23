@@ -1,9 +1,13 @@
 /**
- * In-memory database for work items
+ * Persistent database for work items with SQLite backend
  */
 
 import { randomBytes } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
+import { SqlitePersistentStore } from './persistent-store.js';
+import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 
 const UNIQUE_TIME_LENGTH = 9;
 const UNIQUE_RANDOM_BYTES = 4;
@@ -12,14 +16,68 @@ const UNIQUE_ID_LENGTH = UNIQUE_TIME_LENGTH + UNIQUE_RANDOM_LENGTH;
 const MAX_ID_GENERATION_ATTEMPTS = 10;
 
 export class WorklogDatabase {
-  private items: Map<string, WorkItem>;
-  private comments: Map<string, Comment>;
+  private store: SqlitePersistentStore;
   private prefix: string;
+  private jsonlPath: string;
+  private autoExport: boolean;
 
-  constructor(prefix: string = 'WI') {
-    this.items = new Map();
-    this.comments = new Map();
+  constructor(prefix: string = 'WI', dbPath?: string, jsonlPath?: string, autoExport: boolean = true) {
     this.prefix = prefix;
+    this.jsonlPath = jsonlPath || getDefaultDataPath();
+    this.autoExport = autoExport;
+    
+    // Use default DB path if not provided
+    const defaultDbPath = path.join(path.dirname(this.jsonlPath), 'worklog.db');
+    const actualDbPath = dbPath || defaultDbPath;
+    
+    this.store = new SqlitePersistentStore(actualDbPath);
+    
+    // Refresh from JSONL if needed
+    this.refreshFromJsonlIfNewer();
+  }
+
+  /**
+   * Refresh database from JSONL file if JSONL is newer
+   */
+  private refreshFromJsonlIfNewer(): void {
+    if (!fs.existsSync(this.jsonlPath)) {
+      return; // No JSONL file, nothing to refresh from
+    }
+
+    const jsonlStats = fs.statSync(this.jsonlPath);
+    const jsonlMtime = jsonlStats.mtimeMs;
+
+    const metadata = this.store.getAllMetadata();
+    const lastImportMtime = metadata.lastJsonlImportMtime;
+
+    // If DB is empty or JSONL is newer, refresh from JSONL
+    const items = this.store.getAllWorkItems();
+    const shouldRefresh = items.length === 0 || !lastImportMtime || jsonlMtime > lastImportMtime;
+
+    if (shouldRefresh) {
+      console.log(`Refreshing database from ${this.jsonlPath}...`);
+      const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
+      this.store.importData(jsonlItems, jsonlComments);
+      
+      // Update metadata
+      this.store.setMetadata('lastJsonlImportMtime', jsonlMtime.toString());
+      this.store.setMetadata('lastJsonlImportAt', new Date().toISOString());
+      
+      console.log(`Loaded ${jsonlItems.length} work items and ${jsonlComments.length} comments from JSONL`);
+    }
+  }
+
+  /**
+   * Export current database state to JSONL
+   */
+  private exportToJsonl(): void {
+    if (!this.autoExport) {
+      return;
+    }
+    
+    const items = this.store.getAllWorkItems();
+    const comments = this.store.getAllComments();
+    exportToJsonl(items, comments, this.jsonlPath);
   }
 
   /**
@@ -42,7 +100,7 @@ export class WorklogDatabase {
   private generateId(): string {
     for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
       const id = `${this.prefix}-${this.generateUniqueId()}`;
-      if (!this.items.has(id)) {
+      if (!this.store.getWorkItem(id)) {
         return id;
       }
     }
@@ -55,7 +113,7 @@ export class WorklogDatabase {
   private generateCommentId(): string {
     for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
       const id = `${this.prefix}-C${this.generateUniqueId()}`;
-      if (!this.comments.has(id)) {
+      if (!this.store.getComment(id)) {
         return id;
       }
     }
@@ -102,7 +160,8 @@ export class WorklogDatabase {
       stage: input.stage || '',
     };
 
-    this.items.set(id, item);
+    this.store.saveWorkItem(item);
+    this.exportToJsonl();
     return item;
   }
 
@@ -110,14 +169,14 @@ export class WorklogDatabase {
    * Get a work item by ID
    */
   get(id: string): WorkItem | null {
-    return this.items.get(id) || null;
+    return this.store.getWorkItem(id);
   }
 
   /**
    * Update a work item
    */
   update(id: string, input: UpdateWorkItemInput): WorkItem | null {
-    const item = this.items.get(id);
+    const item = this.store.getWorkItem(id);
     if (!item) {
       return null;
     }
@@ -130,7 +189,8 @@ export class WorklogDatabase {
       updatedAt: new Date().toISOString(),
     };
 
-    this.items.set(id, updated);
+    this.store.saveWorkItem(updated);
+    this.exportToJsonl();
     return updated;
   }
 
@@ -138,14 +198,18 @@ export class WorklogDatabase {
    * Delete a work item
    */
   delete(id: string): boolean {
-    return this.items.delete(id);
+    const result = this.store.deleteWorkItem(id);
+    if (result) {
+      this.exportToJsonl();
+    }
+    return result;
   }
 
   /**
    * List all work items
    */
   list(query?: WorkItemQuery): WorkItem[] {
-    let items = Array.from(this.items.values());
+    let items = this.store.getAllWorkItems();
 
     if (query) {
       if (query.status) {
@@ -177,7 +241,7 @@ export class WorklogDatabase {
    * Get children of a work item
    */
   getChildren(parentId: string): WorkItem[] {
-    return Array.from(this.items.values()).filter(
+    return this.store.getAllWorkItems().filter(
       item => item.parentId === parentId
     );
   }
@@ -201,24 +265,25 @@ export class WorklogDatabase {
    * Clear all work items (useful for import)
    */
   clear(): void {
-    this.items.clear();
+    this.store.clearWorkItems();
   }
 
   /**
    * Get all work items as an array
    */
   getAll(): WorkItem[] {
-    return Array.from(this.items.values());
+    return this.store.getAllWorkItems();
   }
 
   /**
    * Import work items (replaces existing data)
    */
   import(items: WorkItem[]): void {
-    this.clear();
+    this.store.clearWorkItems();
     for (const item of items) {
-      this.items.set(item.id, item);
+      this.store.saveWorkItem(item);
     }
+    this.exportToJsonl();
   }
 
   /**
@@ -234,7 +299,7 @@ export class WorklogDatabase {
     }
     
     // Verify that the work item exists
-    if (!this.items.has(input.workItemId)) {
+    if (!this.store.getWorkItem(input.workItemId)) {
       return null;
     }
 
@@ -250,7 +315,8 @@ export class WorklogDatabase {
       references: input.references || [],
     };
 
-    this.comments.set(id, comment);
+    this.store.saveComment(comment);
+    this.exportToJsonl();
     return comment;
   }
 
@@ -258,14 +324,14 @@ export class WorklogDatabase {
    * Get a comment by ID
    */
   getComment(id: string): Comment | null {
-    return this.comments.get(id) || null;
+    return this.store.getComment(id);
   }
 
   /**
    * Update a comment
    */
   updateComment(id: string, input: UpdateCommentInput): Comment | null {
-    const comment = this.comments.get(id);
+    const comment = this.store.getComment(id);
     if (!comment) {
       return null;
     }
@@ -278,7 +344,8 @@ export class WorklogDatabase {
       createdAt: comment.createdAt, // Prevent createdAt changes
     };
 
-    this.comments.set(id, updated);
+    this.store.saveComment(updated);
+    this.exportToJsonl();
     return updated;
   }
 
@@ -286,32 +353,35 @@ export class WorklogDatabase {
    * Delete a comment
    */
   deleteComment(id: string): boolean {
-    return this.comments.delete(id);
+    const result = this.store.deleteComment(id);
+    if (result) {
+      this.exportToJsonl();
+    }
+    return result;
   }
 
   /**
    * Get all comments for a work item
    */
   getCommentsForWorkItem(workItemId: string): Comment[] {
-    return Array.from(this.comments.values())
-      .filter(comment => comment.workItemId === workItemId)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return this.store.getCommentsForWorkItem(workItemId);
   }
 
   /**
    * Get all comments as an array
    */
   getAllComments(): Comment[] {
-    return Array.from(this.comments.values());
+    return this.store.getAllComments();
   }
 
   /**
    * Import comments
    */
   importComments(comments: Comment[]): void {
-    this.comments.clear();
+    this.store.clearComments();
     for (const comment of comments) {
-      this.comments.set(comment.id, comment);
+      this.store.saveComment(comment);
     }
+    this.exportToJsonl();
   }
 }
