@@ -53,6 +53,8 @@ export class WorklogDatabase {
       createdAt: now,
       updatedAt: now,
       tags: input.tags || [],
+      assignee: input.assignee || '',
+      stage: input.stage || '',
     };
 
     this.items.set(id, item);
@@ -114,6 +116,12 @@ export class WorklogDatabase {
         items = items.filter(item => 
           query.tags!.some(tag => item.tags.includes(tag))
         );
+      }
+      if (query.assignee) {
+        items = items.filter(item => item.assignee === query.assignee);
+      }
+      if (query.stage) {
+        items = items.filter(item => item.stage === query.stage);
       }
     }
 

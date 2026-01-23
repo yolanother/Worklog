@@ -18,6 +18,8 @@ export interface WorkItem {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+  assignee: string;
+  stage: string;
 }
 
 /**
@@ -30,6 +32,8 @@ export interface CreateWorkItemInput {
   priority?: WorkItemPriority;
   parentId?: string | null;
   tags?: string[];
+  assignee?: string;
+  stage?: string;
 }
 
 /**
@@ -42,6 +46,8 @@ export interface UpdateWorkItemInput {
   priority?: WorkItemPriority;
   parentId?: string | null;
   tags?: string[];
+  assignee?: string;
+  stage?: string;
 }
 
 /**
@@ -52,6 +58,8 @@ export interface WorkItemQuery {
   priority?: WorkItemPriority;
   parentId?: string | null;
   tags?: string[];
+  assignee?: string;
+  stage?: string;
 }
 
 /**

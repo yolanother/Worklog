@@ -96,6 +96,12 @@ export function createAPI(db: WorklogDatabase) {
     if (req.query.tags) {
       query.tags = Array.isArray(req.query.tags) ? req.query.tags as string[] : [req.query.tags as string];
     }
+    if (req.query.assignee) {
+      query.assignee = req.query.assignee as string;
+    }
+    if (req.query.stage) {
+      query.stage = req.query.stage as string;
+    }
 
     const items = db.list(query);
     res.json(items);
@@ -177,6 +183,12 @@ export function createAPI(db: WorklogDatabase) {
     }
     if (req.query.tags) {
       query.tags = Array.isArray(req.query.tags) ? req.query.tags as string[] : [req.query.tags as string];
+    }
+    if (req.query.assignee) {
+      query.assignee = req.query.assignee as string;
+    }
+    if (req.query.stage) {
+      query.stage = req.query.stage as string;
     }
 
     const items = db.list(query);

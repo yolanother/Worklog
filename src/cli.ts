@@ -78,6 +78,8 @@ program
   .option('-p, --priority <priority>', 'Priority (low, medium, high, critical)', 'medium')
   .option('-P, --parent <parentId>', 'Parent work item ID')
   .option('--tags <tags>', 'Comma-separated list of tags')
+  .option('-a, --assignee <assignee>', 'Assignee of the work item')
+  .option('--stage <stage>', 'Stage of the work item in the workflow')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     loadData(options.prefix);
@@ -89,6 +91,8 @@ program
       priority: options.priority as WorkItemPriority,
       parentId: options.parent || null,
       tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
+      assignee: options.assignee || '',
+      stage: options.stage || '',
     });
     
     saveData();
@@ -104,6 +108,8 @@ program
   .option('-p, --priority <priority>', 'Filter by priority')
   .option('-P, --parent <parentId>', 'Filter by parent ID (use "null" for root items)')
   .option('--tags <tags>', 'Filter by tags (comma-separated)')
+  .option('-a, --assignee <assignee>', 'Filter by assignee')
+  .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     loadData(options.prefix);
@@ -117,6 +123,8 @@ program
     if (options.tags) {
       query.tags = options.tags.split(',').map((t: string) => t.trim());
     }
+    if (options.assignee) query.assignee = options.assignee;
+    if (options.stage) query.stage = options.stage;
     
     const items = db.list(query);
     
@@ -130,6 +138,8 @@ program
       console.log(`[${item.id}] ${item.title}`);
       console.log(`  Status: ${item.status} | Priority: ${item.priority}`);
       if (item.parentId) console.log(`  Parent: ${item.parentId}`);
+      if (item.assignee) console.log(`  Assignee: ${item.assignee}`);
+      if (item.stage) console.log(`  Stage: ${item.stage}`);
       if (item.tags.length > 0) console.log(`  Tags: ${item.tags.join(', ')}`);
       if (item.description) console.log(`  ${item.description}`);
       console.log();
@@ -174,6 +184,8 @@ program
   .option('-p, --priority <priority>', 'New priority')
   .option('-P, --parent <parentId>', 'New parent ID')
   .option('--tags <tags>', 'New tags (comma-separated)')
+  .option('-a, --assignee <assignee>', 'New assignee')
+  .option('--stage <stage>', 'New stage')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
     loadData(options.prefix);
@@ -185,6 +197,8 @@ program
     if (options.priority) updates.priority = options.priority as WorkItemPriority;
     if (options.parent !== undefined) updates.parentId = options.parent;
     if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
+    if (options.assignee !== undefined) updates.assignee = options.assignee;
+    if (options.stage !== undefined) updates.stage = options.stage;
     
     const item = db.update(id, updates);
     if (!item) {
