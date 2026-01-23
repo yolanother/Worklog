@@ -20,7 +20,8 @@ function getPrefix(overridePrefix?: string): string {
   return getDefaultPrefix();
 }
 
-const db = new WorklogDatabase();
+// Initialize database with default prefix
+const db = new WorklogDatabase(getDefaultPrefix());
 const dataPath = getDefaultDataPath();
 
 // Load data if it exists

@@ -165,10 +165,13 @@ export class WorklogDatabase {
   import(items: WorkItem[]): void {
     this.clear();
     
+    // Escape special regex characters in prefix
+    const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
     // Find the highest ID number to continue from
     let maxId = 0;
     for (const item of items) {
-      const match = item.id.match(new RegExp(`${this.prefix}-(\\d+)`));
+      const match = item.id.match(new RegExp(`${escapedPrefix}-(\\d+)`));
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxId) {
