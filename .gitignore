@@ -138,3 +138,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 worklog-data.jsonl
+
+# Local config (user should create their own from defaults)
+.worklog/config.yaml

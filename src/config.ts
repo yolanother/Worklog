@@ -10,6 +10,7 @@ import * as readline from 'readline';
 
 const CONFIG_DIR = '.worklog';
 const CONFIG_FILE = 'config.yaml';
+const CONFIG_DEFAULTS_FILE = 'config.defaults.yaml';
 
 /**
  * Get the path to the config directory
@@ -26,6 +27,13 @@ export function getConfigPath(): string {
 }
 
 /**
+ * Get the path to the config defaults file
+ */
+export function getConfigDefaultsPath(): string {
+  return path.join(getConfigDir(), CONFIG_DEFAULTS_FILE);
+}
+
+/**
  * Check if config file exists
  */
 export function configExists(): boolean {
@@ -36,35 +44,56 @@ export function configExists(): boolean {
  * Load configuration from file
  */
 export function loadConfig(): WorklogConfig | null {
-  if (!configExists()) {
+  let config: WorklogConfig | null = null;
+  
+  // First, load defaults if they exist
+  const defaultsPath = getConfigDefaultsPath();
+  if (fs.existsSync(defaultsPath)) {
+    try {
+      const content = fs.readFileSync(defaultsPath, 'utf-8');
+      config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
+    } catch (error) {
+      console.error('Error loading config defaults:', error);
+    }
+  }
+  
+  // Then, load user config and merge with defaults
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const userConfig = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
+      
+      // Merge user config over defaults
+      config = config ? { ...config, ...userConfig } : userConfig;
+    } catch (error) {
+      console.error('Error loading config:', error);
+      return null;
+    }
+  }
+  
+  // If no config was loaded at all, return null
+  if (!config) {
     return null;
   }
-
-  try {
-    const content = fs.readFileSync(getConfigPath(), 'utf-8');
-    const config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
-    
-    // Validate config structure
-    if (!config || typeof config !== 'object') {
-      console.error('Invalid config: must be an object');
-      return null;
-    }
-    
-    if (!config.projectName || typeof config.projectName !== 'string') {
-      console.error('Invalid config: projectName must be a string');
-      return null;
-    }
-    
-    if (!config.prefix || typeof config.prefix !== 'string') {
-      console.error('Invalid config: prefix must be a string');
-      return null;
-    }
-    
-    return config;
-  } catch (error) {
-    console.error('Error loading config:', error);
+  
+  // Validate config structure
+  if (!config || typeof config !== 'object') {
+    console.error('Invalid config: must be an object');
     return null;
   }
+  
+  if (!config.projectName || typeof config.projectName !== 'string') {
+    console.error('Invalid config: projectName must be a string');
+    return null;
+  }
+  
+  if (!config.prefix || typeof config.prefix !== 'string') {
+    console.error('Invalid config: prefix must be a string');
+    return null;
+  }
+  
+  return config;
 }
 
 /**

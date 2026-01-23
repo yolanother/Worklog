@@ -16,12 +16,18 @@ When prompted:
 - **Project name**: Enter your project name (e.g., "My Web App")
 - **Issue ID prefix**: Enter a short prefix (e.g., "WEB", "API", "PROJ")
 
-This creates a `.worklog/config.yaml` file with your configuration:
+This creates a `.worklog/config.yaml` file with your local configuration:
 
 ```yaml
 projectName: My Web App
 prefix: WEB
 ```
+
+**Configuration System**: Worklog uses a two-tier configuration system:
+- `.worklog/config.defaults.yaml` (if present): Team defaults, committed to version control
+- `.worklog/config.yaml`: Your local overrides, not committed to version control
+
+Values in `config.yaml` override those in `config.defaults.yaml`, allowing teams to share defaults while individuals can customize their setup.
 
 ## Using the Default Prefix
 
@@ -131,7 +137,7 @@ npm run cli -- update MOB-0J8L1JQ3H8ZQ2K6D -s completed --prefix MOB
 
 ## Best Practices
 
-1. **Commit Configuration**: Always commit `.worklog/config.yaml` to version control so team members use the same prefix.
+1. **Share Defaults**: If working in a team, commit `.worklog/config.defaults.yaml` to version control so team members share the same default prefix. Individual users can create their own `.worklog/config.yaml` to override values as needed.
 
 2. **Consistent Prefixes**: Use short, meaningful prefixes:
    - `WEB` for web application

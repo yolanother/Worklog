@@ -20,7 +20,14 @@ npm install
 
 ## Configuration
 
-Before using Worklog, you should initialize your project configuration:
+Worklog uses a two-tier configuration system:
+
+1. **Default configuration** (`.worklog/config.defaults.yaml`): Committed to version control and contains the team's default settings
+2. **Local configuration** (`.worklog/config.yaml`): Not committed to version control, contains user-specific overrides
+
+### First-Time Setup
+
+Before using Worklog, initialize your project configuration:
 
 ```bash
 npm run cli -- init
@@ -30,7 +37,7 @@ This will prompt you for:
 - **Project name**: A descriptive name for your project
 - **Issue ID prefix**: A short prefix for your issue IDs (e.g., WI, PROJ, TASK)
 
-The configuration is saved to `.worklog/config.yaml` and should be committed to version control so all team members use the same prefix.
+The configuration is saved to `.worklog/config.yaml` as your local configuration.
 
 **Example:**
 ```
@@ -40,7 +47,18 @@ Issue ID prefix: MP
 
 This will create issues with IDs like `MP-0J8L1JQ3H8ZQ2K6D`, `MP-0J8L1JQ3H8ZQ2K6E`, etc.
 
-If no configuration exists, the system defaults to using `WI` as the prefix.
+### Configuration Override System
+
+The system loads configuration in this order:
+1. First loads `.worklog/config.defaults.yaml` if it exists (team defaults)
+2. Then loads `.worklog/config.yaml` if it exists (your overrides)
+3. Values in `config.yaml` override those in `config.defaults.yaml`
+
+**For teams**: Commit `.worklog/config.defaults.yaml` to share default settings. Team members can then create their own `.worklog/config.yaml` to override specific values as needed.
+
+**For individual users**: If no defaults file exists, just use `npm run cli -- init` to create your local `config.yaml`.
+
+If no configuration exists at all, the system defaults to using `WI` as the prefix.
 
 ## Usage
 
