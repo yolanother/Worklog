@@ -44,27 +44,26 @@ function getPrefix(overridePrefix?: string): string {
   return getDefaultPrefix();
 }
 
-// Initialize database with default prefix
-const db = new WorklogDatabase(getDefaultPrefix());
+// Initialize database with default prefix (persistence and refresh handled automatically)
 const dataPath = getDefaultDataPath();
+let db: WorklogDatabase | null = null;
 
-// Load data if it exists
-function loadData(prefix?: string) {
+// Get or initialize database with the specified prefix
+function getDatabase(prefix?: string): WorklogDatabase {
   const actualPrefix = getPrefix(prefix);
-  db.setPrefix(actualPrefix);
   
-  if (fs.existsSync(dataPath)) {
-    const { items, comments } = importFromJsonl(dataPath);
-    db.import(items);
-    db.importComments(comments);
+  // If db exists and prefix matches, return it
+  if (db && db.getPrefix() === actualPrefix) {
+    return db;
   }
-}
-
-// Save data
-function saveData() {
-  const items = db.getAll();
-  const comments = db.getAllComments();
-  exportToJsonl(items, comments, dataPath);
+  
+  // Create new database instance with the prefix
+  // The database will automatically:
+  // 1. Connect to persistent SQLite storage
+  // 2. Check if JSONL is newer than DB and refresh if needed
+  // 3. Auto-export to JSONL on all write operations
+  db = new WorklogDatabase(actualPrefix);
+  return db;
 }
 
 program
@@ -133,7 +132,7 @@ program
   .option('--stage <stage>', 'Stage of the work item in the workflow')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const item = db.create({
       title: options.title,
@@ -145,8 +144,6 @@ program
       assignee: options.assignee || '',
       stage: options.stage || '',
     });
-    
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -169,7 +166,7 @@ program
   .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const query: WorkItemQuery = {};
     if (options.status) query.status = options.status as WorkItemStatus;
@@ -215,7 +212,7 @@ program
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const item = db.get(id);
     if (!item) {
@@ -260,7 +257,7 @@ program
   .option('--stage <stage>', 'New stage')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const updates: UpdateWorkItemInput = {};
     if (options.title) updates.title = options.title;
@@ -278,8 +275,6 @@ program
       process.exit(1);
     }
     
-    saveData();
-    
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
       outputJson({ success: true, workItem: item });
@@ -295,15 +290,13 @@ program
   .description('Delete a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const deleted = db.delete(id);
     if (!deleted) {
       outputError(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
       process.exit(1);
     }
-    
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -320,7 +313,7 @@ program
   .option('-f, --file <filepath>', 'Output file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     const items = db.getAll();
     const comments = db.getAllComments();
     exportToJsonl(items, comments, options.file);
@@ -346,11 +339,10 @@ program
   .option('-f, --file <filepath>', 'Input file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     const { items, comments } = importFromJsonl(options.file);
     db.import(items);
     db.importComments(comments);
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -379,7 +371,7 @@ program
     
     try {
       // Load current local data
-      loadData(options.prefix);
+      const db = getDatabase(options.prefix);
       const localItems = db.getAll();
       const localComments = db.getAllComments();
       
@@ -502,8 +494,6 @@ program
       db.import(itemMergeResult.merged);
       db.importComments(commentMergeResult.merged);
       
-      // Save merged data
-      saveData();
       if (!isJsonMode) {
         console.log('\nMerged data saved locally');
       }
@@ -561,7 +551,7 @@ commentCommand
   .option('-r, --references <references>', 'Comma-separated list of references (work item IDs, file paths, or URLs)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((workItemId, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const comment = db.createComment({
       workItemId,
@@ -574,8 +564,6 @@ commentCommand
       outputError(`Work item not found: ${workItemId}`, { success: false, error: `Work item not found: ${workItemId}` });
       process.exit(1);
     }
-    
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -592,7 +580,7 @@ commentCommand
   .description('List all comments for a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((workItemId, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const workItem = db.get(workItemId);
     if (!workItem) {
@@ -629,7 +617,7 @@ commentCommand
   .description('Show details of a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const comment = db.getComment(commentId);
     if (!comment) {
@@ -654,7 +642,7 @@ commentCommand
   .option('-r, --references <references>', 'New references (comma-separated)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const updates: UpdateCommentInput = {};
     if (options.author) updates.author = options.author;
@@ -666,8 +654,6 @@ commentCommand
       outputError(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
       process.exit(1);
     }
-    
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -684,15 +670,13 @@ commentCommand
   .description('Delete a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
-    loadData(options.prefix);
+    const db = getDatabase(options.prefix);
     
     const deleted = db.deleteComment(commentId);
     if (!deleted) {
       outputError(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
       process.exit(1);
     }
-    
-    saveData();
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {

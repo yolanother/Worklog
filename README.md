@@ -4,10 +4,11 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 
 ## Features
 
+- **Persistent Database**: SQLite-backed storage that persists across CLI/API executions
 - **API**: REST API built with Express
 - **CLI**: Command-line interface for quick operations
-- **Git-Friendly**: Data stored in JSONL format for easy Git syncing
-- **In-Memory Database**: Fast runtime performance
+- **Git-Friendly**: Data stored in JSONL format for easy Git syncing and collaboration
+- **Auto-Refresh**: Database automatically refreshes from JSONL when file is updated (e.g., after git pull)
 - **Hierarchical Work Items**: Support for parent-child relationships
 - **Comments**: Add comments to work items with markdown support and references
 - **Multi-Project Support**: Configure custom prefixes for issue IDs per project
@@ -59,6 +60,73 @@ The system loads configuration in this order:
 **For individual users**: If no defaults file exists, just use `npm run cli -- init` to create your local `config.yaml`.
 
 If no configuration exists at all, the system defaults to using `WI` as the prefix.
+
+## Data Storage and Persistence
+
+Worklog uses a **dual-storage model** to combine the benefits of persistent databases and Git-friendly text files:
+
+### Storage Architecture
+
+1. **SQLite Database** (`.worklog/worklog.db`)
+   - Primary runtime storage
+   - Persists across CLI and API executions
+   - Fast queries and transactions
+   - Located in `.worklog/worklog.db` (not committed to Git)
+
+2. **JSONL Export** (`.worklog/worklog-data.jsonl`)
+   - Git-friendly text format (one JSON object per line)
+   - Automatically exported on every write operation
+   - Used for collaboration via Git (pull/push)
+   - Located in `.worklog/worklog-data.jsonl` (not committed to Git)
+
+### How It Works
+
+**On Startup (CLI or API)**:
+- Database connects to persistent SQLite file
+- Checks if JSONL file is newer than database's last import
+- If JSONL is newer (e.g., after `git pull`), automatically refreshes database from JSONL
+- If database is empty and JSONL exists, imports from JSONL
+
+**On Write Operations** (create/update/delete):
+- Changes saved to database immediately
+- Database automatically exports current state to JSONL
+- JSONL file stays in sync with database
+
+### Source of Truth Model
+
+- **Database**: Runtime source of truth for CLI and API operations
+- **JSONL**: Import/export boundary for Git workflows
+- Both stay synchronized automatically
+
+### Git Workflow
+
+The JSONL format enables team collaboration:
+
+```bash
+# Pull latest changes from team
+git pull
+
+# Your next CLI/API call automatically refreshes from the updated JSONL
+npm run cli -- list
+
+# Make changes
+npm run cli -- create -t "New task"
+
+# JSONL is automatically updated, commit and push
+git add .worklog/worklog-data.jsonl
+git commit -m "Add new task"
+git push
+```
+
+The `sync` command provides automated Git workflow:
+
+```bash
+# Pull, merge, and push in one command
+npm run cli -- sync
+
+# Dry run to preview changes
+npm run cli -- sync --dry-run
+```
 
 ## Usage
 
