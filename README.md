@@ -29,6 +29,13 @@ npm start
 
 The server will run on `http://localhost:3000` by default. It automatically loads data from `worklog-data.jsonl` if it exists.
 
+**Note:** The project will automatically build before starting. If you prefer to build manually, run:
+
+```bash
+npm run build
+npm start
+```
+
 #### API Endpoints
 
 - `GET /health` - Health check
