@@ -7,14 +7,27 @@ import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery } from './types.js';
+import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
 import * as fs from 'fs';
 
 const program = new Command();
+
+// Get prefix from config or use default
+function getPrefix(overridePrefix?: string): string {
+  if (overridePrefix) {
+    return overridePrefix.toUpperCase();
+  }
+  return getDefaultPrefix();
+}
+
 const db = new WorklogDatabase();
 const dataPath = getDefaultDataPath();
 
 // Load data if it exists
-function loadData() {
+function loadData(prefix?: string) {
+  const actualPrefix = getPrefix(prefix);
+  db.setPrefix(actualPrefix);
+  
   if (fs.existsSync(dataPath)) {
     const items = importFromJsonl(dataPath);
     db.import(items);
@@ -32,6 +45,28 @@ program
   .description('CLI for Worklog - a simple issue tracker')
   .version('1.0.0');
 
+// Initialize configuration
+program
+  .command('init')
+  .description('Initialize worklog configuration')
+  .action(async () => {
+    if (configExists()) {
+      const config = loadConfig();
+      console.log('Configuration already exists:');
+      console.log(`  Project: ${config?.projectName}`);
+      console.log(`  Prefix: ${config?.prefix}`);
+      console.log('\nTo reinitialize, delete .worklog/config.yaml first.');
+      return;
+    }
+    
+    try {
+      await initConfig();
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
 // Create a new work item
 program
   .command('create')
@@ -42,8 +77,9 @@ program
   .option('-p, --priority <priority>', 'Priority (low, medium, high, critical)', 'medium')
   .option('-P, --parent <parentId>', 'Parent work item ID')
   .option('--tags <tags>', 'Comma-separated list of tags')
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData();
+    loadData(options.prefix);
     
     const item = db.create({
       title: options.title,
@@ -67,8 +103,9 @@ program
   .option('-p, --priority <priority>', 'Filter by priority')
   .option('-P, --parent <parentId>', 'Filter by parent ID (use "null" for root items)')
   .option('--tags <tags>', 'Filter by tags (comma-separated)')
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData();
+    loadData(options.prefix);
     
     const query: WorkItemQuery = {};
     if (options.status) query.status = options.status as WorkItemStatus;
@@ -103,8 +140,9 @@ program
   .command('show <id>')
   .description('Show details of a work item')
   .option('-c, --children', 'Also show children')
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
-    loadData();
+    loadData(options.prefix);
     
     const item = db.get(id);
     if (!item) {
@@ -135,8 +173,9 @@ program
   .option('-p, --priority <priority>', 'New priority')
   .option('-P, --parent <parentId>', 'New parent ID')
   .option('--tags <tags>', 'New tags (comma-separated)')
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
-    loadData();
+    loadData(options.prefix);
     
     const updates: UpdateWorkItemInput = {};
     if (options.title) updates.title = options.title;
@@ -161,8 +200,9 @@ program
 program
   .command('delete <id>')
   .description('Delete a work item')
-  .action((id) => {
-    loadData();
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((id, options) => {
+    loadData(options.prefix);
     
     const deleted = db.delete(id);
     if (!deleted) {
@@ -179,8 +219,9 @@ program
   .command('export')
   .description('Export work items to JSONL file')
   .option('-f, --file <filepath>', 'Output file path', dataPath)
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
-    loadData();
+    loadData(options.prefix);
     const items = db.getAll();
     exportToJsonl(items, options.file);
     console.log(`Exported ${items.length} work items to ${options.file}`);
@@ -191,7 +232,9 @@ program
   .command('import')
   .description('Import work items from JSONL file')
   .option('-f, --file <filepath>', 'Input file path', dataPath)
+  .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
+    loadData(options.prefix);
     const items = importFromJsonl(options.file);
     db.import(items);
     saveData();
