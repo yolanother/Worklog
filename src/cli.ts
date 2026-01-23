@@ -56,18 +56,19 @@ function formatValue(value: any): string {
   return String(value);
 }
 
+// Priority ordering for sorting work items
+const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+
+// Helper function to sort items by priority and creation date
+function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
+  const aPriority = PRIORITY_ORDER[a.priority] ?? 2;
+  const bPriority = PRIORITY_ORDER[b.priority] ?? 2;
+  if (aPriority !== bPriority) return aPriority - bPriority;
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
 // Helper to display work items in a tree structure
-function displayItemTree(items: WorkItem[], db: WorklogDatabase, indent: string = '', isLast: boolean = true): void {
-  // Group items by parentId
-  const itemsByParent = new Map<string | null, WorkItem[]>();
-  items.forEach(item => {
-    const parentId = item.parentId;
-    if (!itemsByParent.has(parentId)) {
-      itemsByParent.set(parentId, []);
-    }
-    itemsByParent.get(parentId)!.push(item);
-  });
-  
+function displayItemTree(items: WorkItem[]): void {
   // Display root items (those without parents or whose parents are not in the filtered list)
   const rootItems = items.filter(item => {
     if (item.parentId === null) return true;
@@ -76,21 +77,15 @@ function displayItemTree(items: WorkItem[], db: WorklogDatabase, indent: string 
   });
   
   // Sort by priority and creation date
-  rootItems.sort((a, b) => {
-    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    const aPriority = priorityOrder[a.priority] ?? 2;
-    const bPriority = priorityOrder[b.priority] ?? 2;
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  });
+  rootItems.sort(sortByPriorityAndDate);
   
   rootItems.forEach((item, index) => {
     const isLastItem = index === rootItems.length - 1;
-    displayItemNode(item, items, db, '', isLastItem);
+    displayItemNode(item, items, '', isLastItem);
   });
 }
 
-function displayItemNode(item: WorkItem, allItems: WorkItem[], db: WorklogDatabase, indent: string = '', isLast: boolean = true): void {
+function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
   console.log(`${prefix}${chalk.bold(item.id)} ${item.title}`);
@@ -104,17 +99,11 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], db: WorklogDataba
   const children = allItems.filter(i => i.parentId === item.id);
   if (children.length > 0) {
     // Sort children by priority and creation date
-    children.sort((a, b) => {
-      const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-      const aPriority = priorityOrder[a.priority] ?? 2;
-      const bPriority = priorityOrder[b.priority] ?? 2;
-      if (aPriority !== bPriority) return aPriority - bPriority;
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
+    children.sort(sortByPriorityAndDate);
     
     children.forEach((child, childIndex) => {
       const isLastChild = childIndex === children.length - 1;
-      displayItemNode(child, allItems, db, detailIndent, isLastChild);
+      displayItemNode(child, allItems, detailIndent, isLastChild);
     });
   }
 }
@@ -938,7 +927,7 @@ program
       }
       
       console.log(`\nFound ${items.length} in-progress work item(s):\n`);
-      displayItemTree(items, db);
+      displayItemTree(items);
       console.log();
     }
   });
