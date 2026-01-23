@@ -377,6 +377,61 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
     // Get the current branch name
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
+
+    // Ensure our branch contains the latest remote commits so push is fast-forward.
+    // We do this after committing so we can rebase the sync commit on top of origin.
+    await execAsync(`git fetch origin ${escapeShellArg(branch)}`);
+
+    const remoteRef = `origin/${branch}`;
+    let remoteExists = true;
+    try {
+      await execAsync(`git rev-parse --verify ${escapeShellArg(remoteRef)}`);
+    } catch {
+      remoteExists = false;
+    }
+
+    if (remoteExists) {
+      const { stdout: counts } = await execAsync(
+        `git rev-list --left-right --count HEAD...${escapeShellArg(remoteRef)}`
+      );
+      const [aheadStr, behindStr] = counts.trim().split(/\s+/);
+      const behind = Number.parseInt(behindStr || '0', 10);
+
+      if (behind > 0) {
+        // Rebase our local commits on top of the remote branch.
+        // If the user has unrelated local changes, stash them (excluding the data file).
+        let stashRef: string | null = null;
+        try {
+          const { stdout: status } = await execAsync('git status --porcelain');
+          if (status.trim()) {
+            const exclude = `:(exclude)${relativePath}`;
+            const label = `worklog-sync-auto-stash:${new Date().toISOString()}`;
+            const { stdout: stashOut } = await execAsync(
+              `git stash push -u -m ${escapeShellArg(label)} -- . ${escapeShellArg(exclude)}`
+            );
+            if (!stashOut.includes('No local changes to save')) {
+              const { stdout: refOut } = await execAsync('git stash list -n 1 --pretty=format:%gd');
+              stashRef = refOut.trim() || null;
+            }
+          }
+
+          try {
+            await execAsync(`git rebase ${escapeShellArg(remoteRef)}`);
+          } catch (rebaseError) {
+            try {
+              await execAsync('git rebase --abort');
+            } catch {
+              // ignore
+            }
+            throw rebaseError;
+          }
+        } finally {
+          if (stashRef) {
+            await execAsync(`git stash pop ${escapeShellArg(stashRef)}`);
+          }
+        }
+      }
+    }
     
     // Push to remote on the current branch
     await execAsync(`git push origin ${escapeShellArg(branch)}`);
