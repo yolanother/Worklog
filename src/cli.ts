@@ -135,7 +135,9 @@ function getDatabase(prefix?: string): WorklogDatabase {
   // 1. Connect to persistent SQLite storage
   // 2. Check if JSONL is newer than DB and refresh if needed
   // 3. Auto-export to JSONL on all write operations
-  db = new WorklogDatabase(actualPrefix);
+  // When in JSON mode, suppress console output to avoid interfering with JSON parsing
+  const isJsonMode = program.opts().json;
+  db = new WorklogDatabase(actualPrefix, undefined, undefined, true, isJsonMode);
   return db;
 }
 
