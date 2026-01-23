@@ -170,14 +170,12 @@ function installPrePushHook(options: { silent: boolean }): { installed: boolean;
     `  exit 0\n` +
     `fi\n` +
     `\n` +
-    `if command -v wf >/dev/null 2>&1; then\n` +
-    `  WL=wf\n` +
-    `elif command -v wl >/dev/null 2>&1; then\n` +
+    `if command -v wl >/dev/null 2>&1; then\n` +
     `  WL=wl\n` +
     `elif command -v worklog >/dev/null 2>&1; then\n` +
     `  WL=worklog\n` +
     `else\n` +
-    `  echo \"worklog: wf/wl/worklog not found; skipping pre-push sync\" >&2\n` +
+    `  echo \"worklog: wl/worklog not found; skipping pre-push sync\" >&2\n` +
     `  exit 0\n` +
     `fi\n` +
     `\n` +
