@@ -97,7 +97,7 @@ function displayItemTree(items: WorkItem[]): void {
 function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
-  console.log(`${prefix}${item.title} ${chalk.bold(`(${item.id})`)}`);
+  console.log(`${prefix}${chalk.greenBright(item.title)} ${chalk.bold(`(${item.id})`)}`);
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Priority: ${item.priority}`);
