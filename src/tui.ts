@@ -7,7 +7,7 @@ import blessed from 'blessed';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import * as fs from 'fs';
-import { WorkItem } from './types.js';
+import { WorkItem, WorkItemStatus } from './types.js';
 
 const db = new WorklogDatabase();
 const dataPath = getDefaultDataPath();
@@ -317,8 +317,8 @@ function updateStatusDialog(index: number) {
   });
 
   list.on('select', (element, index) => {
-    const statuses = ['open', 'in-progress', 'completed', 'blocked'];
-    db.update(item.id, { status: statuses[index] as any });
+    const statuses: WorkItemStatus[] = ['open', 'in-progress', 'completed', 'blocked'];
+    db.update(item.id, { status: statuses[index] });
     exportToJsonl(db.getAll(), dataPath);
     refreshList();
     list.destroy();

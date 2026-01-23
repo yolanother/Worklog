@@ -4,7 +4,7 @@
 
 import express, { Request, Response } from 'express';
 import { WorklogDatabase } from './database.js';
-import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery } from './types.js';
+import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, WorkItemStatus, WorkItemPriority } from './types.js';
 import { exportToJsonl, importFromJsonl, getDefaultDataPath } from './jsonl.js';
 
 export function createAPI(db: WorklogDatabase) {
@@ -67,10 +67,10 @@ export function createAPI(db: WorklogDatabase) {
     const query: WorkItemQuery = {};
     
     if (req.query.status) {
-      query.status = req.query.status as any;
+      query.status = req.query.status as WorkItemStatus;
     }
     if (req.query.priority) {
-      query.priority = req.query.priority as any;
+      query.priority = req.query.priority as WorkItemPriority;
     }
     if (req.query.parentId !== undefined) {
       query.parentId = req.query.parentId === 'null' ? null : req.query.parentId as string;

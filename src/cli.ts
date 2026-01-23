@@ -6,6 +6,7 @@
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
+import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery } from './types.js';
 import * as fs from 'fs';
 
 const program = new Command();
@@ -47,8 +48,8 @@ program
     const item = db.create({
       title: options.title,
       description: options.description,
-      status: options.status as any,
-      priority: options.priority as any,
+      status: options.status as WorkItemStatus,
+      priority: options.priority as WorkItemPriority,
       parentId: options.parent || null,
       tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
     });
@@ -69,9 +70,9 @@ program
   .action((options) => {
     loadData();
     
-    const query: any = {};
-    if (options.status) query.status = options.status;
-    if (options.priority) query.priority = options.priority;
+    const query: WorkItemQuery = {};
+    if (options.status) query.status = options.status as WorkItemStatus;
+    if (options.priority) query.priority = options.priority as WorkItemPriority;
     if (options.parent !== undefined) {
       query.parentId = options.parent === 'null' ? null : options.parent;
     }
@@ -137,11 +138,11 @@ program
   .action((id, options) => {
     loadData();
     
-    const updates: any = {};
+    const updates: UpdateWorkItemInput = {};
     if (options.title) updates.title = options.title;
     if (options.description) updates.description = options.description;
-    if (options.status) updates.status = options.status;
-    if (options.priority) updates.priority = options.priority;
+    if (options.status) updates.status = options.status as WorkItemStatus;
+    if (options.priority) updates.priority = options.priority as WorkItemPriority;
     if (options.parent !== undefined) updates.parentId = options.parent;
     if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
     
