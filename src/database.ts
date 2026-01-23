@@ -186,11 +186,12 @@ export class WorklogDatabase {
     
     // Escape special regex characters in prefix
     const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const workItemIdPattern = new RegExp(`${escapedPrefix}-(\\d+)`);
     
     // Find the highest ID number to continue from
     let maxId = 0;
     for (const item of items) {
-      const match = item.id.match(new RegExp(`${escapedPrefix}-(\\d+)`));
+      const match = item.id.match(workItemIdPattern);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxId) {
@@ -207,6 +208,14 @@ export class WorklogDatabase {
    * Create a new comment
    */
   createComment(input: CreateCommentInput): Comment | null {
+    // Validate required fields
+    if (!input.author || input.author.trim() === '') {
+      throw new Error('Author is required');
+    }
+    if (!input.comment || input.comment.trim() === '') {
+      throw new Error('Comment text is required');
+    }
+    
     // Verify that the work item exists
     if (!this.items.has(input.workItemId)) {
       return null;
