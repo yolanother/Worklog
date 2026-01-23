@@ -64,12 +64,13 @@ function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): vo
   console.log('\n' + chalk.bold('Conflict Resolution Details:'));
   console.log(chalk.gray('━'.repeat(80)));
   
+  // Create a map for O(1) lookups of work items by ID
+  const itemsById = new Map(mergedItems.map(item => [item.id, item]));
+  
   result.conflictDetails.forEach((conflict, index) => {
     // Find the work item in the merged items to get the title
-    const workItem = mergedItems.find(item => item.id === conflict.itemId);
-    const displayText = workItem 
-      ? `${workItem.title} (${conflict.itemId})`
-      : conflict.itemId;
+    const workItem = itemsById.get(conflict.itemId);
+    const displayText = workItem ? `${workItem.title} (${conflict.itemId})` : conflict.itemId;
     console.log(chalk.bold(`\n${index + 1}. Work Item: ${displayText}`));
     
     if (conflict.conflictType === 'same-timestamp') {
