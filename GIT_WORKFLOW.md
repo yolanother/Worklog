@@ -24,7 +24,7 @@ The `sync` command automatically pulls the latest changes, merges them with your
 
 ```bash
 # Sync your work items with the team
-npm run cli -- sync
+worklog sync
 
 # This will:
 # 1. Pull the latest .worklog/worklog-data.jsonl from git
@@ -37,10 +37,10 @@ npm run cli -- sync
 
 ```bash
 # Preview what would be synced without making changes
-npm run cli -- sync --dry-run
+worklog sync --dry-run
 
 # Sync but don't push (useful for reviewing changes first)
-npm run cli -- sync --no-push
+worklog sync --no-push
 ```
 
 ### 1b. Manual Pull (Alternative)
@@ -53,7 +53,7 @@ git pull origin main
 
 # The .worklog/worklog-data.jsonl file will be automatically updated
 # View the latest items
-npm run cli -- list
+worklog list
 ```
 
 **Note**: Manual git pull may result in merge conflicts if the same work items are modified locally and remotely. The `sync` command handles this automatically.
@@ -62,7 +62,7 @@ npm run cli -- list
 
 ```bash
 # Create a new task for today's work
-npm run cli -- create \
+worklog create \
   -t "Implement password reset feature" \
   -d "Allow users to reset their password via email" \
   -s open \
@@ -70,33 +70,33 @@ npm run cli -- create \
   --tags "security,backend"
 
 # Create sub-tasks
-npm run cli -- create \
+worklog create \
   -t "Add password reset endpoint" \
   -P WI-0J8L1JQ3H8ZQ2K6D \
   -s open \
   -p high
 
-npm run cli -- create \
+worklog create \
   -t "Send password reset email" \
   -P WI-0J8L1JQ3H8ZQ2K6D \
   -s open \
   -p medium
 
 # View your work
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### 3. Update Status as You Work
 
 ```bash
 # Start working on a task
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 
 # Mark it complete when done
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s completed
+worklog update WI-0J8L1JQ3H8ZQ2K6E -s completed
 
 # View all in-progress items
-npm run cli -- list -s in-progress
+worklog list -s in-progress
 ```
 
 ### 4. Commit Your Changes
@@ -124,16 +124,16 @@ Team lead creates the work breakdown:
 
 ```bash
 # Create epic
-npm run cli -- create \
+worklog create \
   -t "Q1 2024 Release" \
   -d "Features for Q1 release" \
   -s open \
   -p critical
 
 # Break down into features
-npm run cli -- create -t "User Authentication" -P WI-0J8L1JQ3H8ZQ2K6D -p high
-npm run cli -- create -t "Admin Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -p high
-npm run cli -- create -t "Reporting Module" -P WI-0J8L1JQ3H8ZQ2K6D -p medium
+worklog create -t "User Authentication" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+worklog create -t "Admin Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+worklog create -t "Reporting Module" -P WI-0J8L1JQ3H8ZQ2K6D -p medium
 
 # Commit and push
 git add .worklog/worklog-data.jsonl
@@ -148,10 +148,10 @@ Team members pull and pick up tasks:
 git pull origin main
 
 # View available work
-npm run cli -- list -s open
+worklog list -s open
 
 # Pick a task and update status
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 git add .worklog/worklog-data.jsonl
 git commit -m "Start working on user authentication"
 git push origin main
@@ -167,7 +167,7 @@ The `sync` command automatically handles concurrent updates:
 # Teammate's change: priority = "high"
 
 # When you run sync
-npm run cli -- sync
+worklog sync
 
 # The sync command will:
 # 1. Detect the conflict
@@ -210,12 +210,12 @@ git push origin main
 
 ```bash
 # Create a backup before major changes
-npm run cli -- export -f backups/before-q1-planning.jsonl
+worklog export -f backups/before-q1-planning.jsonl
 git add backups/
 git commit -m "Backup work items before Q1 planning"
 
 # Archive completed work for the quarter
-npm run cli -- list -s completed > completed-q1.txt
+worklog list -s completed > completed-q1.txt
 git add completed-q1.txt
 git commit -m "Archive Q1 completed work"
 ```
@@ -255,7 +255,7 @@ jobs:
 
 ## Best Practices
 
-1. **Use Sync Command**: Use `npm run cli -- sync` instead of manual git operations for automatic conflict resolution
+1. **Use Sync Command**: Use `worklog sync` instead of manual git operations for automatic conflict resolution
 2. **Sync Frequently**: Run sync before starting work and after completing tasks to minimize conflicts
 3. **Review Before Pushing**: Use `--dry-run` to preview changes before syncing
 4. **Commit Frequently**: Commit work item updates separately from code changes for clearer history
@@ -295,19 +295,19 @@ Conflict resolution:
 
 ```bash
 # Standard sync (pull, merge, push)
-npm run cli -- sync
+worklog sync
 
 # Preview changes without making any modifications
-npm run cli -- sync --dry-run
+worklog sync --dry-run
 
 # Sync but don't push (review changes first)
-npm run cli -- sync --no-push
+worklog sync --no-push
 
 # Sync a custom data file
-npm run cli -- sync -f custom-data.jsonl
+worklog sync -f custom-data.jsonl
 
 # Combine options
-npm run cli -- sync --dry-run --prefix PROJ
+worklog sync --dry-run --prefix PROJ
 ```
 
 ### When to Use Sync
@@ -325,11 +325,11 @@ npm run cli -- sync --dry-run --prefix PROJ
 ```bash
 # Export from old project
 cd old-project
-npm run cli -- export -f ~/transfer.jsonl
+worklog export -f ~/transfer.jsonl
 
 # Import to new project
 cd new-project
-npm run cli -- import -f ~/transfer.jsonl
+worklog import -f ~/transfer.jsonl
 git add .worklog/worklog-data.jsonl
 git commit -m "Import work items from old project"
 ```
@@ -343,7 +343,7 @@ You can write scripts to sync with other tools:
 # sync-to-jira.sh
 # Example: Export open items for external tracking
 
-npm run cli -- list -s open -p high | \
+worklog list -s open -p high | \
   grep '^\[[A-Z0-9]\+-' | \
   while read line; do
     # Parse and send to external API
@@ -359,7 +359,7 @@ npm run cli -- list -s open -p high | \
 # If data gets corrupted
 git checkout HEAD -- .worklog/worklog-data.jsonl
 # Or restore from a backup
-npm run cli -- import -f backups/last-good.jsonl
+worklog import -f backups/last-good.jsonl
 ```
 
 ### Find Lost Work Items

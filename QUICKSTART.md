@@ -10,7 +10,14 @@ npm install
 
 # Build the project
 npm run build
+
+# Install CLI globally (optional, for easier access)
+npm install -g .
+# or for development
+npm link
 ```
+
+**Note:** After installing globally, you can use `worklog` or `wl` commands directly. If you skip the global install, use `npm run cli -- <command>` for development.
 
 ## Your First Work Item
 
@@ -18,16 +25,16 @@ npm run build
 
 ```bash
 # Create your first work item
-npm run cli -- create -t "My first task" -d "Let's get started!"
+worklog create -t "My first task" -d "Let's get started!"
 
 # See it in the list
-npm run cli -- list
+worklog list
 
 # Update its status
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Mark it complete
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s completed
 ```
 
 ### Using the API
@@ -53,18 +60,18 @@ curl http://localhost:3000/items | jq
 
 ```bash
 # Create an epic
-npm run cli -- create -t "Build MVP" -p critical
+worklog create -t "Build MVP" -p critical
 
 # Add features under it
-npm run cli -- create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6D -p high
-npm run cli -- create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+worklog create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+worklog create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6D -p high
 
 # Add tasks under features
-npm run cli -- create -t "Design login form" -P WI-0J8L1JQ3H8ZQ2K6E -p medium
-npm run cli -- create -t "Implement auth API" -P WI-0J8L1JQ3H8ZQ2K6E -p high
+worklog create -t "Design login form" -P WI-0J8L1JQ3H8ZQ2K6E -p medium
+worklog create -t "Implement auth API" -P WI-0J8L1JQ3H8ZQ2K6E -p high
 
 # View the hierarchy
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ## Working with Git
@@ -79,35 +86,35 @@ git push
 
 # Team members can pull and see your work items
 git pull
-npm run cli -- list
+worklog list
 ```
 
 ## Common Commands
 
 ```bash
 # List all open tasks
-npm run cli -- list -s open
+worklog list -s open
 
 # List high priority items
-npm run cli -- list -p high
+worklog list -p high
 
 # Show root items only (no parent)
-npm run cli -- list -P null
+worklog list -P null
 
 # View a specific item with its children
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 
 # Update multiple fields
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "All done!"
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "All done!"
 
 # Delete a work item
-npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6E
+worklog delete WI-0J8L1JQ3H8ZQ2K6E
 
 # Export to backup
-npm run cli -- export -f backup.jsonl
+worklog export -f backup.jsonl
 
 # Import from backup
-npm run cli -- import -f backup.jsonl
+worklog import -f backup.jsonl
 ```
 
 ## Next Steps

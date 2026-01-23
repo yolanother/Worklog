@@ -138,16 +138,16 @@ Worklog/
 ### Quick CLI Usage
 ```bash
 # Create items
-npm run cli -- create -t "My task" -d "Description"
+worklog create -t "My task" -d "Description"
 
 # List items
-npm run cli -- list -s open -p high
+worklog list -s open -p high
 
 # Update status
-npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed
+worklog update WI-0J8L1JQ3H8ZQ2K6D -s completed
 
 # View hierarchy
-npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
+worklog show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### Quick API Usage
@@ -168,7 +168,7 @@ curl http://localhost:3000/items
 
 ```bash
 # 1. Create/update items
-npm run cli -- create -t "New feature"
+worklog create -t "New feature"
 
 # 2. Commit changes
 git add .worklog/worklog-data.jsonl
