@@ -428,13 +428,19 @@ program
       }
       const commentMergeResult = mergeComments(localComments, remoteComments);
       
-      // Calculate statistics
+      // Calculate statistics (best-effort; merge logic is heuristic)
+      const itemsAdded = itemMergeResult.merged.length - localItems.length;
+      const itemsUpdated = itemMergeResult.conflicts.filter(c => c.includes('Conflicting fields') || c.includes('Same updatedAt')).length;
+      const itemsUnchanged = Math.max(0, localItems.length - Math.max(0, itemsUpdated));
+      const commentsAdded = commentMergeResult.merged.length - localComments.length;
+      const commentsUnchanged = Math.max(0, localComments.length - Math.max(0, commentsAdded));
+
       const result: SyncResult = {
-        itemsAdded: itemMergeResult.merged.length - localItems.length,
-        itemsUpdated: itemMergeResult.conflicts.filter(c => c.includes('Remote version is newer')).length,
-        itemsUnchanged: localItems.length - itemMergeResult.conflicts.filter(c => c.includes('Local version is newer')).length,
-        commentsAdded: commentMergeResult.merged.length - localComments.length,
-        commentsUnchanged: localComments.length,
+        itemsAdded,
+        itemsUpdated,
+        itemsUnchanged,
+        commentsAdded,
+        commentsUnchanged,
         conflicts: itemMergeResult.conflicts
       };
       

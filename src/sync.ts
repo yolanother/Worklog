@@ -50,6 +50,33 @@ function isDefaultValue(value: any, field: string): boolean {
   return false;
 }
 
+function stableValueKey(value: unknown): string {
+  if (value === undefined) return 'u';
+  if (value === null) return 'n';
+  if (Array.isArray(value)) {
+    return `a:${JSON.stringify([...value].map(v => String(v)).sort())}`;
+  }
+  return `v:${JSON.stringify(value)}`;
+}
+
+function stableItemKey(item: WorkItem): string {
+  // Keep this stable across instances even if property insertion order differs.
+  // Tags are compared as a set.
+  const normalized: WorkItem = {
+    ...item,
+    tags: [...(item.tags || [])].slice().sort(),
+  };
+  const keys = Object.keys(normalized).sort();
+  return JSON.stringify(normalized, keys);
+}
+
+function mergeTags(a: string[] | undefined, b: string[] | undefined): string[] {
+  const out = new Set<string>();
+  for (const t of a || []) out.add(t);
+  for (const t of b || []) out.add(t);
+  return Array.from(out).sort();
+}
+
 /**
  * Merge two sets of work items with intelligent field-level conflict resolution
  * Strategy: For each field, prefer non-default values, or use the value from the newer version
@@ -78,15 +105,62 @@ export function mergeWorkItems(
       // Item exists in both - perform intelligent field-level merge
       const localUpdated = new Date(localItem.updatedAt).getTime();
       const remoteUpdated = new Date(remoteItem.updatedAt).getTime();
-      
-      if (JSON.stringify(localItem) === JSON.stringify(remoteItem)) {
+
+      if (stableItemKey(localItem) === stableItemKey(remoteItem)) {
         // Items are identical - no action needed
         return;
       }
       
       if (localUpdated === remoteUpdated) {
-        // Same timestamp but different content - keep local version
-        conflicts.push(`${remoteItem.id}: Same updatedAt but different content - using local version`);
+        // Same timestamp but different content - merge deterministically and bump updatedAt.
+        // This avoids "permanent divergence" across instances where the record differs but
+        // timestamps prevent a clear winner.
+        const merged: WorkItem = { ...localItem };
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
+        const mergedFields: string[] = [];
+
+        for (const field of fields) {
+          const localValue = localItem[field];
+          const remoteValue = remoteItem[field];
+          const valuesEqual = stableValueKey(localValue) === stableValueKey(remoteValue);
+          if (valuesEqual) continue;
+
+          if (field === 'tags') {
+            (merged as any)[field] = mergeTags(localValue as any, remoteValue as any);
+            mergedFields.push('tags (union)');
+            continue;
+          }
+
+          const localIsDefault = isDefaultValue(localValue, field);
+          const remoteIsDefault = isDefaultValue(remoteValue, field);
+
+          if (localIsDefault && !remoteIsDefault) {
+            (merged as any)[field] = remoteValue;
+            mergedFields.push(`${field} (from remote)`);
+          } else if (!localIsDefault && remoteIsDefault) {
+            mergedFields.push(`${field} (from local)`);
+          } else {
+            // Deterministic tie-breaker: choose lexicographically by serialized value.
+            const localKey = stableValueKey(localValue);
+            const remoteKey = stableValueKey(remoteValue);
+            if (remoteKey > localKey) {
+              (merged as any)[field] = remoteValue;
+              mergedFields.push(`${field} (tie-break: remote)`);
+            } else {
+              mergedFields.push(`${field} (tie-break: local)`);
+            }
+          }
+        }
+
+        // Bump updatedAt so next sync has an unambiguous winner.
+        merged.updatedAt = new Date().toISOString();
+        merged.createdAt = localItem.createdAt;
+        mergedMap.set(remoteItem.id, merged);
+
+        conflicts.push(`${remoteItem.id}: Same updatedAt but different content - merged deterministically and bumped updatedAt`);
+        if (mergedFields.length > 0) {
+          conflicts.push(`${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`);
+        }
       } else {
         // Different timestamps - perform field-by-field intelligent merge
         const isRemoteNewer = remoteUpdated > localUpdated;
@@ -112,6 +186,12 @@ export function mergeWorkItems(
             // Values differ - decide which to use
             const localIsDefault = isDefaultValue(localValue, field);
             const remoteIsDefault = isDefaultValue(remoteValue, field);
+
+            if (field === 'tags' && Array.isArray(localValue) && Array.isArray(remoteValue)) {
+              (merged as any)[field] = mergeTags(localValue, remoteValue);
+              mergedFields.push('tags (union)');
+              continue;
+            }
             
             if (localIsDefault && !remoteIsDefault) {
               // Remote has a value, local is default - use remote
@@ -256,20 +336,39 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
   try {
     // Check if we're in a git repository
     await execAsync('git rev-parse --git-dir');
+
+    // Get repository root and compute repo-relative path (more reliable for pathspec)
+    const { stdout: repoRoot } = await execAsync('git rev-parse --show-toplevel');
+    const repoRootPath = repoRoot.trim();
+    const absolutePath = path.resolve(dataFilePath);
+    const relativePath = path.relative(repoRootPath, absolutePath);
+    const escapedRelativePath = escapeShellArg(relativePath);
     
-    // Escape the file path for safe shell usage
-    const escapedFilePath = escapeShellArg(dataFilePath);
-    
-    // Check if there are changes to commit
-    const { stdout: statusOutput } = await execAsync(`git status --porcelain ${escapedFilePath}`);
-    
-    if (!statusOutput.trim()) {
-      // No changes to commit
-      return;
+    // Determine if file is already tracked. If it's ignored + untracked, git status won't show it,
+    // so we still need to force-add it for sync to work across instances.
+    let isTracked = true;
+    try {
+      await execAsync(`git ls-files --error-unmatch -- ${escapedRelativePath}`);
+    } catch {
+      isTracked = false;
     }
-    
-    // Add the file
-    await execAsync(`git add ${escapedFilePath}`);
+
+    if (isTracked) {
+      const { stdout: statusOutput } = await execAsync(`git status --porcelain -- ${escapedRelativePath}`);
+      if (!statusOutput.trim()) {
+        return;
+      }
+      await execAsync(`git add -- ${escapedRelativePath}`);
+    } else {
+      if (!fs.existsSync(absolutePath)) {
+        return;
+      }
+      await execAsync(`git add -f -- ${escapedRelativePath}`);
+      const { stdout: staged } = await execAsync(`git diff --cached --name-only -- ${escapedRelativePath}`);
+      if (!staged.trim()) {
+        return;
+      }
+    }
     
     // Commit the changes with escaped message
     const escapedMessage = escapeShellArg(commitMessage);

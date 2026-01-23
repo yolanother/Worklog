@@ -141,5 +141,5 @@ vite.config.ts.timestamp-*
 # Local config (user should create their own from defaults)
 .worklog/config.yaml
 
-# Data file (user's work items and comments)
-.worklog/worklog-data.jsonl
+# Data file (work items and comments)
+# Note: kept in git so sync works across instances.
