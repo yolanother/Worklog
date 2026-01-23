@@ -137,7 +137,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-worklog-data.jsonl
 
 # Local config (user should create their own from defaults)
 .worklog/config.yaml
+
+# Data file (user's work items and comments)
+.worklog/worklog-data.jsonl

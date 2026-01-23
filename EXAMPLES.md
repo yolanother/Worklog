@@ -186,7 +186,7 @@ npm run cli -- create -t "Design profile layout" -P WI-0J8L1JQ3H8ZQ2K6D
 npm run cli -- create -t "Implement profile API" -P WI-0J8L1JQ3H8ZQ2K6D
 
 # 2. Commit to Git
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Add user profile work items"
 
 # 3. Push to share with team
@@ -197,7 +197,7 @@ git pull origin main
 npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 
 # 5. Commit the update
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Start working on profile layout"
 git push origin main
 ```

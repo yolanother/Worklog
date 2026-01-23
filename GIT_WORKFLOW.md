@@ -27,7 +27,7 @@ The `sync` command automatically pulls the latest changes, merges them with your
 npm run cli -- sync
 
 # This will:
-# 1. Pull the latest worklog-data.jsonl from git
+# 1. Pull the latest .worklog/worklog-data.jsonl from git
 # 2. Merge with your local changes
 # 3. Resolve conflicts using updatedAt timestamps (newer wins)
 # 4. Push the merged data back to git
@@ -51,7 +51,7 @@ Alternatively, you can manually pull changes:
 # Pull the latest work items from your team
 git pull origin main
 
-# The worklog-data.jsonl file will be automatically updated
+# The .worklog/worklog-data.jsonl file will be automatically updated
 # View the latest items
 npm run cli -- list
 ```
@@ -103,7 +103,7 @@ npm run cli -- list -s in-progress
 
 ```bash
 # Check what changed
-git diff worklog-data.jsonl
+git diff .worklog/worklog-data.jsonl
 
 # The diff shows only the lines that changed - very Git-friendly!
 # Example diff:
@@ -111,7 +111,7 @@ git diff worklog-data.jsonl
 # +{"id":"WI-0J8L1JQ3H8ZQ2K6E","status":"completed",...}
 
 # Commit your work
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Complete password reset endpoint implementation"
 git push origin main
 ```
@@ -136,7 +136,7 @@ npm run cli -- create -t "Admin Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -p high
 npm run cli -- create -t "Reporting Module" -P WI-0J8L1JQ3H8ZQ2K6D -p medium
 
 # Commit and push
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Create Q1 release work breakdown"
 git push origin main
 ```
@@ -152,7 +152,7 @@ npm run cli -- list -s open
 
 # Pick a task and update status
 npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Start working on user authentication"
 git push origin main
 ```
@@ -190,18 +190,18 @@ npm run cli -- sync
 If you use manual git pull instead of sync, you may encounter merge conflicts:
 
 ```bash
-# After git pull, if there's a conflict in worklog-data.jsonl
+# After git pull, if there's a conflict in .worklog/worklog-data.jsonl
 git pull origin main
 
 # Check the conflict
 git status
 
 # The conflict will be on specific lines (JSONL format)
-# Edit worklog-data.jsonl to resolve
+# Edit .worklog/worklog-data.jsonl to resolve
 # Each line is independent, so conflicts are rare and easy to fix
 
 # After resolving
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Merge work item updates"
 git push origin main
 ```
@@ -261,7 +261,7 @@ jobs:
 4. **Commit Frequently**: Commit work item updates separately from code changes for clearer history
 5. **Use Descriptive Commits**: The sync command uses "Sync work items and comments" as the commit message
 6. **Tag Appropriately**: Use tags consistently across the team (e.g., "frontend", "backend", "bug", "feature")
-7. **Keep JSONL Clean**: Don't manually edit worklog-data.jsonl; use the CLI or API
+7. **Keep JSONL Clean**: Don't manually edit .worklog/worklog-data.jsonl; use the CLI or API
 8. **Backup Before Major Changes**: Export before restructuring work hierarchies
 
 ## Sync Command Details
@@ -270,7 +270,7 @@ The `sync` command provides automatic synchronization with git, including intell
 
 ### How Sync Works
 
-1. **Pull**: Fetches the latest `worklog-data.jsonl` from the git repository
+1. **Pull**: Fetches the latest `.worklog/worklog-data.jsonl` from the git repository
 2. **Merge**: Combines local and remote changes
 3. **Conflict Resolution**: Automatically resolves conflicts using `updatedAt` timestamps
 4. **Export**: Saves the merged data to the local file
@@ -330,7 +330,7 @@ npm run cli -- export -f ~/transfer.jsonl
 # Import to new project
 cd new-project
 npm run cli -- import -f ~/transfer.jsonl
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Import work items from old project"
 ```
 
@@ -357,7 +357,7 @@ npm run cli -- list -s open -p high | \
 
 ```bash
 # If data gets corrupted
-git checkout HEAD -- worklog-data.jsonl
+git checkout HEAD -- .worklog/worklog-data.jsonl
 # Or restore from a backup
 npm run cli -- import -f backups/last-good.jsonl
 ```
@@ -366,15 +366,15 @@ npm run cli -- import -f backups/last-good.jsonl
 
 ```bash
 # Search Git history
-git log --all --full-history --oneline -- worklog-data.jsonl
+git log --all --full-history --oneline -- .worklog/worklog-data.jsonl
 
 # View a specific version
-git show <commit>:worklog-data.jsonl | jq
+git show <commit>:.worklog/worklog-data.jsonl | jq
 ```
 
 ### Verify Data Integrity
 
 ```bash
 # Check that JSONL is valid
-cat worklog-data.jsonl | while read line; do echo "$line" | jq empty; done && echo "Valid JSONL"
+cat .worklog/worklog-data.jsonl | while read line; do echo "$line" | jq empty; done && echo "Valid JSONL"
 ```

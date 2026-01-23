@@ -151,7 +151,7 @@ Start the API server:
 npm start
 ```
 
-The server will run on `http://localhost:3000` by default. It automatically loads data from `worklog-data.jsonl` if it exists.
+The server will run on `http://localhost:3000` by default. It automatically loads data from `.worklog/worklog-data.jsonl` if it exists.
 
 **Note:** The project will automatically build before starting. If you prefer to build manually, run:
 
@@ -262,7 +262,7 @@ npm run dev
 The system is optimized for Git-based workflows:
 
 1. Make changes using the CLI or API
-2. Data is automatically saved to `worklog-data.jsonl`
+2. Data is automatically saved to `.worklog/worklog-data.jsonl`
 3. Commit the JSONL file to Git
 4. Share with your team through Git push/pull
 5. The JSONL format minimizes merge conflicts
