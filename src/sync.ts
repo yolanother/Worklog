@@ -190,7 +190,8 @@ export function mergeComments(
 }
 
 /**
- * Execute git pull to get latest changes to the data file
+ * Fetch remote changes and update the data file without requiring a clean working tree
+ * This allows syncing even when there are local uncommitted changes
  */
 export async function gitPullDataFile(dataFilePath: string): Promise<void> {
   try {
@@ -201,8 +202,37 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
     
-    // Pull only the data file from the current branch
-    await execAsync(`git pull origin ${branch}`);
+    // Fetch latest changes from remote without merging
+    await execAsync(`git fetch origin ${escapeShellArg(branch)}`);
+    
+    // Check if the remote ref exists
+    try {
+      await execAsync(`git rev-parse --verify origin/${escapeShellArg(branch)}`);
+    } catch (verifyError) {
+      // Remote branch doesn't exist yet - this is OK for a new repo
+      return;
+    }
+    
+    // Get the remote version of the data file using git show
+    // This will fail if the file doesn't exist on remote
+    try {
+      // Note: git show uses the syntax "ref:path" where the path is relative to the repo root
+      // We escape the entire "ref:path" as a single unit to protect against special characters
+      // in both the branch name and file path. Git correctly parses the ref:path even when quoted.
+      const refAndPath = `origin/${branch}:${dataFilePath}`;
+      const { stdout: remoteContent } = await execAsync(
+        `git show ${escapeShellArg(refAndPath)}`
+      );
+      
+      // Write the remote content to the local file
+      // This overwrites any local uncommitted changes, but that's OK because
+      // the sync logic will merge local in-memory state with this remote state
+      fs.writeFileSync(dataFilePath, remoteContent, 'utf8');
+    } catch (showError) {
+      // File doesn't exist on remote yet - that's OK, treat as empty
+      // This is expected for a new file that hasn't been pushed to remote
+      return;
+    }
   } catch (error) {
     throw new Error(`Failed to pull from git: ${(error as Error).message}`);
   }
