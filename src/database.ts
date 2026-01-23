@@ -20,11 +20,13 @@ export class WorklogDatabase {
   private prefix: string;
   private jsonlPath: string;
   private autoExport: boolean;
+  private silent: boolean;
 
-  constructor(prefix: string = 'WI', dbPath?: string, jsonlPath?: string, autoExport: boolean = true) {
+  constructor(prefix: string = 'WI', dbPath?: string, jsonlPath?: string, autoExport: boolean = true, silent: boolean = false) {
     this.prefix = prefix;
     this.jsonlPath = jsonlPath || getDefaultDataPath();
     this.autoExport = autoExport;
+    this.silent = silent;
     
     // Use default DB path if not provided
     const defaultDbPath = path.join(path.dirname(this.jsonlPath), 'worklog.db');
@@ -55,7 +57,9 @@ export class WorklogDatabase {
     const shouldRefresh = items.length === 0 || !lastImportMtime || jsonlMtime > lastImportMtime;
 
     if (shouldRefresh) {
-      console.log(`Refreshing database from ${this.jsonlPath}...`);
+      if (!this.silent) {
+        console.log(`Refreshing database from ${this.jsonlPath}...`);
+      }
       const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
       this.store.importData(jsonlItems, jsonlComments);
       
@@ -63,7 +67,9 @@ export class WorklogDatabase {
       this.store.setMetadata('lastJsonlImportMtime', jsonlMtime.toString());
       this.store.setMetadata('lastJsonlImportAt', new Date().toISOString());
       
-      console.log(`Loaded ${jsonlItems.length} work items and ${jsonlComments.length} comments from JSONL`);
+      if (!this.silent) {
+        console.log(`Loaded ${jsonlItems.length} work items and ${jsonlComments.length} comments from JSONL`);
+      }
     }
   }
 
