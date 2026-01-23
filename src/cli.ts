@@ -56,14 +56,17 @@ function formatValue(value: any): string {
   return String(value);
 }
 
-// Priority ordering for sorting work items
-const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+// Priority ordering for sorting work items (higher number = higher priority)
+const PRIORITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 } as const;
 
 // Helper function to sort items by priority and creation date
 function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
-  const aPriority = PRIORITY_ORDER[a.priority] ?? 2;
+  // Higher priority comes first (descending order)
+  const aPriority = PRIORITY_ORDER[a.priority] ?? 2; // Default to 'medium' if unknown
   const bPriority = PRIORITY_ORDER[b.priority] ?? 2;
-  if (aPriority !== bPriority) return aPriority - bPriority;
+  const priorityDiff = bPriority - aPriority;
+  if (priorityDiff !== 0) return priorityDiff;
+  // If priorities are equal, sort by creation time (oldest first, ascending order)
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
