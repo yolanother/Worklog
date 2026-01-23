@@ -376,4 +376,42 @@ describe('WorklogDatabase', () => {
       expect(allItems.find(i => i.id === 'TEST-002')).toBeDefined();
     });
   });
+
+  describe('autoExport', () => {
+    it('should export to JSONL when autoExport is enabled', () => {
+      const fs = require('fs');
+      
+      // Create with autoExport enabled (default)
+      const dbWithExport = new WorklogDatabase('TEST', dbPath, jsonlPath, true, true);
+      
+      // Ensure no JSONL file exists initially
+      if (fs.existsSync(jsonlPath)) {
+        fs.unlinkSync(jsonlPath);
+      }
+      
+      // Create an item
+      dbWithExport.create({ title: 'Test with export' });
+      
+      // JSONL file should exist
+      expect(fs.existsSync(jsonlPath)).toBe(true);
+    });
+
+    it('should not export to JSONL when autoExport is disabled', () => {
+      const fs = require('fs');
+      
+      // Create with autoExport disabled
+      const dbWithoutExport = new WorklogDatabase('TEST', dbPath, jsonlPath, false, true);
+      
+      // Ensure no JSONL file exists initially
+      if (fs.existsSync(jsonlPath)) {
+        fs.unlinkSync(jsonlPath);
+      }
+      
+      // Create an item
+      dbWithoutExport.create({ title: 'Test without export' });
+      
+      // JSONL file should not exist
+      expect(fs.existsSync(jsonlPath)).toBe(false);
+    });
+  });
 });
