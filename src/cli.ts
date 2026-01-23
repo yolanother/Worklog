@@ -185,6 +185,77 @@ const DEFAULT_GIT_REMOTE = 'origin';
 const DEFAULT_GIT_BRANCH = 'refs/worklog/data';
 
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
+const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
+
+const WORKLOG_GITIGNORE_ENTRIES: string[] = [
+  `# ${WORKLOG_GITIGNORE_MARKER}`,
+  '.worklog/config.yaml',
+  '.worklog/initialized',
+  '.worklog/worklog.db',
+  '.worklog/worklog.db-shm',
+  '.worklog/worklog.db-wal',
+  '.worklog/worklog-data.jsonl',
+  '.worklog/tmp-worktree-*',
+];
+
+function fileHasLine(content: string, line: string): boolean {
+  const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(^|\\n)${escaped}(\\n|$)`);
+  return re.test(content);
+}
+
+function ensureGitignore(options: { silent: boolean }): { updated: boolean; present: boolean; gitignorePath?: string; added?: string[]; reason?: string } {
+  let gitignorePath = path.join(process.cwd(), '.gitignore');
+
+  try {
+    const repoRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (repoRoot) {
+      gitignorePath = path.join(repoRoot, '.gitignore');
+    }
+  } catch {
+    // Not a git repo; still allow writing .gitignore in the current directory.
+  }
+
+  let existing = '';
+  try {
+    if (fs.existsSync(gitignorePath)) {
+      existing = fs.readFileSync(gitignorePath, 'utf-8');
+    }
+  } catch (e) {
+    return { updated: false, present: false, gitignorePath, reason: (e as Error).message };
+  }
+
+  const missing: string[] = [];
+  for (const line of WORKLOG_GITIGNORE_ENTRIES) {
+    if (!fileHasLine(existing, line)) {
+      missing.push(line);
+    }
+  }
+
+  if (missing.length === 0) {
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath };
+  }
+
+  let out = existing;
+  if (out.length > 0 && !out.endsWith('\n')) {
+    out += '\n';
+  }
+  if (out.length > 0 && !out.endsWith('\n\n')) {
+    out += '\n';
+  }
+  out += missing.join('\n') + '\n';
+
+  try {
+    fs.writeFileSync(gitignorePath, out, { encoding: 'utf-8' });
+  } catch (e) {
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, reason: (e as Error).message };
+  }
+
+  if (!options.silent) {
+    console.log(`✓ Updated .gitignore at ${gitignorePath}`);
+  }
+  return { updated: true, present: true, gitignorePath, added: missing };
+}
 
 function installPrePushHook(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPath?: string; reason?: string } {
   try {
@@ -511,6 +582,7 @@ program
       const initInfo = readInitSemaphore();
       
       if (isJsonMode) {
+        const gitignoreResult = ensureGitignore({ silent: true });
         const hookResult = installPrePushHook({ silent: true });
         // In JSON mode, we can't do interactive prompts, so just report the existing config
         outputJson({
@@ -522,6 +594,7 @@ program
           },
           version: initInfo?.version || WORKLOG_VERSION,
           initializedAt: initInfo?.initializedAt,
+          gitignore: gitignoreResult,
           gitHook: hookResult
         });
         return;
@@ -550,6 +623,12 @@ program
           } catch (syncError) {
             console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
             console.log(`  ${(syncError as Error).message}`);
+          }
+
+          console.log('\n' + chalk.blue('## Gitignore') + '\n');
+          const gitignoreResult = ensureGitignore({ silent: false });
+          if (gitignoreResult.reason) {
+            console.log(`Note: .gitignore not updated: ${gitignoreResult.reason}`);
           }
 
           console.log('\n' + chalk.blue('## Git Hooks') + '\n');
@@ -588,6 +667,7 @@ program
       const initInfo = readInitSemaphore();
       
       if (isJsonMode) {
+        const gitignoreResult = ensureGitignore({ silent: true });
         const hookResult = installPrePushHook({ silent: true });
         outputJson({
           success: true,
@@ -598,6 +678,7 @@ program
           },
           version: WORKLOG_VERSION,
           initializedAt: initInfo?.initializedAt,
+          gitignore: gitignoreResult,
           gitHook: hookResult
         });
       }
@@ -642,6 +723,12 @@ program
       }
 
       if (!isJsonMode) {
+        console.log('\n' + chalk.blue('## Gitignore') + '\n');
+        const gitignoreResult = ensureGitignore({ silent: false });
+        if (gitignoreResult.reason) {
+          console.log(`Note: .gitignore not updated: ${gitignoreResult.reason}`);
+        }
+
         console.log('\n' + chalk.blue('## Git Hooks') + '\n');
         const hookResult = installPrePushHook({ silent: false });
         if (hookResult.present) {

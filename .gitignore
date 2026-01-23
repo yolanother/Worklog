@@ -144,7 +144,13 @@ vite.config.ts.timestamp-*
 # Initialization semaphore (created by init command)
 .worklog/initialized
 
+# Worklog JSONL export (synced via refs/worklog/data)
+.worklog/worklog-data.jsonl
+
 # SQLite database (persistent storage)
 .worklog/worklog.db
 .worklog/worklog.db-shm
 .worklog/worklog.db-wal
+
+# worklog:gitignore:v1
+.worklog/tmp-worktree-*
