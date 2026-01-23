@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
-import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
+import { initConfig, loadConfig, getDefaultPrefix, configExists, isInitialized, readInitSemaphore, writeInitSemaphore } from './config.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
 import * as fs from 'fs';
 import chalk from 'chalk';
@@ -141,10 +141,12 @@ function getDatabase(prefix?: string): WorklogDatabase {
   return db;
 }
 
+const WORKLOG_VERSION = '1.0.0';
+
 program
   .name('worklog')
   .description('CLI for Worklog - a simple issue tracker')
-  .version('1.0.0')
+  .version(WORKLOG_VERSION)
   .option('--json', 'Output in JSON format (machine-readable)');
 
 // Initialize configuration
@@ -155,7 +157,14 @@ program
     const isJsonMode = program.opts().json;
     
     if (configExists()) {
+      // Config exists, but ensure semaphore is written if not present
+      if (!isInitialized()) {
+        writeInitSemaphore(WORKLOG_VERSION);
+      }
+      
       const config = loadConfig();
+      const initInfo = readInitSemaphore();
+      
       if (isJsonMode) {
         outputJson({
           success: false,
@@ -163,7 +172,9 @@ program
           config: {
             projectName: config?.projectName,
             prefix: config?.prefix
-          }
+          },
+          version: initInfo?.version || WORKLOG_VERSION,
+          initializedAt: initInfo?.initializedAt
         });
       } else {
         console.log('Configuration already exists:');
@@ -177,6 +188,10 @@ program
     try {
       await initConfig();
       const config = loadConfig();
+      
+      // Write initialization semaphore with version
+      writeInitSemaphore(WORKLOG_VERSION);
+      
       if (isJsonMode) {
         outputJson({
           success: true,
@@ -184,12 +199,77 @@ program
           config: {
             projectName: config?.projectName,
             prefix: config?.prefix
-          }
+          },
+          version: WORKLOG_VERSION
         });
       }
     } catch (error) {
       outputError('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
       process.exit(1);
+    }
+  });
+
+// Status command - check initialization and provide summary
+program
+  .command('status')
+  .description('Show Worklog system status and database summary')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((options) => {
+    const isJsonMode = program.opts().json;
+    
+    // Check if initialized
+    if (!isInitialized()) {
+      if (isJsonMode) {
+        outputJson({
+          success: false,
+          initialized: false,
+          error: 'Worklog system is not initialized. Run "worklog init" first.'
+        });
+      } else {
+        console.error('Error: Worklog system is not initialized.');
+        console.error('Run "worklog init" to initialize the system.');
+      }
+      process.exit(1);
+    }
+    
+    // Read initialization info
+    const initInfo = readInitSemaphore();
+    
+    // Get database statistics
+    const db = getDatabase(options.prefix);
+    const workItems = db.getAll();
+    const comments = db.getAllComments();
+    const config = loadConfig();
+    
+    if (isJsonMode) {
+      outputJson({
+        success: true,
+        initialized: true,
+        version: initInfo?.version || 'unknown',
+        initializedAt: initInfo?.initializedAt || 'unknown',
+        config: {
+          projectName: config?.projectName,
+          prefix: config?.prefix
+        },
+        database: {
+          workItems: workItems.length,
+          comments: comments.length
+        }
+      });
+    } else {
+      console.log('Worklog System Status');
+      console.log('=====================\n');
+      console.log(`Initialized: Yes`);
+      console.log(`Version: ${initInfo?.version || 'unknown'}`);
+      console.log(`Initialized at: ${initInfo?.initializedAt || 'unknown'}`);
+      console.log();
+      console.log('Configuration:');
+      console.log(`  Project: ${config?.projectName || 'unknown'}`);
+      console.log(`  Prefix: ${config?.prefix || 'unknown'}`);
+      console.log();
+      console.log('Database Summary:');
+      console.log(`  Work Items: ${workItems.length}`);
+      console.log(`  Comments: ${comments.length}`);
     }
   });
 
