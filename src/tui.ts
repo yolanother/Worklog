@@ -6,10 +6,14 @@
 import blessed from 'blessed';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
+import { loadConfig } from './config.js';
 import * as fs from 'fs';
 import { WorkItem, WorkItemStatus } from './types.js';
 
-const db = new WorklogDatabase();
+// Load configuration and create database instance with prefix
+const config = loadConfig();
+const prefix = config?.prefix || 'WI';
+const db = new WorklogDatabase(prefix);
 const dataPath = getDefaultDataPath();
 
 // Load data if it exists
@@ -18,10 +22,15 @@ if (fs.existsSync(dataPath)) {
   db.import(items);
 }
 
+// Display project info
+const projectInfo = config 
+  ? `Project: ${config.projectName} (${config.prefix})`
+  : 'No config (using WI prefix)';
+
 // Create screen
 const screen = blessed.screen({
   smartCSR: true,
-  title: 'Worklog TUI'
+  title: `Worklog TUI - ${projectInfo}`
 });
 
 // Create main list box

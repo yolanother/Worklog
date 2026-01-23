@@ -7,17 +7,33 @@ import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery } fro
 export class WorklogDatabase {
   private items: Map<string, WorkItem>;
   private nextId: number;
+  private prefix: string;
 
-  constructor() {
+  constructor(prefix: string = 'WI') {
     this.items = new Map();
     this.nextId = 1;
+    this.prefix = prefix;
+  }
+
+  /**
+   * Set the prefix for this database
+   */
+  setPrefix(prefix: string): void {
+    this.prefix = prefix;
+  }
+
+  /**
+   * Get the current prefix
+   */
+  getPrefix(): string {
+    return this.prefix;
   }
 
   /**
    * Generate a unique ID for a work item
    */
   private generateId(): string {
-    return `WI-${this.nextId++}`;
+    return `${this.prefix}-${this.nextId++}`;
   }
 
   /**
@@ -149,10 +165,13 @@ export class WorklogDatabase {
   import(items: WorkItem[]): void {
     this.clear();
     
+    // Escape special regex characters in prefix
+    const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
     // Find the highest ID number to continue from
     let maxId = 0;
     for (const item of items) {
-      const match = item.id.match(/WI-(\d+)/);
+      const match = item.id.match(new RegExp(`${escapedPrefix}-(\\d+)`));
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxId) {

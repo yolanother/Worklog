@@ -2,23 +2,37 @@
  * REST API for the Worklog system
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { WorklogDatabase } from './database.js';
 import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, WorkItemStatus, WorkItemPriority } from './types.js';
 import { exportToJsonl, importFromJsonl, getDefaultDataPath } from './jsonl.js';
+import { loadConfig } from './config.js';
 
 export function createAPI(db: WorklogDatabase) {
   const app = express();
   app.use(express.json());
 
+  // Load configuration to get default prefix
+  const config = loadConfig();
+  const defaultPrefix = config?.prefix || 'WI';
+
+  // Middleware to set the database prefix based on the route
+  function setPrefixMiddleware(req: Request, res: Response, next: NextFunction) {
+    const prefix = req.params.prefix || defaultPrefix;
+    db.setPrefix(prefix.toUpperCase());
+    next();
+  }
+
   // Health check
   app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', prefix: defaultPrefix });
   });
 
+  // Routes without prefix (for backward compatibility)
   // Create a work item
   app.post('/items', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const input: CreateWorkItemInput = req.body;
       const item = db.create(input);
       res.status(201).json(item);
@@ -29,6 +43,7 @@ export function createAPI(db: WorklogDatabase) {
 
   // Get a work item by ID
   app.get('/items/:id', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
     const item = db.get(req.params.id);
     if (!item) {
       res.status(404).json({ error: 'Work item not found' });
@@ -40,6 +55,7 @@ export function createAPI(db: WorklogDatabase) {
   // Update a work item
   app.put('/items/:id', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const input: UpdateWorkItemInput = req.body;
       const item = db.update(req.params.id, input);
       if (!item) {
@@ -54,6 +70,7 @@ export function createAPI(db: WorklogDatabase) {
 
   // Delete a work item
   app.delete('/items/:id', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
     const deleted = db.delete(req.params.id);
     if (!deleted) {
       res.status(404).json({ error: 'Work item not found' });
@@ -64,6 +81,7 @@ export function createAPI(db: WorklogDatabase) {
 
   // List work items with optional filters
   app.get('/items', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
     const query: WorkItemQuery = {};
     
     if (req.query.status) {
@@ -85,12 +103,94 @@ export function createAPI(db: WorklogDatabase) {
 
   // Get children of a work item
   app.get('/items/:id/children', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
     const children = db.getChildren(req.params.id);
     res.json(children);
   });
 
   // Get descendants of a work item
   app.get('/items/:id/descendants', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
+    const descendants = db.getDescendants(req.params.id);
+    res.json(descendants);
+  });
+
+  // Routes with prefix
+  // Create a work item with prefix
+  app.post('/projects/:prefix/items', setPrefixMiddleware, (req: Request, res: Response) => {
+    try {
+      const input: CreateWorkItemInput = req.body;
+      const item = db.create(input);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Get a work item by ID with prefix
+  app.get('/projects/:prefix/items/:id', setPrefixMiddleware, (req: Request, res: Response) => {
+    const item = db.get(req.params.id);
+    if (!item) {
+      res.status(404).json({ error: 'Work item not found' });
+      return;
+    }
+    res.json(item);
+  });
+
+  // Update a work item with prefix
+  app.put('/projects/:prefix/items/:id', setPrefixMiddleware, (req: Request, res: Response) => {
+    try {
+      const input: UpdateWorkItemInput = req.body;
+      const item = db.update(req.params.id, input);
+      if (!item) {
+        res.status(404).json({ error: 'Work item not found' });
+        return;
+      }
+      res.json(item);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Delete a work item with prefix
+  app.delete('/projects/:prefix/items/:id', setPrefixMiddleware, (req: Request, res: Response) => {
+    const deleted = db.delete(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Work item not found' });
+      return;
+    }
+    res.status(204).send();
+  });
+
+  // List work items with prefix
+  app.get('/projects/:prefix/items', setPrefixMiddleware, (req: Request, res: Response) => {
+    const query: WorkItemQuery = {};
+    
+    if (req.query.status) {
+      query.status = req.query.status as WorkItemStatus;
+    }
+    if (req.query.priority) {
+      query.priority = req.query.priority as WorkItemPriority;
+    }
+    if (req.query.parentId !== undefined) {
+      query.parentId = req.query.parentId === 'null' ? null : req.query.parentId as string;
+    }
+    if (req.query.tags) {
+      query.tags = Array.isArray(req.query.tags) ? req.query.tags as string[] : [req.query.tags as string];
+    }
+
+    const items = db.list(query);
+    res.json(items);
+  });
+
+  // Get children of a work item with prefix
+  app.get('/projects/:prefix/items/:id/children', setPrefixMiddleware, (req: Request, res: Response) => {
+    const children = db.getChildren(req.params.id);
+    res.json(children);
+  });
+
+  // Get descendants of a work item with prefix
+  app.get('/projects/:prefix/items/:id/descendants', setPrefixMiddleware, (req: Request, res: Response) => {
     const descendants = db.getDescendants(req.params.id);
     res.json(descendants);
   });
@@ -98,6 +198,7 @@ export function createAPI(db: WorklogDatabase) {
   // Export to JSONL
   app.post('/export', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = db.getAll();
       exportToJsonl(items, filepath);
@@ -110,6 +211,7 @@ export function createAPI(db: WorklogDatabase) {
   // Import from JSONL
   app.post('/import', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = importFromJsonl(filepath);
       db.import(items);

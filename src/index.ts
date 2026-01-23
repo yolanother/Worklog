@@ -5,12 +5,22 @@
 import { WorklogDatabase } from './database.js';
 import { createAPI } from './api.js';
 import { importFromJsonl, getDefaultDataPath } from './jsonl.js';
+import { loadConfig } from './config.js';
 import * as fs from 'fs';
 
 const PORT = process.env.PORT || 3000;
 
-// Create database instance
-const db = new WorklogDatabase();
+// Load configuration and create database instance with prefix
+const config = loadConfig();
+const prefix = config?.prefix || 'WI';
+const db = new WorklogDatabase(prefix);
+
+if (config) {
+  console.log(`Using project: ${config.projectName} (prefix: ${config.prefix})`);
+} else {
+  console.log('No configuration found. Using default prefix: WI');
+  console.log('Run "npm run cli -- init" to set up your project.');
+}
 
 // Try to load existing data on startup
 const dataPath = getDefaultDataPath();

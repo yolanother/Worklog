@@ -10,6 +10,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Git-Friendly**: Data stored in JSONL format for easy Git syncing
 - **In-Memory Database**: Fast runtime performance
 - **Hierarchical Work Items**: Support for parent-child relationships
+- **Multi-Project Support**: Configure custom prefixes for issue IDs per project
 
 ## Installation
 
@@ -17,15 +18,45 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 npm install
 ```
 
+## Configuration
+
+Before using Worklog, you should initialize your project configuration:
+
+```bash
+npm run cli -- init
+```
+
+This will prompt you for:
+- **Project name**: A descriptive name for your project
+- **Issue ID prefix**: A short prefix for your issue IDs (e.g., WI, PROJ, TASK)
+
+The configuration is saved to `.worklog/config.yaml` and should be committed to version control so all team members use the same prefix.
+
+**Example:**
+```
+Project name: MyProject
+Issue ID prefix: MP
+```
+
+This will create issues with IDs like `MP-1`, `MP-2`, etc.
+
+If no configuration exists, the system defaults to using `WI` as the prefix.
+
 ## Usage
 
 ### CLI
 
-The CLI tool allows you to manage work items from the command line:
+The CLI tool allows you to manage work items from the command line. All commands support the `--prefix` flag to override the default prefix from configuration.
 
 ```bash
+# Initialize project configuration (run this first)
+npm run cli -- init
+
 # Create a new work item
 npm run cli -- create -t "My first task" -d "Description here" -s open -p high
+
+# Create with a custom prefix override
+npm run cli -- create -t "Task for another project" --prefix OTHER
 
 # List all work items
 npm run cli -- list

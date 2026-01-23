@@ -53,3 +53,11 @@ export interface WorkItemQuery {
   parentId?: string | null;
   tags?: string[];
 }
+
+/**
+ * Configuration for a worklog project
+ */
+export interface WorklogConfig {
+  projectName: string;
+  prefix: string;
+}
