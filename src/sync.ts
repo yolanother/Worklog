@@ -190,7 +190,8 @@ export function mergeComments(
 }
 
 /**
- * Execute git pull to get latest changes to the data file
+ * Fetch remote changes and update the data file without requiring a clean working tree
+ * This allows syncing even when there are local uncommitted changes
  */
 export async function gitPullDataFile(dataFilePath: string): Promise<void> {
   try {
@@ -201,8 +202,31 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
     
-    // Pull only the data file from the current branch
-    await execAsync(`git pull origin ${branch}`);
+    // Fetch latest changes from remote without merging
+    await execAsync(`git fetch origin ${branch}`);
+    
+    // Get the remote version of the data file using git show
+    // This will fail gracefully if the file doesn't exist on remote
+    try {
+      const { stdout: remoteContent } = await execAsync(
+        `git show origin/${branch}:${escapeShellArg(dataFilePath)}`
+      );
+      
+      // Write the remote content to the local file
+      // This overwrites any local uncommitted changes, but that's OK because
+      // the sync logic will merge local in-memory state with this remote state
+      fs.writeFileSync(dataFilePath, remoteContent, 'utf-8');
+    } catch (showError) {
+      // File might not exist on remote yet - that's OK, treat as empty
+      // Check if this is actually a "path not in commit" error
+      const errorMessage = (showError as Error).message;
+      if (errorMessage.includes('does not exist') || errorMessage.includes('path') || errorMessage.includes('not in')) {
+        // File doesn't exist on remote - this is fine for a new repo
+        return;
+      }
+      // Re-throw other errors
+      throw showError;
+    }
   } catch (error) {
     throw new Error(`Failed to pull from git: ${(error as Error).message}`);
   }
