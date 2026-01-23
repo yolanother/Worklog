@@ -127,6 +127,24 @@ const DEFAULT_GIT_BRANCH = 'refs/worklog/data';
 const dataPath = getDefaultDataPath();
 let db: WorklogDatabase | null = null;
 
+// Check if system is initialized and exit if not
+function requireInitialized(): void {
+  if (!isInitialized()) {
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      outputJson({
+        success: false,
+        initialized: false,
+        error: 'Worklog system is not initialized. Run "worklog init" first.'
+      });
+    } else {
+      console.error('Error: Worklog system is not initialized.');
+      console.error('Run "worklog init" to initialize the system.');
+    }
+    process.exit(1);
+  }
+}
+
 // Get or initialize database with the specified prefix
 function getDatabase(prefix?: string): WorklogDatabase {
   const actualPrefix = getPrefix(prefix);
@@ -537,6 +555,7 @@ program
   .option('--delete-reason <deleteReason>', 'Delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const item = db.create({
@@ -575,6 +594,7 @@ program
   .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const query: WorkItemQuery = {};
@@ -621,6 +641,7 @@ program
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const item = db.get(id);
@@ -670,6 +691,7 @@ program
   .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const updates: UpdateWorkItemInput = {};
@@ -707,6 +729,7 @@ program
   .description('Delete a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((id, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const deleted = db.delete(id);
@@ -730,6 +753,7 @@ program
   .option('-f, --file <filepath>', 'Output file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     const items = db.getAll();
     const comments = db.getAllComments();
@@ -756,6 +780,7 @@ program
   .option('-f, --file <filepath>', 'Input file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     const { items, comments } = importFromJsonl(options.file);
     db.import(items);
@@ -786,6 +811,7 @@ program
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
+    requireInitialized();
     const isJsonMode = program.opts().json;
     
     try {
@@ -823,6 +849,7 @@ commentCommand
   .option('-r, --references <references>', 'Comma-separated list of references (work item IDs, file paths, or URLs)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((workItemId, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const comment = db.createComment({
@@ -852,6 +879,7 @@ commentCommand
   .description('List all comments for a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((workItemId, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const workItem = db.get(workItemId);
@@ -889,6 +917,7 @@ commentCommand
   .description('Show details of a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const comment = db.getComment(commentId);
@@ -914,6 +943,7 @@ commentCommand
   .option('-r, --references <references>', 'New references (comma-separated)')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const updates: UpdateCommentInput = {};
@@ -942,6 +972,7 @@ commentCommand
   .description('Delete a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((commentId, options) => {
+    requireInitialized();
     const db = getDatabase(options.prefix);
     
     const deleted = db.deleteComment(commentId);
