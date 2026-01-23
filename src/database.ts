@@ -5,7 +5,7 @@
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
+import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput, NextWorkItemResult } from './types.js';
 import { SqlitePersistentStore } from './persistent-store.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 
@@ -282,6 +282,204 @@ export class WorklogDatabase {
     }
     
     return descendants;
+  }
+
+  /**
+   * Check if a work item is a leaf node (has no children)
+   */
+  isLeafNode(itemId: string): boolean {
+    return this.getChildren(itemId).length === 0;
+  }
+
+  /**
+   * Get all leaf nodes that are descendants of a parent item
+   */
+  getLeafDescendants(parentId: string): WorkItem[] {
+    const descendants = this.getDescendants(parentId);
+    return descendants.filter(item => this.isLeafNode(item.id));
+  }
+
+  /**
+   * Find the next work item to work on based on priority and creation time
+   * @param assignee - Optional assignee filter
+   * @param searchTerm - Optional search term for fuzzy matching
+   * @returns The next work item and a reason for the selection, or null if none found
+   */
+  findNextWorkItem(assignee?: string, searchTerm?: string): NextWorkItemResult {
+    let items = this.store.getAllWorkItems();
+
+    // Filter out deleted items first
+    items = items.filter(item => item.status !== 'deleted');
+
+    // Apply filters
+    items = this.applyFilters(items, assignee, searchTerm);
+
+    // Find in-progress and blocked items
+    const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
+
+    if (inProgressItems.length === 0) {
+      // No in-progress items, find highest priority and oldest non-in-progress item
+      const openItems = items.filter(item => item.status !== 'completed');
+      if (openItems.length === 0) {
+        return { workItem: null, reason: 'No work items available' };
+      }
+      const selected = this.selectHighestPriorityOldest(openItems);
+      return {
+        workItem: selected,
+        reason: `Highest priority (${selected?.priority}) and oldest open item`
+      };
+    }
+
+    // There are in-progress or blocked items
+    // Find the highest priority and oldest active item
+    // Note: Blocked items trigger blocking issue detection, in-progress items trigger descendant traversal
+    const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
+    if (!selectedInProgress) {
+      return { workItem: null, reason: 'No work items available' };
+    }
+
+    // Check if the item is blocked - if so, prioritize its blocking issues
+    if (selectedInProgress.status === 'blocked') {
+      // Find blocking issues mentioned in description or comments
+      const blockingIssues = this.extractBlockingIssues(selectedInProgress);
+      if (blockingIssues.length > 0) {
+        // Filter to find existing work items that match the blocking issue IDs
+        const blockingItems = blockingIssues
+          .map(id => this.get(id))
+          .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+        
+        if (blockingItems.length > 0) {
+          // Apply filters to blocking items and select highest priority
+          const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+          if (filteredBlockingItems.length > 0) {
+            const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
+            return {
+              workItem: selected,
+              reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+            };
+          }
+        }
+      }
+      // If no blocking issues found or they don't exist, return the blocked item itself
+      return {
+        workItem: selectedInProgress,
+        reason: `Blocked item with no identifiable blocking issues`
+      };
+    }
+
+    // Get leaf descendants that are not in progress or completed
+    const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
+    
+    // Apply the same filters to leaf descendants and filter by workable status
+    const filteredLeaves = this.applyFilters(leafDescendants, assignee, searchTerm).filter(
+      item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
+    );
+
+    if (filteredLeaves.length === 0) {
+      // No suitable leaf descendants, return the in-progress item itself
+      return {
+        workItem: selectedInProgress,
+        reason: `In-progress item with no open descendants`
+      };
+    }
+
+    // Select highest priority and oldest leaf descendant
+    const selected = this.selectHighestPriorityOldest(filteredLeaves);
+    return {
+      workItem: selected,
+      reason: `Highest priority (${selected?.priority}) leaf descendant of in-progress item ${selectedInProgress.id}`
+    };
+  }
+
+  /**
+   * Extract blocking issue IDs from description and comments
+   * Looks for work item ID patterns (e.g., "PREFIX-ABC123DEF")
+   */
+  private extractBlockingIssues(item: WorkItem): string[] {
+    const blockingIds: string[] = [];
+    // Pattern matches prefix followed by alphanumeric characters (e.g., WI-0MKRDE4YI1)
+    const pattern = new RegExp(`${this.prefix}-[A-Z0-9]+`, 'gi');
+    
+    // Search in description
+    if (item.description) {
+      const matches = item.description.match(pattern);
+      if (matches) {
+        blockingIds.push(...matches.map(id => id.toUpperCase()));
+      }
+    }
+    
+    // Search in comments
+    const comments = this.getCommentsForWorkItem(item.id);
+    for (const comment of comments) {
+      const matches = comment.comment.match(pattern);
+      if (matches) {
+        blockingIds.push(...matches.map(id => id.toUpperCase()));
+      }
+    }
+    
+    // Remove duplicates and the item itself
+    return [...new Set(blockingIds)].filter(id => id !== item.id);
+  }
+
+  /**
+   * Apply assignee and search term filters to a list of work items
+   */
+  private applyFilters(items: WorkItem[], assignee?: string, searchTerm?: string): WorkItem[] {
+    let filtered = items;
+
+    // Filter by assignee if provided
+    if (assignee) {
+      filtered = filtered.filter(item => item.assignee === assignee);
+    }
+
+    // Filter by search term if provided (fuzzy match against title, description, and comments)
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(item => {
+        // Check title and description
+        const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
+        const descriptionMatch = item.description?.toLowerCase().includes(lowerSearchTerm) || false;
+        
+        // Check comments
+        const comments = this.getCommentsForWorkItem(item.id);
+        const commentMatch = comments.some(comment => 
+          comment.comment.toLowerCase().includes(lowerSearchTerm)
+        );
+        
+        return titleMatch || descriptionMatch || commentMatch;
+      });
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Helper method to select the highest priority and oldest item from a list
+   */
+  private selectHighestPriorityOldest(items: WorkItem[]): WorkItem | null {
+    if (items.length === 0) {
+      return null;
+    }
+
+    // Define priority order
+    const priorityOrder: { [key: string]: number } = {
+      'critical': 4,
+      'high': 3,
+      'medium': 2,
+      'low': 1,
+    };
+
+    // Sort by priority (descending) then by createdAt (ascending - oldest first)
+    const sorted = items.sort((a, b) => {
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      // If priorities are equal, sort by creation time (oldest first)
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+    return sorted[0];
   }
 
   /**

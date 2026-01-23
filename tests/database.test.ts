@@ -411,4 +411,191 @@ describe('WorklogDatabase', () => {
       expect(fs.existsSync(jsonlPath)).toBe(false);
     });
   });
+
+  describe('findNextWorkItem', () => {
+    it('should return null when no work items exist', () => {
+      const result = db.findNextWorkItem();
+      expect(result.workItem).toBeNull();
+      expect(result.reason).toBeDefined();
+    });
+
+    it('should return the only open item when no in-progress items exist', () => {
+      const item = db.create({ title: 'Only task', priority: 'high' });
+      const result = db.findNextWorkItem();
+      
+      expect(result.workItem).not.toBeNull();
+      expect(result.workItem?.id).toBe(item.id);
+      expect(result.reason).toContain('Highest priority');
+    });
+
+    it('should return highest priority item when multiple open items exist', () => {
+      db.create({ title: 'Low priority', priority: 'low', status: 'open' });
+      const highPrio = db.create({ title: 'High priority', priority: 'high', status: 'open' });
+      db.create({ title: 'Medium priority', priority: 'medium', status: 'open' });
+      
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(highPrio.id);
+      expect(result.reason).toBeDefined();
+    });
+
+    it('should return oldest item when priorities are equal', async () => {
+      // Create items with same priority but different times
+      const oldest = db.create({ title: 'Oldest', priority: 'high', status: 'open' });
+      // Small delay to ensure different timestamps
+      const delay = () => new Promise(resolve => setTimeout(resolve, 10));
+      
+      await delay();
+      db.create({ title: 'Newer', priority: 'high', status: 'open' });
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(oldest.id);
+    });
+
+    it('should walk down tree from in-progress item to find leaf nodes', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      const child = db.create({ title: 'Child', priority: 'high', status: 'open', parentId: parent.id });
+      const grandchild = db.create({ title: 'Grandchild', priority: 'high', status: 'open', parentId: child.id });
+      
+      const result = db.findNextWorkItem();
+      // Should select the leaf node (grandchild) since parent is in-progress
+      expect(result.workItem?.id).toBe(grandchild.id);
+      expect(result.reason).toContain('leaf descendant');
+    });
+
+    it('should skip completed and deleted items', () => {
+      db.create({ title: 'Completed', priority: 'critical', status: 'completed' });
+      db.create({ title: 'Deleted', priority: 'critical', status: 'deleted' });
+      const openItem = db.create({ title: 'Open', priority: 'low', status: 'open' });
+      
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(openItem.id);
+    });
+
+    it('should filter by assignee when provided', () => {
+      const johnItem = db.create({ title: 'John task', priority: 'high', status: 'open', assignee: 'john' });
+      db.create({ title: 'Jane task', priority: 'critical', status: 'open', assignee: 'jane' });
+      
+      const result = db.findNextWorkItem('john');
+      expect(result.workItem?.id).toBe(johnItem.id);
+    });
+
+    it('should filter by search term in title', () => {
+      db.create({ title: 'Unrelated task', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Bug fix needed', priority: 'low', status: 'open' });
+      
+      const result = db.findNextWorkItem(undefined, 'bug');
+      expect(result.workItem?.id).toBe(searchItem.id);
+    });
+
+    it('should filter by search term in description', () => {
+      db.create({ title: 'Task 1', description: 'Something else', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Task 2', description: 'Fix the authentication bug', priority: 'low', status: 'open' });
+      
+      const result = db.findNextWorkItem(undefined, 'authentication');
+      expect(result.workItem?.id).toBe(searchItem.id);
+    });
+
+    it('should filter by search term in comments', () => {
+      db.create({ title: 'Task 1', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Task 2', priority: 'low', status: 'open' });
+      
+      // Add a comment with the search term
+      db.createComment({
+        workItemId: searchItem.id,
+        author: 'test',
+        comment: 'This needs database optimization'
+      });
+      
+      const result = db.findNextWorkItem(undefined, 'database');
+      expect(result.workItem?.id).toBe(searchItem.id);
+    });
+
+    it('should return in-progress item if it has no suitable descendants', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Completed child', priority: 'high', status: 'completed', parentId: parent.id });
+      
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(parent.id);
+      expect(result.reason).toContain('no open descendants');
+    });
+
+    it('should select highest priority leaf when multiple leaves exist', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Low leaf', priority: 'low', status: 'open', parentId: parent.id });
+      const highLeaf = db.create({ title: 'High leaf', priority: 'high', status: 'open', parentId: parent.id });
+      
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(highLeaf.id);
+    });
+
+    it('should apply assignee filter to leaf descendants', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress', assignee: 'john' });
+      db.create({ title: 'Child for jane', priority: 'high', status: 'open', parentId: parent.id, assignee: 'jane' });
+      const johnChild = db.create({ title: 'Child for john', priority: 'low', status: 'open', parentId: parent.id, assignee: 'john' });
+      
+      const result = db.findNextWorkItem('john');
+      // Should select john's child even though jane's has higher priority
+      expect(result.workItem?.id).toBe(johnChild.id);
+    });
+
+    it('should apply search filter to leaf descendants', () => {
+      const parent = db.create({ title: 'Parent task', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Regular child', priority: 'critical', status: 'open', parentId: parent.id });
+      const bugChild = db.create({ title: 'Bug fix needed', priority: 'low', status: 'open', parentId: parent.id });
+      
+      const result = db.findNextWorkItem(undefined, 'bug');
+      // Should select the bug child even though regular has higher priority
+      expect(result.workItem?.id).toBe(bugChild.id);
+    });
+
+    it('should find blocking issues when in-progress item is blocked', () => {
+      const blocker = db.create({ title: 'Blocking issue', priority: 'low', status: 'open' });
+      const blocked = db.create({ 
+        title: 'Blocked task', 
+        priority: 'high', 
+        status: 'blocked',
+        description: `This is blocked by ${blocker.id}`
+      });
+      
+      const result = db.findNextWorkItem();
+      // Should select the blocking issue
+      expect(result.workItem?.id).toBe(blocker.id);
+      expect(result.reason).toContain('Blocking issue');
+      expect(result.reason).toContain(blocked.id);
+    });
+
+    it('should find blocking issues mentioned in comments', () => {
+      const blocker = db.create({ title: 'Blocking issue', priority: 'medium', status: 'open' });
+      const blocked = db.create({ 
+        title: 'Blocked task', 
+        priority: 'high', 
+        status: 'blocked'
+      });
+      
+      // Add comment mentioning the blocker
+      db.createComment({
+        workItemId: blocked.id,
+        author: 'test',
+        comment: `Cannot proceed due to ${blocker.id}`
+      });
+      
+      const result = db.findNextWorkItem();
+      // Should select the blocking issue
+      expect(result.workItem?.id).toBe(blocker.id);
+      expect(result.reason).toContain('Blocking issue');
+    });
+
+    it('should skip completed blocking issues', () => {
+      const completedBlocker = db.create({ title: 'Completed blocker', priority: 'high', status: 'completed' });
+      const blocked = db.create({ 
+        title: 'Blocked task', 
+        priority: 'high', 
+        status: 'blocked',
+        description: `Blocked by ${completedBlocker.id}`
+      });
+      
+      const result = db.findNextWorkItem();
+      // Should return the blocked item itself since blocker is complete
+      expect(result.workItem?.id).toBe(blocked.id);
+    });
+  });
 });
