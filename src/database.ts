@@ -5,8 +5,11 @@
 import { randomBytes } from 'crypto';
 import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
 
-const UNIQUE_ID_BYTES = 10;
-const UNIQUE_ID_LENGTH = 16;
+const UNIQUE_TIME_LENGTH = 9;
+const UNIQUE_RANDOM_BYTES = 4;
+const UNIQUE_RANDOM_LENGTH = 7;
+const UNIQUE_ID_LENGTH = UNIQUE_TIME_LENGTH + UNIQUE_RANDOM_LENGTH;
+const MAX_ID_GENERATION_ATTEMPTS = 10;
 
 export class WorklogDatabase {
   private items: Map<string, WorkItem>;
@@ -37,31 +40,45 @@ export class WorklogDatabase {
    * Generate a unique ID for a work item
    */
   private generateId(): string {
-    let id = '';
-    do {
-      id = `${this.prefix}-${this.generateUniqueId()}`;
-    } while (this.items.has(id));
-    return id;
+    for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
+      const id = `${this.prefix}-${this.generateUniqueId()}`;
+      if (!this.items.has(id)) {
+        return id;
+      }
+    }
+    throw new Error('Unable to generate a unique work item ID');
   }
 
   /**
    * Generate a unique ID for a comment
    */
   private generateCommentId(): string {
-    let id = '';
-    do {
-      id = `${this.prefix}-C${this.generateUniqueId()}`;
-    } while (this.comments.has(id));
-    return id;
+    for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
+      const id = `${this.prefix}-C${this.generateUniqueId()}`;
+      if (!this.comments.has(id)) {
+        return id;
+      }
+    }
+    throw new Error('Unable to generate a unique comment ID');
   }
 
   /**
    * Generate a globally unique, human-readable identifier
    */
   private generateUniqueId(): string {
-    const bytes = randomBytes(UNIQUE_ID_BYTES);
-    const raw = BigInt(`0x${bytes.toString('hex')}`).toString(36).toUpperCase();
-    return raw.padStart(UNIQUE_ID_LENGTH, '0');
+    const timeRaw = Date.now().toString(36).toUpperCase();
+    if (timeRaw.length > UNIQUE_TIME_LENGTH) {
+      throw new Error('Timestamp overflow while generating unique ID');
+    }
+    const timePart = timeRaw.padStart(UNIQUE_TIME_LENGTH, '0');
+    const randomBytesValue = randomBytes(UNIQUE_RANDOM_BYTES);
+    const randomNumber = randomBytesValue.readUInt32BE(0);
+    const randomPart = randomNumber.toString(36).toUpperCase().padStart(UNIQUE_RANDOM_LENGTH, '0');
+    const id = `${timePart}${randomPart}`;
+    if (id.length !== UNIQUE_ID_LENGTH) {
+      throw new Error('Generated unique ID has unexpected length');
+    }
+    return id;
   }
 
   /**

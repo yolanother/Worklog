@@ -344,7 +344,7 @@ You can write scripts to sync with other tools:
 # Example: Export open items for external tracking
 
 npm run cli -- list -s open -p high | \
-  grep "^\[[A-Z0-9]\\+-" | \
+  grep '^\[[A-Z0-9]\+-' | \
   while read line; do
     # Parse and send to external API
     echo "Would sync: $line"
