@@ -373,7 +373,7 @@ program
           gitBranch: DEFAULT_GIT_BRANCH,
           push: true,
           dryRun: false,
-          silent: false
+          silent: isJsonMode  // Silent in JSON mode to maintain clean JSON output
         });
       } catch (syncError) {
         // Sync errors are not fatal for init - just warn the user
@@ -662,8 +662,8 @@ program
         prefix: options.prefix,
         gitRemote: options.gitRemote,
         gitBranch: options.gitBranch,
-        push: options.push !== false,
-        dryRun: options.dryRun || false,
+        push: options.push ?? true,  // Default to true if not specified
+        dryRun: options.dryRun ?? false,
         silent: false
       });
     } catch (error) {
