@@ -196,26 +196,6 @@ jobs:
           fi
 ```
 
-## Interactive TUI for Stand-ups
-
-During team stand-ups, use the TUI for a visual overview:
-
-```bash
-# Launch interactive UI
-npm run tui
-
-# Navigate through items
-# Press 'n' to create new items during discussion
-# Press 'u' to update status as team reports progress
-# Press 'q' to quit
-
-# All changes are automatically saved to worklog-data.jsonl
-# After the meeting, commit changes
-git add worklog-data.jsonl
-git commit -m "Update work items from daily standup"
-git push origin main
-```
-
 ## Best Practices
 
 1. **Commit Frequently**: Commit work item updates separately from code changes for clearer history

@@ -10,7 +10,6 @@
     "prestart": "npm run build",
     "start": "node dist/index.js",
     "cli": "tsx src/cli.ts",
-    "tui": "tsx src/tui.ts",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
@@ -21,13 +20,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "blessed": "^0.1.81",
     "commander": "^11.1.0",
     "express": "^4.18.2",
     "js-yaml": "^4.1.1"
   },
   "devDependencies": {
-    "@types/blessed": "^0.1.25",
     "@types/express": "^4.17.21",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.5",

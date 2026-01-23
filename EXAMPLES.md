@@ -177,21 +177,6 @@ await fetch(`http://localhost:3000/items/${newItem.id}`, {
 });
 ```
 
-## TUI Usage
-
-```bash
-# Launch the Terminal UI
-npm run tui
-```
-
-**Keyboard Controls:**
-- `↑` / `↓` or `j` / `k` - Navigate through items
-- `Enter` - View selected item details
-- `n` - Create a new work item
-- `d` - Delete selected item (with confirmation)
-- `u` - Update status of selected item
-- `q` or `Ctrl+C` - Quit the application
-
 ## Git Workflow Example
 
 ```bash

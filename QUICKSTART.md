@@ -30,18 +30,6 @@ npm run cli -- update WI-1 -s in-progress
 npm run cli -- update WI-1 -s completed
 ```
 
-### Using the TUI
-
-```bash
-# Launch the interactive interface
-npm run tui
-
-# Press 'n' to create a new item
-# Use arrow keys to navigate
-# Press Enter to view details
-# Press 'q' to quit
-```
-
 ### Using the API
 
 ```bash
@@ -131,9 +119,8 @@ npm run cli -- import -f backup.jsonl
 ## Tips
 
 1. **Start Simple**: Create a few tasks and get comfortable with the CLI
-2. **Use the TUI**: Great for quick overviews and status updates
-3. **Commit Often**: Keep your work items in sync with Git
-4. **Tag Everything**: Use tags to organize and filter (`--tags "urgent,bug"`)
-5. **Leverage Hierarchy**: Use parent-child relationships for better organization
+2. **Commit Often**: Keep your work items in sync with Git
+3. **Tag Everything**: Use tags to organize and filter (`--tags "urgent,bug"`)
+4. **Leverage Hierarchy**: Use parent-child relationships for better organization
 
 Happy tracking! 🚀
