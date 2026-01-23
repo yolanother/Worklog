@@ -11,6 +11,7 @@ import * as readline from 'readline';
 const CONFIG_DIR = '.worklog';
 const CONFIG_FILE = 'config.yaml';
 const CONFIG_DEFAULTS_FILE = 'config.defaults.yaml';
+const INIT_SEMAPHORE_FILE = 'initialized';
 
 /**
  * Get the path to the config directory
@@ -34,10 +35,62 @@ export function getConfigDefaultsPath(): string {
 }
 
 /**
+ * Get the path to the initialization semaphore file
+ */
+export function getInitSemaphorePath(): string {
+  return path.join(getConfigDir(), INIT_SEMAPHORE_FILE);
+}
+
+/**
  * Check if config file exists
  */
 export function configExists(): boolean {
   return fs.existsSync(getConfigPath());
+}
+
+/**
+ * Check if the system has been initialized
+ */
+export function isInitialized(): boolean {
+  return fs.existsSync(getInitSemaphorePath());
+}
+
+/**
+ * Write initialization semaphore file with version information
+ */
+export function writeInitSemaphore(version: string): void {
+  const configDir = getConfigDir();
+  
+  // Ensure directory exists
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  const initData = {
+    version,
+    initializedAt: new Date().toISOString()
+  };
+  
+  fs.writeFileSync(getInitSemaphorePath(), JSON.stringify(initData, null, 2), 'utf-8');
+}
+
+/**
+ * Read initialization information from semaphore file
+ */
+export function readInitSemaphore(): { version: string; initializedAt: string } | null {
+  const semaphorePath = getInitSemaphorePath();
+  
+  if (!fs.existsSync(semaphorePath)) {
+    return null;
+  }
+  
+  try {
+    const content = fs.readFileSync(semaphorePath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Error reading initialization semaphore:', error);
+    return null;
+  }
 }
 
 /**
