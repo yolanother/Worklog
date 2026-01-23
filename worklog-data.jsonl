@@ -1,0 +1,3 @@
+{"id":"TEST-1","title":"First test item","description":"Testing the prefix feature","status":"open","priority":"medium","parentId":null,"createdAt":"2026-01-23T06:37:31.999Z","updatedAt":"2026-01-23T06:37:31.999Z","tags":[]}
+{"id":"TEST-2","title":"Second test item","description":"","status":"in-progress","priority":"high","parentId":null,"createdAt":"2026-01-23T06:37:32.488Z","updatedAt":"2026-01-23T06:37:32.488Z","tags":[]}
+{"id":"PROJ-1","title":"Custom prefix item","description":"","status":"open","priority":"medium","parentId":null,"createdAt":"2026-01-23T06:37:38.897Z","updatedAt":"2026-01-23T06:37:38.897Z","tags":[]}
