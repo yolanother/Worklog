@@ -18,7 +18,34 @@ npm run build
 
 ## Daily Workflow
 
-### 1. Pull Latest Changes
+### 1. Sync with Team (Recommended)
+
+The `sync` command automatically pulls the latest changes, merges them with your local work, and pushes updates back:
+
+```bash
+# Sync your work items with the team
+npm run cli -- sync
+
+# This will:
+# 1. Pull the latest worklog-data.jsonl from git
+# 2. Merge with your local changes
+# 3. Resolve conflicts using updatedAt timestamps (newer wins)
+# 4. Push the merged data back to git
+```
+
+**Conflict Resolution**: When the same work item is modified both locally and remotely, the sync command automatically resolves conflicts by comparing `updatedAt` timestamps. The more recent update always takes precedence.
+
+```bash
+# Preview what would be synced without making changes
+npm run cli -- sync --dry-run
+
+# Sync but don't push (useful for reviewing changes first)
+npm run cli -- sync --no-push
+```
+
+### 1b. Manual Pull (Alternative)
+
+Alternatively, you can manually pull changes:
 
 ```bash
 # Pull the latest work items from your team
@@ -28,6 +55,8 @@ git pull origin main
 # View the latest items
 npm run cli -- list
 ```
+
+**Note**: Manual git pull may result in merge conflicts if the same work items are modified locally and remotely. The `sync` command handles this automatically.
 
 ### 2. Create New Work Items
 
@@ -128,9 +157,37 @@ git commit -m "Start working on user authentication"
 git push origin main
 ```
 
-### Scenario 2: Handling Merge Conflicts
+### Scenario 2: Handling Concurrent Updates with Sync
 
-If two people update different work items, Git merges automatically. If they update the same item:
+The `sync` command automatically handles concurrent updates:
+
+```bash
+# You and a teammate both modify WI-5 at the same time
+# Your change: status = "in-progress"
+# Teammate's change: priority = "high"
+
+# When you run sync
+npm run cli -- sync
+
+# The sync command will:
+# 1. Detect the conflict
+# 2. Compare updatedAt timestamps
+# 3. Keep the most recent version
+# 4. Report the resolution
+
+# Output will show:
+# Conflict resolution:
+#   - WI-5: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
+# 
+# Sync summary:
+#   Work items updated: 1
+```
+
+**Best Practice**: Run `sync` frequently (before and after making changes) to minimize conflicts.
+
+### Scenario 2b: Manual Merge Conflicts (When Not Using Sync)
+
+If you use manual git pull instead of sync, you may encounter merge conflicts:
 
 ```bash
 # After git pull, if there's a conflict in worklog-data.jsonl
@@ -198,12 +255,68 @@ jobs:
 
 ## Best Practices
 
-1. **Commit Frequently**: Commit work item updates separately from code changes for clearer history
-2. **Use Descriptive Commits**: `git commit -m "Create feature breakdown for auth module"`
-3. **Pull Before Creating**: Always pull latest before creating new items to avoid ID conflicts
-4. **Tag Appropriately**: Use tags consistently across the team (e.g., "frontend", "backend", "bug", "feature")
-5. **Keep JSONL Clean**: Don't manually edit worklog-data.jsonl; use the CLI or API
-6. **Backup Before Major Changes**: Export before restructuring work hierarchies
+1. **Use Sync Command**: Use `npm run cli -- sync` instead of manual git operations for automatic conflict resolution
+2. **Sync Frequently**: Run sync before starting work and after completing tasks to minimize conflicts
+3. **Review Before Pushing**: Use `--dry-run` to preview changes before syncing
+4. **Commit Frequently**: Commit work item updates separately from code changes for clearer history
+5. **Use Descriptive Commits**: The sync command uses "Sync work items and comments" as the commit message
+6. **Tag Appropriately**: Use tags consistently across the team (e.g., "frontend", "backend", "bug", "feature")
+7. **Keep JSONL Clean**: Don't manually edit worklog-data.jsonl; use the CLI or API
+8. **Backup Before Major Changes**: Export before restructuring work hierarchies
+
+## Sync Command Details
+
+The `sync` command provides automatic synchronization with git, including intelligent conflict resolution:
+
+### How Sync Works
+
+1. **Pull**: Fetches the latest `worklog-data.jsonl` from the git repository
+2. **Merge**: Combines local and remote changes
+3. **Conflict Resolution**: Automatically resolves conflicts using `updatedAt` timestamps
+4. **Export**: Saves the merged data to the local file
+5. **Push**: Commits and pushes the changes back to git
+
+### Conflict Resolution Strategy
+
+When the same work item exists in both local and remote with different content:
+
+- **Compare Timestamps**: Uses the `updatedAt` field to determine which version is newer
+- **Most Recent Wins**: The version with the later `updatedAt` timestamp is kept
+- **Report Conflicts**: All resolved conflicts are reported in the output
+
+Example:
+```
+Conflict resolution:
+  - TEST-1: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
+  - TEST-2: Local version is newer (local: 2024-01-15T14:35:00, remote: 2024-01-15T14:20:00)
+```
+
+### Sync Options
+
+```bash
+# Standard sync (pull, merge, push)
+npm run cli -- sync
+
+# Preview changes without making any modifications
+npm run cli -- sync --dry-run
+
+# Sync but don't push (review changes first)
+npm run cli -- sync --no-push
+
+# Sync a custom data file
+npm run cli -- sync -f custom-data.jsonl
+
+# Combine options
+npm run cli -- sync --dry-run --prefix PROJ
+```
+
+### When to Use Sync
+
+- **At the start of your workday**: Get the latest updates from your team
+- **Before creating new items**: Ensure you have the latest ID sequence
+- **After making changes**: Share your updates with the team
+- **When switching branches**: After checking out a different git branch
+- **Before major reorganizations**: Ensure you're working with the latest data
 
 ## Migration and Sync
 

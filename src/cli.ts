@@ -6,8 +6,9 @@
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
-import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput } from './types.js';
+import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
+import { gitPullDataFile, gitPushDataFile, mergeWorkItems, mergeComments, SyncResult } from './sync.js';
 import * as fs from 'fs';
 
 const program = new Command();
@@ -258,6 +259,114 @@ program
     db.importComments(comments);
     saveData();
     console.log(`Imported ${items.length} work items and ${comments.length} comments from ${options.file}`);
+  });
+
+// Sync with git
+program
+  .command('sync')
+  .description('Sync work items with git repository (pull, merge with conflict resolution, and push)')
+  .option('-f, --file <filepath>', 'Data file path', dataPath)
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .option('--no-push', 'Skip pushing changes back to git')
+  .option('--dry-run', 'Show what would be synced without making changes')
+  .action(async (options) => {
+    try {
+      // Load current local data
+      loadData(options.prefix);
+      const localItems = db.getAll();
+      const localComments = db.getAllComments();
+      
+      console.log(`Starting sync for ${options.file}...`);
+      console.log(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
+      
+      if (options.dryRun) {
+        console.log('\n[DRY RUN MODE - No changes will be made]');
+      }
+      
+      // Pull latest from git
+      console.log('\nPulling latest changes from git...');
+      if (!options.dryRun) {
+        await gitPullDataFile(options.file);
+      }
+      
+      // Import remote data
+      let remoteItems: WorkItem[] = [];
+      let remoteComments: Comment[] = [];
+      
+      if (fs.existsSync(options.file)) {
+        const remoteData = importFromJsonl(options.file);
+        remoteItems = remoteData.items;
+        remoteComments = remoteData.comments;
+        console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
+      } else {
+        console.log('No remote data file found - treating as empty');
+      }
+      
+      // Merge work items
+      console.log('\nMerging work items...');
+      const itemMergeResult = mergeWorkItems(localItems, remoteItems);
+      
+      // Merge comments
+      console.log('Merging comments...');
+      const commentMergeResult = mergeComments(localComments, remoteComments);
+      
+      // Calculate statistics
+      const result: SyncResult = {
+        itemsAdded: itemMergeResult.merged.length - localItems.length,
+        itemsUpdated: itemMergeResult.conflicts.filter(c => c.includes('Remote version is newer')).length,
+        itemsUnchanged: localItems.length - itemMergeResult.conflicts.filter(c => c.includes('Local version is newer')).length,
+        commentsAdded: commentMergeResult.merged.length - localComments.length,
+        commentsUnchanged: localComments.length,
+        conflicts: itemMergeResult.conflicts
+      };
+      
+      // Display conflicts
+      if (result.conflicts.length > 0) {
+        console.log('\nConflict resolution:');
+        result.conflicts.forEach(conflict => {
+          console.log(`  - ${conflict}`);
+        });
+      } else {
+        console.log('\nNo conflicts detected');
+      }
+      
+      // Display summary
+      console.log('\nSync summary:');
+      console.log(`  Work items added: ${result.itemsAdded}`);
+      console.log(`  Work items updated: ${result.itemsUpdated}`);
+      console.log(`  Work items unchanged: ${result.itemsUnchanged}`);
+      console.log(`  Comments added: ${result.commentsAdded}`);
+      console.log(`  Comments unchanged: ${result.commentsUnchanged}`);
+      console.log(`  Total work items: ${itemMergeResult.merged.length}`);
+      console.log(`  Total comments: ${commentMergeResult.merged.length}`);
+      
+      if (options.dryRun) {
+        console.log('\n[DRY RUN MODE - No changes were made]');
+        return;
+      }
+      
+      // Update database with merged data
+      db.import(itemMergeResult.merged);
+      db.importComments(commentMergeResult.merged);
+      
+      // Save merged data
+      saveData();
+      console.log('\nMerged data saved locally');
+      
+      // Push to git if requested
+      if (options.push !== false) {
+        console.log('\nPushing changes to git...');
+        await gitPushDataFile(options.file, 'Sync work items and comments');
+        console.log('Changes pushed successfully');
+      } else {
+        console.log('\nSkipping git push (--no-push flag)');
+      }
+      
+      console.log('\n✓ Sync completed successfully');
+    } catch (error) {
+      console.error('\n✗ Sync failed:', (error as Error).message);
+      process.exit(1);
+    }
   });
 
 // Comment commands

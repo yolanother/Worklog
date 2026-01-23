@@ -96,6 +96,14 @@ npm run cli -- export -f backup.jsonl
 
 # Import data
 npm run cli -- import -f backup.jsonl
+
+# Sync with git (pull, merge with conflict resolution, and push)
+npm run cli -- sync
+
+# Sync with options
+npm run cli -- sync --dry-run        # Preview changes without applying
+npm run cli -- sync --no-push        # Pull and merge but don't push
+npm run cli -- sync -f custom.jsonl  # Sync a different file
 ```
 
 ### API Server (Optional)
