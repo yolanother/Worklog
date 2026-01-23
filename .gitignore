@@ -141,9 +141,6 @@ vite.config.ts.timestamp-*
 # Local config (user should create their own from defaults)
 .worklog/config.yaml
 
-# Data file (user's work items and comments)
-.worklog/worklog-data.jsonl
-
 # SQLite database (persistent storage)
 .worklog/worklog.db
 .worklog/worklog.db-shm
