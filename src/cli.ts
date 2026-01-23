@@ -79,14 +79,6 @@ function displayConflictDetails(result: SyncResult): void {
     conflict.fields.forEach(field => {
       console.log(chalk.bold(`   Field: ${field.field}`));
       
-      // Determine which value was chosen and which was lost
-      const localIsChosen = field.chosenSource === 'local' || 
-                            (field.chosenSource === 'merged' && 
-                             JSON.stringify(field.chosenValue) === JSON.stringify(field.localValue));
-      const remoteIsChosen = field.chosenSource === 'remote' || 
-                             (field.chosenSource === 'merged' && 
-                              JSON.stringify(field.chosenValue) === JSON.stringify(field.remoteValue));
-      
       // For merged values (like tags union), both contribute to the result
       if (field.chosenSource === 'merged') {
         console.log(chalk.cyan(`     Local:  ${formatValue(field.localValue)}`));
@@ -94,7 +86,7 @@ function displayConflictDetails(result: SyncResult): void {
         console.log(chalk.green(`     Merged: ${formatValue(field.chosenValue)}`));
       } else {
         // Show chosen value in green, lost value in red
-        if (localIsChosen) {
+        if (field.chosenSource === 'local') {
           console.log(chalk.green(`   ✓ Local:  ${formatValue(field.localValue)}`));
           console.log(chalk.red(`   ✗ Remote: ${formatValue(field.remoteValue)}`));
         } else {
