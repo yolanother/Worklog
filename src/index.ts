@@ -27,9 +27,10 @@ const dataPath = getDefaultDataPath();
 if (fs.existsSync(dataPath)) {
   try {
     console.log(`Loading existing data from ${dataPath}...`);
-    const items = importFromJsonl(dataPath);
+    const { items, comments } = importFromJsonl(dataPath);
     db.import(items);
-    console.log(`Loaded ${items.length} work items`);
+    db.importComments(comments);
+    console.log(`Loaded ${items.length} work items and ${comments.length} comments`);
   } catch (error) {
     console.error('Error loading data:', error);
   }
