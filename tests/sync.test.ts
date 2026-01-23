@@ -5,9 +5,25 @@
 
 import { describe, it, expect } from 'vitest';
 import { mergeWorkItems, mergeComments } from '../src/sync.js';
+
+// Only imported for unit testing the ref-name mapping.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { _testOnly_getRemoteTrackingRef } from '../src/sync.js';
 import { WorkItem, Comment } from '../src/types.js';
 
 describe('Sync Operations', () => {
+  describe('git ref naming', () => {
+    it('should map explicit refs/* to local refs/worklog/remotes/* tracking refs', () => {
+      expect(_testOnly_getRemoteTrackingRef('origin', 'refs/worklog/data')).toBe(
+        'refs/worklog/remotes/origin/worklog/data'
+      );
+    });
+
+    it('should map normal branches to refs/remotes/* tracking refs', () => {
+      expect(_testOnly_getRemoteTrackingRef('origin', 'main')).toBe('refs/remotes/origin/main');
+    });
+  });
+
   describe('mergeWorkItems', () => {
     it('should merge when local has items and remote is empty', () => {
       const localItems: WorkItem[] = [

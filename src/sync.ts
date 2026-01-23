@@ -482,10 +482,21 @@ async function fetchRemote(remote: string): Promise<void> {
 
 function getRemoteTrackingRef(remote: string, branchOrRef: string): string {
   // For a named branch like "worklog-data", track it as refs/remotes/origin/worklog-data.
-  // For an explicit ref like "refs/worklog/data", track it as refs/remotes/origin/worklog/data.
-  const suffix = branchOrRef.startsWith('refs/') ? branchOrRef.slice('refs/'.length) : branchOrRef;
-  return `refs/remotes/${remote}/${suffix}`;
+  // For an explicit ref like "refs/worklog/data", DO NOT track it under refs/remotes/...
+  // because that namespace is reserved for remote-tracking branches and can collide with
+  // real branches like "worklog/data" and/or reject non-fast-forward updates.
+  //
+  // Instead, keep a local-only tracking ref under refs/worklog/remotes/<remote>/...
+  if (branchOrRef.startsWith('refs/')) {
+    const suffix = branchOrRef.slice('refs/'.length);
+    return `refs/worklog/remotes/${remote}/${suffix}`;
+  }
+
+  return `refs/remotes/${remote}/${branchOrRef}`;
 }
+
+// Exposed for unit tests.
+export const _testOnly_getRemoteTrackingRef = getRemoteTrackingRef;
 
 async function refExists(ref: string): Promise<boolean> {
   try {
@@ -504,7 +515,8 @@ async function fetchTargetRef(target: GitTarget): Promise<{ hasRemote: boolean; 
     // If it doesn't exist yet, treat as "no remote".
     try {
       await execAsync(
-        `git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(`${target.branch}:${remoteTrackingRef}`)}`
+        // Force-update the local tracking ref so stale/colliding local refs don't block sync.
+        `git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(`+${target.branch}:${remoteTrackingRef}`)}`
       );
     } catch {
       // Avoid silently treating fetch failures as "ref missing"; that can lead to overwriting
