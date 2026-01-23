@@ -308,31 +308,11 @@ export class WorklogDatabase {
   findNextWorkItem(assignee?: string, searchTerm?: string): WorkItem | null {
     let items = this.store.getAllWorkItems();
 
-    // Filter by assignee if provided
-    if (assignee) {
-      items = items.filter(item => item.assignee === assignee);
-    }
-
-    // Filter by search term if provided (fuzzy match against title, description, and comments)
-    if (searchTerm) {
-      const lowerSearchTerm = searchTerm.toLowerCase();
-      items = items.filter(item => {
-        // Check title and description
-        const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
-        const descriptionMatch = item.description?.toLowerCase().includes(lowerSearchTerm) || false;
-        
-        // Check comments
-        const comments = this.getCommentsForWorkItem(item.id);
-        const commentMatch = comments.some(comment => 
-          comment.comment.toLowerCase().includes(lowerSearchTerm)
-        );
-        
-        return titleMatch || descriptionMatch || commentMatch;
-      });
-    }
-
-    // Filter out deleted items
+    // Filter out deleted items first
     items = items.filter(item => item.status !== 'deleted');
+
+    // Apply filters
+    items = this.applyFilters(items, assignee, searchTerm);
 
     // Find in-progress items
     const inProgressItems = items.filter(item => item.status === 'in-progress');
@@ -353,19 +333,53 @@ export class WorklogDatabase {
       return null;
     }
 
-    // Get leaf descendants that are not in progress
+    // Get leaf descendants that are not in progress or completed
     const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
-    const notInProgressLeaves = leafDescendants.filter(
+    
+    // Apply the same filters to leaf descendants and filter by workable status
+    const filteredLeaves = this.applyFilters(leafDescendants, assignee, searchTerm).filter(
       item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
     );
 
-    if (notInProgressLeaves.length === 0) {
+    if (filteredLeaves.length === 0) {
       // No suitable leaf descendants, return the in-progress item itself
       return selectedInProgress;
     }
 
     // Select highest priority and oldest leaf descendant
-    return this.selectHighestPriorityOldest(notInProgressLeaves);
+    return this.selectHighestPriorityOldest(filteredLeaves);
+  }
+
+  /**
+   * Apply assignee and search term filters to a list of work items
+   */
+  private applyFilters(items: WorkItem[], assignee?: string, searchTerm?: string): WorkItem[] {
+    let filtered = items;
+
+    // Filter by assignee if provided
+    if (assignee) {
+      filtered = filtered.filter(item => item.assignee === assignee);
+    }
+
+    // Filter by search term if provided (fuzzy match against title, description, and comments)
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(item => {
+        // Check title and description
+        const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
+        const descriptionMatch = item.description?.toLowerCase().includes(lowerSearchTerm) || false;
+        
+        // Check comments
+        const comments = this.getCommentsForWorkItem(item.id);
+        const commentMatch = comments.some(comment => 
+          comment.comment.toLowerCase().includes(lowerSearchTerm)
+        );
+        
+        return titleMatch || descriptionMatch || commentMatch;
+      });
+    }
+
+    return filtered;
   }
 
   /**

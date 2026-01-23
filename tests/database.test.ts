@@ -521,5 +521,25 @@ describe('WorklogDatabase', () => {
       const next = db.findNextWorkItem();
       expect(next?.id).toBe(highLeaf.id);
     });
+
+    it('should apply assignee filter to leaf descendants', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress', assignee: 'john' });
+      db.create({ title: 'Child for jane', priority: 'high', status: 'open', parentId: parent.id, assignee: 'jane' });
+      const johnChild = db.create({ title: 'Child for john', priority: 'low', status: 'open', parentId: parent.id, assignee: 'john' });
+      
+      const next = db.findNextWorkItem('john');
+      // Should select john's child even though jane's has higher priority
+      expect(next?.id).toBe(johnChild.id);
+    });
+
+    it('should apply search filter to leaf descendants', () => {
+      const parent = db.create({ title: 'Parent task', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Regular child', priority: 'critical', status: 'open', parentId: parent.id });
+      const bugChild = db.create({ title: 'Bug fix needed', priority: 'low', status: 'open', parentId: parent.id });
+      
+      const next = db.findNextWorkItem(undefined, 'bug');
+      // Should select the bug child even though regular has higher priority
+      expect(next?.id).toBe(bugChild.id);
+    });
   });
 });
