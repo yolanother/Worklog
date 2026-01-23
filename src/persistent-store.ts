@@ -25,15 +25,27 @@ export class SqlitePersistentStore {
     // Ensure directory exists
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        throw new Error(`Failed to create database directory ${dir}: ${(error as Error).message}`);
+      }
     }
 
     // Open/create database
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL'); // Better concurrency
+    try {
+      this.db = new Database(dbPath);
+      this.db.pragma('journal_mode = WAL'); // Better concurrency
+    } catch (error) {
+      throw new Error(`Failed to open database ${dbPath}: ${(error as Error).message}`);
+    }
     
     // Initialize schema
-    this.initializeSchema();
+    try {
+      this.initializeSchema();
+    } catch (error) {
+      throw new Error(`Failed to initialize database schema: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -172,6 +184,15 @@ export class SqlitePersistentStore {
   }
 
   /**
+   * Count work items
+   */
+  countWorkItems(): number {
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM workitems');
+    const row = stmt.get() as { count: number };
+    return row.count;
+  }
+
+  /**
    * Get all work items
    */
   getAllWorkItems(): WorkItem[] {
@@ -296,32 +317,63 @@ export class SqlitePersistentStore {
    * Convert database row to WorkItem
    */
   private rowToWorkItem(row: any): WorkItem {
-    return {
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      status: row.status,
-      priority: row.priority,
-      parentId: row.parentId,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      tags: JSON.parse(row.tags),
-      assignee: row.assignee,
-      stage: row.stage,
-    };
+    try {
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        status: row.status,
+        priority: row.priority,
+        parentId: row.parentId,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        tags: JSON.parse(row.tags),
+        assignee: row.assignee,
+        stage: row.stage,
+      };
+    } catch (error) {
+      console.error(`Error parsing work item ${row.id}:`, error);
+      // Return item with empty tags if parsing fails
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        status: row.status,
+        priority: row.priority,
+        parentId: row.parentId,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        tags: [],
+        assignee: row.assignee,
+        stage: row.stage,
+      };
+    }
   }
 
   /**
    * Convert database row to Comment
    */
   private rowToComment(row: any): Comment {
-    return {
-      id: row.id,
-      workItemId: row.workItemId,
-      author: row.author,
-      comment: row.comment,
-      createdAt: row.createdAt,
-      references: JSON.parse(row.refs),
-    };
+    try {
+      return {
+        id: row.id,
+        workItemId: row.workItemId,
+        author: row.author,
+        comment: row.comment,
+        createdAt: row.createdAt,
+        references: JSON.parse(row.refs),
+      };
+    } catch (error) {
+      console.error(`Error parsing comment ${row.id}:`, error);
+      // Return comment with empty references if parsing fails
+      return {
+        id: row.id,
+        workItemId: row.workItemId,
+        author: row.author,
+        comment: row.comment,
+        createdAt: row.createdAt,
+        references: [],
+      };
+    }
   }
 }

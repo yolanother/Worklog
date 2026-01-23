@@ -53,8 +53,8 @@ export class WorklogDatabase {
     const lastImportMtime = metadata.lastJsonlImportMtime;
 
     // If DB is empty or JSONL is newer, refresh from JSONL
-    const items = this.store.getAllWorkItems();
-    const shouldRefresh = items.length === 0 || !lastImportMtime || jsonlMtime > lastImportMtime;
+    const itemCount = this.store.countWorkItems();
+    const shouldRefresh = itemCount === 0 || !lastImportMtime || jsonlMtime > lastImportMtime;
 
     if (shouldRefresh) {
       if (!this.silent) {
