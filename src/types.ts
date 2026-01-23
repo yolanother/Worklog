@@ -145,3 +145,11 @@ export interface ConflictDetail {
   localUpdatedAt?: string;
   remoteUpdatedAt?: string;
 }
+
+/**
+ * Result of finding the next work item with selection reason
+ */
+export interface NextWorkItemResult {
+  workItem: WorkItem | null;
+  reason: string;
+}

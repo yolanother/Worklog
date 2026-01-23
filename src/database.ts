@@ -5,7 +5,7 @@
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
+import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput, NextWorkItemResult } from './types.js';
 import { SqlitePersistentStore } from './persistent-store.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 
@@ -303,9 +303,9 @@ export class WorklogDatabase {
    * Find the next work item to work on based on priority and creation time
    * @param assignee - Optional assignee filter
    * @param searchTerm - Optional search term for fuzzy matching
-   * @returns The next work item to work on, or null if none found
+   * @returns The next work item and a reason for the selection, or null if none found
    */
-  findNextWorkItem(assignee?: string, searchTerm?: string): WorkItem | null {
+  findNextWorkItem(assignee?: string, searchTerm?: string): NextWorkItemResult {
     let items = this.store.getAllWorkItems();
 
     // Filter out deleted items first
@@ -314,23 +314,56 @@ export class WorklogDatabase {
     // Apply filters
     items = this.applyFilters(items, assignee, searchTerm);
 
-    // Find in-progress items
-    const inProgressItems = items.filter(item => item.status === 'in-progress');
+    // Find in-progress and blocked items
+    const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
 
     if (inProgressItems.length === 0) {
       // No in-progress items, find highest priority and oldest non-in-progress item
       const openItems = items.filter(item => item.status !== 'completed');
       if (openItems.length === 0) {
-        return null;
+        return { workItem: null, reason: 'No work items available' };
       }
-      return this.selectHighestPriorityOldest(openItems);
+      const selected = this.selectHighestPriorityOldest(openItems);
+      return {
+        workItem: selected,
+        reason: `Highest priority (${selected?.priority}) and oldest open item`
+      };
     }
 
-    // There are in-progress items
-    // Find the highest priority and oldest in-progress item
+    // There are in-progress/blocked items
+    // Find the highest priority and oldest in-progress/blocked item
     const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
     if (!selectedInProgress) {
-      return null;
+      return { workItem: null, reason: 'No work items available' };
+    }
+
+    // Check if the item is blocked
+    if (selectedInProgress.status === 'blocked') {
+      // Find blocking issues mentioned in description or comments
+      const blockingIssues = this.extractBlockingIssues(selectedInProgress);
+      if (blockingIssues.length > 0) {
+        // Filter to find existing work items that match the blocking issue IDs
+        const blockingItems = blockingIssues
+          .map(id => this.get(id))
+          .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+        
+        if (blockingItems.length > 0) {
+          // Apply filters to blocking items and select highest priority
+          const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+          if (filteredBlockingItems.length > 0) {
+            const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
+            return {
+              workItem: selected,
+              reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+            };
+          }
+        }
+      }
+      // If no blocking issues found or they don't exist, return the blocked item itself
+      return {
+        workItem: selectedInProgress,
+        reason: `Blocked item with no identifiable blocking issues`
+      };
     }
 
     // Get leaf descendants that are not in progress or completed
@@ -343,11 +376,47 @@ export class WorklogDatabase {
 
     if (filteredLeaves.length === 0) {
       // No suitable leaf descendants, return the in-progress item itself
-      return selectedInProgress;
+      return {
+        workItem: selectedInProgress,
+        reason: `In-progress item with no open descendants`
+      };
     }
 
     // Select highest priority and oldest leaf descendant
-    return this.selectHighestPriorityOldest(filteredLeaves);
+    const selected = this.selectHighestPriorityOldest(filteredLeaves);
+    return {
+      workItem: selected,
+      reason: `Highest priority (${selected?.priority}) leaf descendant of in-progress item ${selectedInProgress.id}`
+    };
+  }
+
+  /**
+   * Extract blocking issue IDs from description and comments
+   * Looks for patterns like "blocked by WI-123" or "blocks: WI-456"
+   */
+  private extractBlockingIssues(item: WorkItem): string[] {
+    const blockingIds: string[] = [];
+    const pattern = new RegExp(`${this.prefix}-[A-Z0-9]+`, 'gi');
+    
+    // Search in description
+    if (item.description) {
+      const matches = item.description.match(pattern);
+      if (matches) {
+        blockingIds.push(...matches.map(id => id.toUpperCase()));
+      }
+    }
+    
+    // Search in comments
+    const comments = this.getCommentsForWorkItem(item.id);
+    for (const comment of comments) {
+      const matches = comment.comment.match(pattern);
+      if (matches) {
+        blockingIds.push(...matches.map(id => id.toUpperCase()));
+      }
+    }
+    
+    // Remove duplicates and the item itself
+    return [...new Set(blockingIds)].filter(id => id !== item.id);
   }
 
   /**

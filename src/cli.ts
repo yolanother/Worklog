@@ -811,32 +811,36 @@ program
     requireInitialized();
     const db = getDatabase(options.prefix);
     
-    const nextItem = db.findNextWorkItem(options.assignee, options.search);
+    const result = db.findNextWorkItem(options.assignee, options.search);
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
-      if (nextItem) {
-        outputJson({ success: true, workItem: nextItem });
+      if (result.workItem) {
+        outputJson({ success: true, workItem: result.workItem, reason: result.reason });
       } else {
-        outputJson({ success: true, workItem: null, message: 'No work items found' });
+        outputJson({ success: true, workItem: null, reason: result.reason });
       }
     } else {
-      if (!nextItem) {
+      if (!result.workItem) {
         console.log('No work items found to work on.');
+        if (result.reason) {
+          console.log(`Reason: ${result.reason}`);
+        }
         return;
       }
       
       console.log('\nNext work item to work on:');
       console.log('==========================\n');
-      console.log(`ID:          ${nextItem.id}`);
-      console.log(`Title:       ${nextItem.title}`);
-      console.log(`Status:      ${nextItem.status}`);
-      console.log(`Priority:    ${nextItem.priority}`);
-      if (nextItem.assignee) console.log(`Assignee:    ${nextItem.assignee}`);
-      if (nextItem.parentId) console.log(`Parent:      ${nextItem.parentId}`);
-      if (nextItem.description) {
-        console.log(`Description: ${nextItem.description}`);
+      console.log(`ID:          ${result.workItem.id}`);
+      console.log(`Title:       ${result.workItem.title}`);
+      console.log(`Status:      ${result.workItem.status}`);
+      console.log(`Priority:    ${result.workItem.priority}`);
+      if (result.workItem.assignee) console.log(`Assignee:    ${result.workItem.assignee}`);
+      if (result.workItem.parentId) console.log(`Parent:      ${result.workItem.parentId}`);
+      if (result.workItem.description) {
+        console.log(`Description: ${result.workItem.description}`);
       }
+      console.log(`\nReason:      ${chalk.cyan(result.reason)}`);
       
       // Offer to copy ID to clipboard
       console.log('\n');
@@ -844,7 +848,7 @@ program
       // Simple clipboard prompt (no actual clipboard functionality yet)
       // Note: For actual clipboard support, we would need a package like 'clipboardy'
       // For now, we just display the ID prominently
-      console.log(`Work item ID: ${chalk.green.bold(nextItem.id)}`);
+      console.log(`Work item ID: ${chalk.green.bold(result.workItem.id)}`);
       console.log(`(Copy the ID above to use it in other commands)`);
     }
   });

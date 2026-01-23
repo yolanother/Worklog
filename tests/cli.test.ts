@@ -790,5 +790,16 @@ describe('CLI Integration Tests', () => {
       expect(result.success).toBe(true);
       expect(result.workItem.title).toBe('Open task');
     });
+
+    it('should include a reason in the result', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p high`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.reason).toBeDefined();
+      expect(typeof result.reason).toBe('string');
+    });
   });
 });
