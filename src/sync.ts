@@ -217,7 +217,8 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     // This will fail if the file doesn't exist on remote
     try {
       // Note: git show uses the syntax "ref:path" where the path is relative to the repo root
-      // We need to escape the entire ref:path as a unit for the shell
+      // We escape the entire "ref:path" as a single unit to protect against special characters
+      // in both the branch name and file path. Git correctly parses the ref:path even when quoted.
       const refAndPath = `origin/${branch}:${dataFilePath}`;
       const { stdout: remoteContent } = await execAsync(
         `git show ${escapeShellArg(refAndPath)}`
