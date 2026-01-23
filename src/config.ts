@@ -54,6 +54,7 @@ export function loadConfig(): WorklogConfig | null {
       config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
     } catch (error) {
       console.error('Error loading config defaults:', error);
+      console.error('Continuing without defaults...');
     }
   }
   
