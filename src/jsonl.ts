@@ -37,6 +37,13 @@ export function importFromJsonl(filepath: string): WorkItem[] {
   for (const line of lines) {
     try {
       const item = JSON.parse(line) as WorkItem;
+      // Ensure backward compatibility with old data that doesn't have assignee/stage
+      if (item.assignee === undefined) {
+        item.assignee = '';
+      }
+      if (item.stage === undefined) {
+        item.stage = '';
+      }
       items.push(item);
     } catch (error) {
       console.error(`Error parsing line: ${line}`);

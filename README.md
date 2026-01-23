@@ -130,7 +130,9 @@ Work items are stored in JSONL (JSON Lines) format, with each line representing 
   "parentId": null,
   "createdAt": "2024-01-01T00:00:00.000Z",
   "updatedAt": "2024-01-01T00:00:00.000Z",
-  "tags": ["feature", "backend"]
+  "tags": ["feature", "backend"],
+  "assignee": "john.doe",
+  "stage": "development"
 }
 ```
 
@@ -145,6 +147,8 @@ Work items are stored in JSONL (JSON Lines) format, with each line representing 
 - **createdAt**: ISO timestamp of creation
 - **updatedAt**: ISO timestamp of last update
 - **tags**: Array of string tags
+- **assignee**: Person assigned to the work item
+- **stage**: Current stage of the work item in the workflow
 
 ## Development
 
