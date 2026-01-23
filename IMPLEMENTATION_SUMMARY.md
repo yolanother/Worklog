@@ -144,10 +144,10 @@ npm run cli -- create -t "My task" -d "Description"
 npm run cli -- list -s open -p high
 
 # Update status
-npm run cli -- update WI-1 -s completed
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed
 
 # View hierarchy
-npm run cli -- show WI-1 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### Quick API Usage

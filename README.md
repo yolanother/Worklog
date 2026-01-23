@@ -38,7 +38,7 @@ Project name: MyProject
 Issue ID prefix: MP
 ```
 
-This will create issues with IDs like `MP-1`, `MP-2`, etc.
+This will create issues with IDs like `MP-0J8L1JQ3H8ZQ2K6D`, `MP-0J8L1JQ3H8ZQ2K6E`, etc.
 
 If no configuration exists, the system defaults to using `WI` as the prefix.
 
@@ -65,31 +65,31 @@ npm run cli -- list
 npm run cli -- list -s open -p high
 
 # Show a specific work item
-npm run cli -- show WI-1
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D
 
 # Show with children
-npm run cli -- show WI-1 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 
 # Update a work item
-npm run cli -- update WI-1 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Delete a work item
-npm run cli -- delete WI-1
+npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6D
 
 # Create a comment on a work item
-npm run cli -- comment-create WI-1 -a "John Doe" -c "This is a comment with **markdown**" -r "WI-2,src/api.ts,https://example.com"
+npm run cli -- comment-create WI-0J8L1JQ3H8ZQ2K6D -a "John Doe" -c "This is a comment with **markdown**" -r "WI-0J8L1JQ3H8ZQ2K6E,src/api.ts,https://example.com"
 
 # List comments for a work item
-npm run cli -- comment-list WI-1
+npm run cli -- comment-list WI-0J8L1JQ3H8ZQ2K6D
 
 # Show a specific comment
-npm run cli -- comment-show WI-C1
+npm run cli -- comment-show WI-C0J8L1JQ3H8ZQ2K6F
 
 # Update a comment
-npm run cli -- comment-update WI-C1 -c "Updated comment text"
+npm run cli -- comment-update WI-C0J8L1JQ3H8ZQ2K6F -c "Updated comment text"
 
 # Delete a comment
-npm run cli -- comment-delete WI-C1
+npm run cli -- comment-delete WI-C0J8L1JQ3H8ZQ2K6F
 
 # Export data
 npm run cli -- export -f backup.jsonl
@@ -158,7 +158,7 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 
 ```json
 {
-  "id": "WI-1",
+  "id": "WI-0J8L1JQ3H8ZQ2K6D",
   "title": "Example task",
   "description": "Task description",
   "status": "open",
@@ -190,18 +190,18 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 
 ```json
 {
-  "id": "WI-C1",
-  "workItemId": "WI-1",
+  "id": "WI-C0J8L1JQ3H8ZQ2K6F",
+  "workItemId": "WI-0J8L1JQ3H8ZQ2K6D",
   "author": "Jane Doe",
   "comment": "This is a comment with **markdown** support!",
   "createdAt": "2024-01-01T00:00:00.000Z",
-  "references": ["WI-2", "src/api.ts", "https://example.com/docs"]
+  "references": ["WI-0J8L1JQ3H8ZQ2K6E", "src/api.ts", "https://example.com/docs"]
 }
 ```
 
 #### Comment Fields
 
-- **id**: Unique identifier (auto-generated, format: `PREFIX-C#`)
+- **id**: Unique identifier (auto-generated, format: `PREFIX-C<unique>`)
 - **workItemId**: ID of the work item this comment belongs to
 - **author**: Name of the comment author (freeform string)
 - **comment**: Comment text in markdown format
