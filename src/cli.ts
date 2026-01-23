@@ -117,6 +117,10 @@ function getPrefix(overridePrefix?: string): string {
   return getDefaultPrefix();
 }
 
+// Default sync configuration
+const DEFAULT_GIT_REMOTE = 'origin';
+const DEFAULT_GIT_BRANCH = 'refs/worklog/data';
+
 // Initialize database with default prefix (persistence and refresh handled automatically)
 const dataPath = getDefaultDataPath();
 let db: WorklogDatabase | null = null;
@@ -365,15 +369,30 @@ program
         await performSync({
           file: dataPath,
           prefix: config?.prefix,
-          gitRemote: 'origin',
-          gitBranch: 'refs/worklog/data',
+          gitRemote: DEFAULT_GIT_REMOTE,
+          gitBranch: DEFAULT_GIT_BRANCH,
           push: true,
           dryRun: false,
           silent: false
         });
       } catch (syncError) {
         // Sync errors are not fatal for init - just warn the user
-        if (!isJsonMode) {
+        if (isJsonMode) {
+          // In JSON mode, include sync error in the output but still report success for init
+          const output: any = {
+            success: true,
+            message: 'Configuration initialized',
+            config: {
+              projectName: config?.projectName,
+              prefix: config?.prefix
+            },
+            syncWarning: {
+              message: 'Sync failed (this is OK for new projects without remote data)',
+              error: (syncError as Error).message
+            }
+          };
+          outputJson(output);
+        } else {
           console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
           console.log(`  ${(syncError as Error).message}`);
         }
@@ -630,8 +649,8 @@ program
   .description('Sync work items with git repository (pull, merge with conflict resolution, and push)')
   .option('-f, --file <filepath>', 'Data file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
-  .option('--git-remote <remote>', 'Git remote to use for syncing data', 'origin')
-  .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', 'refs/worklog/data')
+  .option('--git-remote <remote>', 'Git remote to use for syncing data', DEFAULT_GIT_REMOTE)
+  .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', DEFAULT_GIT_BRANCH)
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
