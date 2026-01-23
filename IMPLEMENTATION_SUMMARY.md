@@ -12,7 +12,6 @@ All requirements from the problem statement have been successfully implemented:
 ✅ **Hierarchical structure** - Parent-child relationships supported
 ✅ **API** - Full REST API with Express
 ✅ **CLI tool** - Complete command-line interface
-✅ **TUI** - Interactive terminal user interface
 ✅ **Git optimization** - JSONL format for minimal diffs
 ✅ **Import/Export** - JSONL file support
 ✅ **In-memory database** - Fast Map-based storage
@@ -65,15 +64,6 @@ All requirements from the problem statement have been successfully implemented:
   - `export` - Export to JSONL file
   - `import` - Import from JSONL file
 
-### TUI (`src/tui.ts`)
-- Interactive blessed-based terminal UI
-- Features:
-  - List view with navigation
-  - Detail panel
-  - Create/delete/update dialogs
-  - Keyboard shortcuts (n=new, d=delete, u=update, q=quit)
-  - Auto-save to JSONL
-
 ## File Structure
 
 ```
@@ -84,8 +74,7 @@ Worklog/
 │   ├── jsonl.ts         # Import/export functions
 │   ├── api.ts           # REST API
 │   ├── index.ts         # Server entry point
-│   ├── cli.ts           # CLI tool
-│   └── tui.ts           # Terminal UI
+│   └── cli.ts           # CLI tool
 ├── dist/                # Compiled JavaScript
 ├── package.json         # Dependencies and scripts
 ├── tsconfig.json        # TypeScript config
@@ -119,7 +108,6 @@ Worklog/
 ### 4. Multiple Interfaces
 - **API**: Programmatic access for integrations
 - **CLI**: Quick command-line operations
-- **TUI**: Interactive visual interface
 
 ### 5. Type Safety
 - Full TypeScript implementation
@@ -142,7 +130,6 @@ Worklog/
 ### Testing
 - ✅ CLI: All commands tested
 - ✅ API: All endpoints verified
-- ✅ TUI: Interface tested
 - ✅ JSONL: Import/export validated
 - ✅ Build: Compiles without errors
 
@@ -175,14 +162,6 @@ curl -X POST http://localhost:3000/items \
 
 # List items
 curl http://localhost:3000/items
-```
-
-### TUI Usage
-```bash
-# Launch interactive UI
-npm run tui
-
-# Use keyboard to navigate and manage items
 ```
 
 ## Git Workflow
@@ -223,7 +202,7 @@ Complete documentation set includes:
 
 Possible future improvements:
 - Authentication and authorization
-- Web UI (beyond TUI)
+- Web UI
 - Real-time synchronization
 - Database persistence options
 - Search functionality
@@ -234,7 +213,7 @@ Possible future improvements:
 
 ## Conclusion
 
-The Worklog system is a complete, production-ready implementation that meets all requirements. It provides a simple, Git-friendly way to track work items with multiple interfaces (API, CLI, TUI) and comprehensive documentation.
+The Worklog system is a complete, production-ready implementation that meets all requirements. It provides a simple, Git-friendly way to track work items with multiple interfaces (API, CLI) and comprehensive documentation.
 
 The system is optimized for AI agents and development teams who want a lightweight, version-controlled issue tracker that integrates seamlessly with Git workflows.
 

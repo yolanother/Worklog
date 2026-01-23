@@ -6,7 +6,6 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 
 - **API**: REST API built with Express
 - **CLI**: Command-line interface for quick operations
-- **TUI**: Terminal User Interface for interactive use
 - **Git-Friendly**: Data stored in JSONL format for easy Git syncing
 - **In-Memory Database**: Fast runtime performance
 - **Hierarchical Work Items**: Support for parent-child relationships
@@ -83,25 +82,9 @@ npm run cli -- export -f backup.jsonl
 npm run cli -- import -f backup.jsonl
 ```
 
-### TUI (Terminal User Interface)
-
-Launch the interactive terminal UI:
-
-```bash
-npm run tui
-```
-
-**Controls:**
-- `↑/↓` or `j/k` - Navigate through items
-- `Enter` - View item details
-- `n` - Create new item
-- `d` - Delete selected item
-- `u` - Update status of selected item
-- `q` or `Ctrl+C` - Quit
-
 ### API Server (Optional)
 
-**Note:** The API server is only needed if you want to interact with Worklog via REST API. The CLI and TUI can be used without starting the server.
+**Note:** The API server is only needed if you want to interact with Worklog via REST API. The CLI can be used without starting the server.
 
 Start the API server:
 
@@ -181,7 +164,7 @@ npm run dev
 
 The system is optimized for Git-based workflows:
 
-1. Make changes using the CLI, TUI, or API
+1. Make changes using the CLI or API
 2. Data is automatically saved to `worklog-data.jsonl`
 3. Commit the JSONL file to Git
 4. Share with your team through Git push/pull
