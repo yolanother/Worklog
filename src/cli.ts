@@ -95,7 +95,7 @@ function displayItemTree(items: WorkItem[]): void {
 function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
-  console.log(`${prefix}${chalk.bold(item.id)} ${item.title}`);
+  console.log(`${prefix}${item.title} ${chalk.bold(`(${item.id})`)}`);
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Priority: ${item.priority}`);
@@ -916,13 +916,18 @@ program
 program
   .command('in-progress')
   .description('List all in-progress work items in a tree layout showing dependencies')
+  .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
     // Query for all in-progress items
-    const items = db.list({ status: 'in-progress' as WorkItemStatus });
+    const query: WorkItemQuery = { status: 'in-progress' as WorkItemStatus };
+    if (options.assignee) {
+      query.assignee = options.assignee;
+    }
+    const items = db.list(query);
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {

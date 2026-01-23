@@ -872,5 +872,32 @@ describe('CLI Integration Tests', () => {
       
       expect(stdout).toContain('No in-progress work items found');
     });
+
+    it('should filter by assignee', async () => {
+      await execAsync(`tsx ${cliPath} --json create -t "Alice task" -s in-progress -a "alice"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Bob task" -s in-progress -a "bob"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Unassigned task" -s in-progress`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress --assignee alice`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.count).toBe(1);
+      expect(result.workItems[0].title).toBe('Alice task');
+      expect(result.workItems[0].assignee).toBe('alice');
+    });
+
+    it('should show output in new format Title (ID)', async () => {
+      const { stdout: createStdout } = await execAsync(`tsx ${cliPath} --json create -t "Test Task" -s in-progress`);
+      const created = JSON.parse(createStdout);
+      const itemId = created.workItem.id;
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
+      
+      // Should show "Test Task (ID)" format
+      expect(stdout).toContain('Test Task');
+      expect(stdout).toContain(`(${itemId})`);
+      expect(stdout).not.toMatch(new RegExp(`${itemId}\\s+Test Task`)); // Should not have "ID Title" format
+    });
   });
 });
