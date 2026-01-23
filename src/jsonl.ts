@@ -71,6 +71,7 @@ export function importFromJsonl(filepath: string): { items: WorkItem[], comments
         comments.push(comment);
       } else {
         // Handle old format (no type field) - assume it's a work item
+        console.warn(`Warning: Found entry without type field, assuming it's a work item. Consider migrating to the new format.`);
         const item = parsed as WorkItem;
         if (item.assignee === undefined) {
           item.assignee = '';

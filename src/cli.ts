@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
-import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery } from './types.js';
+import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput } from './types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
 import * as fs from 'fs';
 
@@ -349,7 +349,7 @@ program
   .action((commentId, options) => {
     loadData(options.prefix);
     
-    const updates: any = {};
+    const updates: UpdateCommentInput = {};
     if (options.author) updates.author = options.author;
     if (options.comment) updates.comment = options.comment;
     if (options.references) updates.references = options.references.split(',').map((r: string) => r.trim());

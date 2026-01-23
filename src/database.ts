@@ -287,11 +287,12 @@ export class WorklogDatabase {
     
     // Escape special regex characters in prefix
     const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const commentIdPattern = new RegExp(`${escapedPrefix}-C(\\d+)`);
     
     // Find the highest comment ID number to continue from
     let maxCommentId = 0;
     for (const comment of comments) {
-      const match = comment.id.match(new RegExp(`${escapedPrefix}-C(\\d+)`));
+      const match = comment.id.match(commentIdPattern);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxCommentId) {

@@ -127,8 +127,10 @@ export function createAPI(db: WorklogDatabase) {
     try {
       db.setPrefix(defaultPrefix);
       const input: CreateCommentInput = {
-        ...req.body,
         workItemId: req.params.id,
+        author: req.body.author,
+        comment: req.body.comment,
+        references: req.body.references,
       };
       const comment = db.createComment(input);
       if (!comment) {
@@ -277,8 +279,10 @@ export function createAPI(db: WorklogDatabase) {
   app.post('/projects/:prefix/items/:id/comments', setPrefixMiddleware, (req: Request, res: Response) => {
     try {
       const input: CreateCommentInput = {
-        ...req.body,
         workItemId: req.params.id,
+        author: req.body.author,
+        comment: req.body.comment,
+        references: req.body.references,
       };
       const comment = db.createComment(input);
       if (!comment) {
