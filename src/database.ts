@@ -330,14 +330,15 @@ export class WorklogDatabase {
       };
     }
 
-    // There are in-progress/blocked items
-    // Find the highest priority and oldest in-progress/blocked item
+    // There are in-progress or blocked items
+    // Find the highest priority and oldest active item
+    // Note: Blocked items trigger blocking issue detection, in-progress items trigger descendant traversal
     const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
     if (!selectedInProgress) {
       return { workItem: null, reason: 'No work items available' };
     }
 
-    // Check if the item is blocked
+    // Check if the item is blocked - if so, prioritize its blocking issues
     if (selectedInProgress.status === 'blocked') {
       // Find blocking issues mentioned in description or comments
       const blockingIssues = this.extractBlockingIssues(selectedInProgress);
@@ -392,10 +393,11 @@ export class WorklogDatabase {
 
   /**
    * Extract blocking issue IDs from description and comments
-   * Looks for patterns like "blocked by WI-123" or "blocks: WI-456"
+   * Looks for work item ID patterns (e.g., "PREFIX-ABC123DEF")
    */
   private extractBlockingIssues(item: WorkItem): string[] {
     const blockingIds: string[] = [];
+    // Pattern matches prefix followed by alphanumeric characters (e.g., WI-0MKRDE4YI1)
     const pattern = new RegExp(`${this.prefix}-[A-Z0-9]+`, 'gi');
     
     // Search in description
