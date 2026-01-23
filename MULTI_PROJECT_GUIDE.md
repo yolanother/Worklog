@@ -16,7 +16,7 @@ When prompted:
 - **Project name**: Enter your project name (e.g., "My Web App")
 - **Issue ID prefix**: Enter a short prefix (e.g., "WEB", "API", "PROJ")
 
-This creates a `.worklog/config.yaml` file with your local configuration:
+This creates a `.worklog/config.yaml` file with your local configuration and automatically syncs with the remote repository to pull any existing work items.
 
 ```yaml
 projectName: My Web App
