@@ -12,7 +12,7 @@ const execAsync = promisify(childProcess.exec);
 
 export interface GitTarget {
   remote: string;
-  branch: string;
+  branch: string; // may be a branch name or a full ref (e.g. refs/worklog/data)
 }
 
 /**
@@ -452,7 +452,10 @@ async function fetchRemote(remote: string): Promise<void> {
 
 async function remoteBranchExists(remote: string, branch: string): Promise<boolean> {
   // `git show-ref` is local-only; depends on fetch having populated refs/remotes.
-  const ref = `refs/remotes/${remote}/${branch}`;
+  // Support both simple branch names and explicit refs.
+  const ref = branch.startsWith('refs/')
+    ? `refs/remotes/${remote}/${branch.slice('refs/'.length)}`
+    : `refs/remotes/${remote}/${branch}`;
   try {
     await execAsync(`git show-ref --verify --quiet ${escapeShellArg(ref)}`);
     return true;
@@ -479,7 +482,9 @@ export async function getRemoteDataFileContent(dataFilePath: string, target: Git
     return null;
   }
 
-  const remoteRef = `${target.remote}/${target.branch}`;
+  const remoteRef = target.branch.startsWith('refs/')
+    ? `${target.remote}/${target.branch.slice('refs/'.length)}`
+    : `${target.remote}/${target.branch}`;
 
   const refAndPath = `${remoteRef}:${relativePath}`;
   try {
@@ -518,7 +523,9 @@ async function withTempWorktree<T>(
   const tmpRoot = fs.mkdtempSync(path.join(worklogDir, 'tmp-worktree-'));
   const worktreePath = path.join(tmpRoot, 'wt');
 
-  const remoteRef = `${target.remote}/${target.branch}`;
+  const remoteRef = target.branch.startsWith('refs/')
+    ? `${target.remote}/${target.branch.slice('refs/'.length)}`
+    : `${target.remote}/${target.branch}`;
 
   // Fetch and decide starting point
   await fetchRemote(target.remote);
@@ -530,7 +537,9 @@ async function withTempWorktree<T>(
 
     // If remote branch doesn't exist, create an orphan branch in the temp worktree.
     if (!hasRemoteBranch) {
-      await execAsync(`git -C ${escapeShellArg(worktreePath)} checkout --orphan ${escapeShellArg(target.branch)}`);
+      // Create an orphan local branch name; it doesn't need to include refs/.
+      const localBranchName = target.branch.startsWith('refs/') ? target.branch.slice('refs/'.length) : target.branch;
+      await execAsync(`git -C ${escapeShellArg(worktreePath)} checkout --orphan ${escapeShellArg(localBranchName)}`);
       // `checkout --orphan` keeps the index populated with the previously checked-out files.
       // Clear the index + working tree so the branch starts empty.
       try {
@@ -664,9 +673,10 @@ export async function gitPushDataFileToBranch(
 
     await execAsync(`git -C ${escapeShellArg(worktreePath)} commit -m ${escapedMsg}`);
 
-    // Push only this commit to the dedicated branch.
+    // Push only this commit to the dedicated ref.
+    const pushTarget = target.branch.startsWith('refs/') ? target.branch : `refs/heads/${target.branch}`;
     await execAsync(
-      `git -C ${escapeShellArg(worktreePath)} push ${escapeShellArg(target.remote)} HEAD:${escapeShellArg(target.branch)}`
+      `git -C ${escapeShellArg(worktreePath)} push ${escapeShellArg(target.remote)} HEAD:${escapeShellArg(pushTarget)}`
     );
   });
 }

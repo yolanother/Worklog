@@ -438,7 +438,7 @@ program
   .option('-f, --file <filepath>', 'Data file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .option('--git-remote <remote>', 'Git remote to use for syncing data', 'origin')
-  .option('--git-branch <branch>', 'Dedicated branch to store worklog data', 'worklog-data')
+  .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', 'refs/worklog/data')
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
