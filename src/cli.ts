@@ -355,8 +355,7 @@ program
       } else {
         // In interactive mode, allow user to change settings
         try {
-          await initConfig(config);
-          const updatedConfig = loadConfig();
+          const updatedConfig = await initConfig(config);
           
           // Update semaphore with current version
           writeInitSemaphore(WORKLOG_VERSION);
