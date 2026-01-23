@@ -42,7 +42,7 @@ export function loadConfig(): WorklogConfig | null {
 
   try {
     const content = fs.readFileSync(getConfigPath(), 'utf-8');
-    const config = yaml.load(content) as WorklogConfig;
+    const config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
     return config;
   } catch (error) {
     console.error('Error loading config:', error);

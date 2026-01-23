@@ -198,6 +198,7 @@ export function createAPI(db: WorklogDatabase) {
   // Export to JSONL
   app.post('/export', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = db.getAll();
       exportToJsonl(items, filepath);
@@ -210,6 +211,7 @@ export function createAPI(db: WorklogDatabase) {
   // Import from JSONL
   app.post('/import', (req: Request, res: Response) => {
     try {
+      db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = importFromJsonl(filepath);
       db.import(items);
