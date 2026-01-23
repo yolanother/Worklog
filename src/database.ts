@@ -319,7 +319,7 @@ export class WorklogDatabase {
       items = items.filter(item => {
         // Check title and description
         const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
-        const descriptionMatch = item.description.toLowerCase().includes(lowerSearchTerm);
+        const descriptionMatch = item.description?.toLowerCase().includes(lowerSearchTerm) || false;
         
         // Check comments
         const comments = this.getCommentsForWorkItem(item.id);

@@ -435,17 +435,16 @@ describe('WorklogDatabase', () => {
       expect(next?.id).toBe(highPrio.id);
     });
 
-    it('should return oldest item when priorities are equal', () => {
+    it('should return oldest item when priorities are equal', async () => {
       // Create items with same priority but different times
       const oldest = db.create({ title: 'Oldest', priority: 'high', status: 'open' });
       // Small delay to ensure different timestamps
       const delay = () => new Promise(resolve => setTimeout(resolve, 10));
       
-      return delay().then(() => {
-        db.create({ title: 'Newer', priority: 'high', status: 'open' });
-        const next = db.findNextWorkItem();
-        expect(next?.id).toBe(oldest.id);
-      });
+      await delay();
+      db.create({ title: 'Newer', priority: 'high', status: 'open' });
+      const next = db.findNextWorkItem();
+      expect(next?.id).toBe(oldest.id);
     });
 
     it('should walk down tree from in-progress item to find leaf nodes', () => {
