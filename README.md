@@ -44,50 +44,6 @@ If no configuration exists, the system defaults to using `WI` as the prefix.
 
 ## Usage
 
-### API Server
-
-Start the API server:
-
-```bash
-npm start
-```
-
-The server will run on `http://localhost:3000` by default. It automatically loads data from `worklog-data.jsonl` if it exists.
-
-**Note:** The project will automatically build before starting. If you prefer to build manually, run:
-
-```bash
-npm run build
-npm start
-```
-
-#### API Endpoints
-
-All endpoints support both legacy format (without prefix) and new prefix-based format:
-
-**Legacy Format (uses default prefix from config):**
-- `GET /health` - Health check
-- `POST /items` - Create a work item
-- `GET /items` - List work items (with optional filters)
-- `GET /items/:id` - Get a specific work item
-- `PUT /items/:id` - Update a work item
-- `DELETE /items/:id` - Delete a work item
-- `GET /items/:id/children` - Get children of a work item
-- `GET /items/:id/descendants` - Get all descendants
-
-**Prefix-Based Format:**
-- `POST /projects/:prefix/items` - Create a work item with specific prefix
-- `GET /projects/:prefix/items` - List work items
-- `GET /projects/:prefix/items/:id` - Get a specific work item
-- `PUT /projects/:prefix/items/:id` - Update a work item
-- `DELETE /projects/:prefix/items/:id` - Delete a work item
-- `GET /projects/:prefix/items/:id/children` - Get children of a work item
-- `GET /projects/:prefix/items/:id/descendants` - Get all descendants
-
-**Export/Import:**
-- `POST /export` - Export data to JSONL
-- `POST /import` - Import data from JSONL
-
 ### CLI
 
 The CLI tool allows you to manage work items from the command line. All commands support the `--prefix` flag to override the default prefix from configuration.
@@ -142,6 +98,38 @@ npm run tui
 - `d` - Delete selected item
 - `u` - Update status of selected item
 - `q` or `Ctrl+C` - Quit
+
+### API Server (Optional)
+
+**Note:** The API server is only needed if you want to interact with Worklog via REST API. The CLI and TUI can be used without starting the server.
+
+Start the API server:
+
+```bash
+npm start
+```
+
+The server will run on `http://localhost:3000` by default. It automatically loads data from `worklog-data.jsonl` if it exists.
+
+**Note:** The project will automatically build before starting. If you prefer to build manually, run:
+
+```bash
+npm run build
+npm start
+```
+
+#### API Endpoints
+
+- `GET /health` - Health check
+- `POST /items` - Create a work item
+- `GET /items` - List work items (with optional filters)
+- `GET /items/:id` - Get a specific work item
+- `PUT /items/:id` - Update a work item
+- `DELETE /items/:id` - Delete a work item
+- `GET /items/:id/children` - Get children of a work item
+- `GET /items/:id/descendants` - Get all descendants
+- `POST /export` - Export data to JSONL
+- `POST /import` - Import data from JSONL
 
 ## Data Format
 
