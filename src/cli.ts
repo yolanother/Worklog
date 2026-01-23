@@ -139,6 +139,176 @@ function getDatabase(prefix?: string): WorklogDatabase {
   return db;
 }
 
+// Perform sync operation
+async function performSync(options: {
+  file: string;
+  prefix?: string;
+  gitRemote: string;
+  gitBranch: string;
+  push: boolean;
+  dryRun: boolean;
+  silent?: boolean;
+}): Promise<SyncResult> {
+  const isJsonMode = program.opts().json;
+  const isSilent = options.silent || false;
+  
+  // Load current local data
+  const db = getDatabase(options.prefix);
+  const localItems = db.getAll();
+  const localComments = db.getAllComments();
+  
+  if (!isJsonMode && !isSilent) {
+    console.log(`Starting sync for ${options.file}...`);
+    console.log(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
+    
+    if (options.dryRun) {
+      console.log('\n[DRY RUN MODE - No changes will be made]');
+    }
+    
+    // Pull latest from git
+    console.log('\nPulling latest changes from git...');
+  }
+  
+  const gitTarget: GitTarget = {
+    remote: options.gitRemote,
+    branch: options.gitBranch,
+  };
+
+  // Import remote data
+  let remoteItems: WorkItem[] = [];
+  let remoteComments: Comment[] = [];
+
+  const remoteContent = options.dryRun ? null : await getRemoteDataFileContent(options.file, gitTarget);
+  if (remoteContent) {
+    const remoteData = importFromJsonlContent(remoteContent);
+    remoteItems = remoteData.items;
+    remoteComments = remoteData.comments;
+  }
+
+  if (!isJsonMode && !isSilent) {
+    console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
+  }
+  
+  // Merge work items
+  if (!isJsonMode && !isSilent) {
+    console.log('\nMerging work items...');
+  }
+  const itemMergeResult = mergeWorkItems(localItems, remoteItems);
+  
+  // Merge comments
+  if (!isJsonMode && !isSilent) {
+    console.log('Merging comments...');
+  }
+  const commentMergeResult = mergeComments(localComments, remoteComments);
+  
+  // Calculate statistics (best-effort; merge logic is heuristic)
+  const itemsAdded = itemMergeResult.merged.length - localItems.length;
+  const itemsUpdated = itemMergeResult.conflicts.filter(c => c.includes('Conflicting fields') || c.includes('Same updatedAt')).length;
+  const itemsUnchanged = Math.max(0, localItems.length - Math.max(0, itemsUpdated));
+  const commentsAdded = commentMergeResult.merged.length - localComments.length;
+  const commentsUnchanged = Math.max(0, localComments.length - Math.max(0, commentsAdded));
+
+  const result: SyncResult = {
+    itemsAdded,
+    itemsUpdated,
+    itemsUnchanged,
+    commentsAdded,
+    commentsUnchanged,
+    conflicts: itemMergeResult.conflicts,
+    conflictDetails: itemMergeResult.conflictDetails
+  };
+  
+  if (isJsonMode && !isSilent) {
+    if (options.dryRun) {
+      outputJson({
+        success: true,
+        dryRun: true,
+        sync: {
+          file: options.file,
+          localState: {
+            workItems: localItems.length,
+            comments: localComments.length
+          },
+          remoteState: {
+            workItems: remoteItems.length,
+            comments: remoteComments.length
+          },
+          summary: result
+        }
+      });
+      return result;
+    }
+  } else if (!isSilent) {
+    // Display detailed conflict information with colors
+    displayConflictDetails(result, itemMergeResult.merged);
+    
+    // Display summary
+    console.log('\nSync summary:');
+    console.log(`  Work items added: ${result.itemsAdded}`);
+    console.log(`  Work items updated: ${result.itemsUpdated}`);
+    console.log(`  Work items unchanged: ${result.itemsUnchanged}`);
+    console.log(`  Comments added: ${result.commentsAdded}`);
+    console.log(`  Comments unchanged: ${result.commentsUnchanged}`);
+    console.log(`  Total work items: ${itemMergeResult.merged.length}`);
+    console.log(`  Total comments: ${commentMergeResult.merged.length}`);
+    
+    if (options.dryRun) {
+      console.log('\n[DRY RUN MODE - No changes were made]');
+      return result;
+    }
+  }
+  
+  if (options.dryRun) {
+    return result;
+  }
+  
+  // Update database with merged data
+  // Note: import() clears and replaces, which is correct here because
+  // itemMergeResult.merged already contains the complete merged dataset
+  // (all local items + all remote items, with conflicts resolved)
+  db.import(itemMergeResult.merged);
+  db.importComments(commentMergeResult.merged);
+  
+  if (!isJsonMode && !isSilent) {
+    console.log('\nMerged data saved locally');
+  }
+
+  // Ensure the JSONL file on disk reflects the merged state for this repo.
+  // This file is what we will commit to the dedicated data branch.
+  exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file);
+  
+  // Push to git if requested
+  if (options.push) {
+    if (!isJsonMode && !isSilent) {
+      console.log('\nPushing changes to git...');
+    }
+    await gitPushDataFileToBranch(options.file, 'Sync work items and comments', gitTarget);
+    if (!isJsonMode && !isSilent) {
+      console.log('Changes pushed successfully');
+    }
+  } else {
+    if (!isJsonMode && !isSilent) {
+      console.log('\nSkipping git push (--no-push flag)');
+    }
+  }
+  
+  if (isJsonMode && !isSilent) {
+    outputJson({
+      success: true,
+      message: 'Sync completed successfully',
+      sync: {
+        file: options.file,
+        summary: result,
+        pushed: options.push
+      }
+    });
+  } else if (!isSilent) {
+    console.log('\n✓ Sync completed successfully');
+  }
+  
+  return result;
+}
+
 program
   .name('worklog')
   .description('CLI for Worklog - a simple issue tracker')
@@ -184,6 +354,29 @@ program
             prefix: config?.prefix
           }
         });
+      }
+      
+      // Sync database after initialization
+      if (!isJsonMode) {
+        console.log('\nSyncing database...');
+      }
+      
+      try {
+        await performSync({
+          file: dataPath,
+          prefix: config?.prefix,
+          gitRemote: 'origin',
+          gitBranch: 'refs/worklog/data',
+          push: true,
+          dryRun: false,
+          silent: false
+        });
+      } catch (syncError) {
+        // Sync errors are not fatal for init - just warn the user
+        if (!isJsonMode) {
+          console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
+          console.log(`  ${(syncError as Error).message}`);
+        }
       }
     } catch (error) {
       outputError('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
@@ -445,163 +638,15 @@ program
     const isJsonMode = program.opts().json;
     
     try {
-      // Load current local data
-      const db = getDatabase(options.prefix);
-      const localItems = db.getAll();
-      const localComments = db.getAllComments();
-      
-      if (!isJsonMode) {
-        console.log(`Starting sync for ${options.file}...`);
-        console.log(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
-        
-        if (options.dryRun) {
-          console.log('\n[DRY RUN MODE - No changes will be made]');
-        }
-        
-        // Pull latest from git
-        console.log('\nPulling latest changes from git...');
-      }
-      
-      if (!options.dryRun) {
-        // No checkout/merge of repo code. We only read the remote JSONL content from a dedicated branch.
-      }
-      
-      const gitTarget: GitTarget = {
-        remote: options.gitRemote,
-        branch: options.gitBranch,
-      };
-
-      // Import remote data
-      let remoteItems: WorkItem[] = [];
-      let remoteComments: Comment[] = [];
-
-      const remoteContent = options.dryRun ? null : await getRemoteDataFileContent(options.file, gitTarget);
-      if (remoteContent) {
-        const remoteData = importFromJsonlContent(remoteContent);
-        remoteItems = remoteData.items;
-        remoteComments = remoteData.comments;
-      }
-
-      if (!isJsonMode) {
-        console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
-      }
-      
-      // Merge work items
-      if (!isJsonMode) {
-        console.log('\nMerging work items...');
-      }
-      const itemMergeResult = mergeWorkItems(localItems, remoteItems);
-      
-      // Merge comments
-      if (!isJsonMode) {
-        console.log('Merging comments...');
-      }
-      const commentMergeResult = mergeComments(localComments, remoteComments);
-      
-      // Calculate statistics (best-effort; merge logic is heuristic)
-      const itemsAdded = itemMergeResult.merged.length - localItems.length;
-      const itemsUpdated = itemMergeResult.conflicts.filter(c => c.includes('Conflicting fields') || c.includes('Same updatedAt')).length;
-      const itemsUnchanged = Math.max(0, localItems.length - Math.max(0, itemsUpdated));
-      const commentsAdded = commentMergeResult.merged.length - localComments.length;
-      const commentsUnchanged = Math.max(0, localComments.length - Math.max(0, commentsAdded));
-
-      const result: SyncResult = {
-        itemsAdded,
-        itemsUpdated,
-        itemsUnchanged,
-        commentsAdded,
-        commentsUnchanged,
-        conflicts: itemMergeResult.conflicts,
-        conflictDetails: itemMergeResult.conflictDetails
-      };
-      
-      if (isJsonMode) {
-        if (options.dryRun) {
-          outputJson({
-            success: true,
-            dryRun: true,
-            sync: {
-              file: options.file,
-              localState: {
-                workItems: localItems.length,
-                comments: localComments.length
-              },
-              remoteState: {
-                workItems: remoteItems.length,
-                comments: remoteComments.length
-              },
-              summary: result
-            }
-          });
-          return;
-        }
-      } else {
-        // Display detailed conflict information with colors
-        displayConflictDetails(result, itemMergeResult.merged);
-        
-        // Display summary
-        console.log('\nSync summary:');
-        console.log(`  Work items added: ${result.itemsAdded}`);
-        console.log(`  Work items updated: ${result.itemsUpdated}`);
-        console.log(`  Work items unchanged: ${result.itemsUnchanged}`);
-        console.log(`  Comments added: ${result.commentsAdded}`);
-        console.log(`  Comments unchanged: ${result.commentsUnchanged}`);
-        console.log(`  Total work items: ${itemMergeResult.merged.length}`);
-        console.log(`  Total comments: ${commentMergeResult.merged.length}`);
-        
-        if (options.dryRun) {
-          console.log('\n[DRY RUN MODE - No changes were made]');
-          return;
-        }
-      }
-      
-      if (options.dryRun) {
-        return;
-      }
-      
-      // Update database with merged data
-      // Note: import() clears and replaces, which is correct here because
-      // itemMergeResult.merged already contains the complete merged dataset
-      // (all local items + all remote items, with conflicts resolved)
-      db.import(itemMergeResult.merged);
-      db.importComments(commentMergeResult.merged);
-      
-      if (!isJsonMode) {
-        console.log('\nMerged data saved locally');
-      }
-
-      // Ensure the JSONL file on disk reflects the merged state for this repo.
-      // This file is what we will commit to the dedicated data branch.
-      exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file);
-      
-      // Push to git if requested
-      if (options.push !== false) {
-        if (!isJsonMode) {
-          console.log('\nPushing changes to git...');
-        }
-        await gitPushDataFileToBranch(options.file, 'Sync work items and comments', gitTarget);
-        if (!isJsonMode) {
-          console.log('Changes pushed successfully');
-        }
-      } else {
-        if (!isJsonMode) {
-          console.log('\nSkipping git push (--no-push flag)');
-        }
-      }
-      
-      if (isJsonMode) {
-        outputJson({
-          success: true,
-          message: 'Sync completed successfully',
-          sync: {
-            file: options.file,
-            summary: result,
-            pushed: options.push !== false
-          }
-        });
-      } else {
-        console.log('\n✓ Sync completed successfully');
-      }
+      await performSync({
+        file: options.file,
+        prefix: options.prefix,
+        gitRemote: options.gitRemote,
+        gitBranch: options.gitBranch,
+        push: options.push !== false,
+        dryRun: options.dryRun || false,
+        silent: false
+      });
     } catch (error) {
       if (isJsonMode) {
         outputJson({
