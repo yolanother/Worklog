@@ -136,14 +136,18 @@ function getDatabase(prefix?: string): WorklogDatabase {
     return db;
   }
   
+  // Load config to get autoExport setting
+  const config = loadConfig();
+  const autoExport = config?.autoExport !== false; // Default to true for backwards compatibility
+  
   // Create new database instance with the prefix
   // The database will automatically:
   // 1. Connect to persistent SQLite storage
   // 2. Check if JSONL is newer than DB and refresh if needed
-  // 3. Auto-export to JSONL on all write operations
+  // 3. Auto-export to JSONL on all write operations (if autoExport is enabled)
   // When in JSON mode, suppress console output to avoid interfering with JSON parsing
   const isJsonMode = program.opts().json;
-  db = new WorklogDatabase(actualPrefix, undefined, undefined, true, isJsonMode);
+  db = new WorklogDatabase(actualPrefix, undefined, undefined, autoExport, isJsonMode);
   return db;
 }
 
