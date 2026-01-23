@@ -2,13 +2,18 @@
  * Sync functionality for merging local and remote work items with conflict resolution
  */
 
-import { WorkItem, Comment } from './types.js';
+import { WorkItem, Comment, ConflictDetail, ConflictFieldDetail } from './types.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 
 const execAsync = promisify(childProcess.exec);
+
+export interface GitTarget {
+  remote: string;
+  branch: string; // may be a branch name or a full ref (e.g. refs/worklog/data)
+}
 
 /**
  * Escape a string for safe use in shell commands
@@ -27,7 +32,8 @@ export interface SyncResult {
   itemsUnchanged: number;
   commentsAdded: number;
   commentsUnchanged: number;
-  conflicts: string[];
+  conflicts: string[]; // Legacy text-based conflicts (for backward compatibility)
+  conflictDetails: ConflictDetail[]; // Detailed conflict information
 }
 
 /**
@@ -85,8 +91,9 @@ function mergeTags(a: string[] | undefined, b: string[] | undefined): string[] {
 export function mergeWorkItems(
   localItems: WorkItem[],
   remoteItems: WorkItem[]
-): { merged: WorkItem[], conflicts: string[] } {
+): { merged: WorkItem[], conflicts: string[], conflictDetails: ConflictDetail[] } {
   const conflicts: string[] = [];
+  const conflictDetails: ConflictDetail[] = [];
   const mergedMap = new Map<string, WorkItem>();
   
   // Add all local items to the map
@@ -118,6 +125,7 @@ export function mergeWorkItems(
         const merged: WorkItem = { ...localItem };
         const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
         const mergedFields: string[] = [];
+        const fieldDetails: ConflictFieldDetail[] = [];
 
         for (const field of fields) {
           const localValue = localItem[field];
@@ -126,8 +134,17 @@ export function mergeWorkItems(
           if (valuesEqual) continue;
 
           if (field === 'tags') {
-            (merged as any)[field] = mergeTags(localValue as any, remoteValue as any);
+            const mergedTags = mergeTags(localValue as any, remoteValue as any);
+            (merged as any)[field] = mergedTags;
             mergedFields.push('tags (union)');
+            fieldDetails.push({
+              field: 'tags',
+              localValue,
+              remoteValue,
+              chosenValue: mergedTags,
+              chosenSource: 'merged',
+              reason: 'union of both tag sets'
+            });
             continue;
           }
 
@@ -137,8 +154,24 @@ export function mergeWorkItems(
           if (localIsDefault && !remoteIsDefault) {
             (merged as any)[field] = remoteValue;
             mergedFields.push(`${field} (from remote)`);
+            fieldDetails.push({
+              field,
+              localValue,
+              remoteValue,
+              chosenValue: remoteValue,
+              chosenSource: 'remote',
+              reason: 'remote has value, local is default'
+            });
           } else if (!localIsDefault && remoteIsDefault) {
             mergedFields.push(`${field} (from local)`);
+            fieldDetails.push({
+              field,
+              localValue,
+              remoteValue,
+              chosenValue: localValue,
+              chosenSource: 'local',
+              reason: 'local has value, remote is default'
+            });
           } else {
             // Deterministic tie-breaker: choose lexicographically by serialized value.
             const localKey = stableValueKey(localValue);
@@ -146,8 +179,24 @@ export function mergeWorkItems(
             if (remoteKey > localKey) {
               (merged as any)[field] = remoteValue;
               mergedFields.push(`${field} (tie-break: remote)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: remoteValue,
+                chosenSource: 'remote',
+                reason: 'deterministic tie-breaker (lexicographic)'
+              });
             } else {
               mergedFields.push(`${field} (tie-break: local)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: localValue,
+                chosenSource: 'local',
+                reason: 'deterministic tie-breaker (lexicographic)'
+              });
             }
           }
         }
@@ -161,6 +210,16 @@ export function mergeWorkItems(
         if (mergedFields.length > 0) {
           conflicts.push(`${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`);
         }
+        
+        if (fieldDetails.length > 0) {
+          conflictDetails.push({
+            itemId: remoteItem.id,
+            conflictType: 'same-timestamp',
+            fields: fieldDetails,
+            localUpdatedAt: localItem.updatedAt,
+            remoteUpdatedAt: remoteItem.updatedAt
+          });
+        }
       } else {
         // Different timestamps - perform field-by-field intelligent merge
         const isRemoteNewer = remoteUpdated > localUpdated;
@@ -169,6 +228,7 @@ export function mergeWorkItems(
         
         const mergedFields: string[] = [];
         const conflictedFields: string[] = [];
+        const fieldDetails: ConflictFieldDetail[] = [];
         
         for (const field of fields) {
           const localValue = localItem[field];
@@ -188,8 +248,17 @@ export function mergeWorkItems(
             const remoteIsDefault = isDefaultValue(remoteValue, field);
 
             if (field === 'tags' && Array.isArray(localValue) && Array.isArray(remoteValue)) {
-              (merged as any)[field] = mergeTags(localValue, remoteValue);
+              const mergedTags = mergeTags(localValue, remoteValue);
+              (merged as any)[field] = mergedTags;
               mergedFields.push('tags (union)');
+              fieldDetails.push({
+                field: 'tags',
+                localValue,
+                remoteValue,
+                chosenValue: mergedTags,
+                chosenSource: 'merged',
+                reason: 'union of both tag sets'
+              });
               continue;
             }
             
@@ -197,17 +266,49 @@ export function mergeWorkItems(
               // Remote has a value, local is default - use remote
               (merged as any)[field] = remoteValue;
               mergedFields.push(`${field} (from remote)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: remoteValue,
+                chosenSource: 'remote',
+                reason: 'remote has value, local is default'
+              });
             } else if (!localIsDefault && remoteIsDefault) {
               // Local has a value, remote is default - keep local
               mergedFields.push(`${field} (from local)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: localValue,
+                chosenSource: 'local',
+                reason: 'local has value, remote is default'
+              });
             } else {
               // Both have non-default values - use timestamp to decide
               if (isRemoteNewer) {
                 (merged as any)[field] = remoteValue;
                 conflictedFields.push(field);
+                fieldDetails.push({
+                  field,
+                  localValue,
+                  remoteValue,
+                  chosenValue: remoteValue,
+                  chosenSource: 'remote',
+                  reason: `remote is newer (${remoteItem.updatedAt})`
+                });
               } else {
                 // Keep local value
                 conflictedFields.push(field);
+                fieldDetails.push({
+                  field,
+                  localValue,
+                  remoteValue,
+                  chosenValue: localValue,
+                  chosenSource: 'local',
+                  reason: `local is newer (${localItem.updatedAt})`
+                });
               }
             }
           }
@@ -232,13 +333,24 @@ export function mergeWorkItems(
             `${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`
           );
         }
+        
+        if (fieldDetails.length > 0) {
+          conflictDetails.push({
+            itemId: remoteItem.id,
+            conflictType: 'different-timestamp',
+            fields: fieldDetails,
+            localUpdatedAt: localItem.updatedAt,
+            remoteUpdatedAt: remoteItem.updatedAt
+          });
+        }
       }
     }
   });
   
   return {
     merged: Array.from(mergedMap.values()),
-    conflicts
+    conflicts,
+    conflictDetails
   };
 }
 
@@ -329,6 +441,148 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
   }
 }
 
+async function getRepoRoot(): Promise<string> {
+  const { stdout } = await execAsync('git rev-parse --show-toplevel');
+  return stdout.trim();
+}
+
+async function fetchRemote(remote: string): Promise<void> {
+  await execAsync(`git fetch ${escapeShellArg(remote)}`);
+}
+
+function getRemoteTrackingRef(remote: string, branchOrRef: string): string {
+  // For a named branch like "worklog-data", track it as refs/remotes/origin/worklog-data.
+  // For an explicit ref like "refs/worklog/data", track it as refs/remotes/origin/worklog/data.
+  const suffix = branchOrRef.startsWith('refs/') ? branchOrRef.slice('refs/'.length) : branchOrRef;
+  return `refs/remotes/${remote}/${suffix}`;
+}
+
+async function refExists(ref: string): Promise<boolean> {
+  try {
+    await execAsync(`git show-ref --verify --quiet ${escapeShellArg(ref)}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchTargetRef(target: GitTarget): Promise<{ hasRemote: boolean; remoteTrackingRef: string }> {
+  const remoteTrackingRef = getRemoteTrackingRef(target.remote, target.branch);
+
+  if (target.branch.startsWith('refs/')) {
+    // Default git fetch refspec does not include custom refs/*, so fetch it explicitly.
+    // If it doesn't exist yet, treat as "no remote".
+    try {
+      await execAsync(
+        `git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(`${target.branch}:${remoteTrackingRef}`)}`
+      );
+    } catch {
+      return { hasRemote: false, remoteTrackingRef };
+    }
+    return { hasRemote: await refExists(remoteTrackingRef), remoteTrackingRef };
+  }
+
+  // Standard branch fetch. This will populate refs/remotes/<remote>/<branch>.
+  await execAsync(`git fetch ${escapeShellArg(target.remote)} ${escapeShellArg(target.branch)}`);
+  return { hasRemote: await refExists(remoteTrackingRef), remoteTrackingRef };
+}
+
+function getRepoRelativePath(repoRootPath: string, filePath: string): { absolutePath: string; relativePath: string } {
+  const absolutePath = path.resolve(filePath);
+  const relativePath = path.relative(repoRootPath, absolutePath);
+  return { absolutePath, relativePath };
+}
+
+export async function getRemoteDataFileContent(dataFilePath: string, target: GitTarget): Promise<string | null> {
+  // Check if we're in a git repository
+  await execAsync('git rev-parse --git-dir');
+
+  const repoRootPath = await getRepoRoot();
+  const { relativePath } = getRepoRelativePath(repoRootPath, dataFilePath);
+
+  const { hasRemote, remoteTrackingRef } = await fetchTargetRef(target);
+  if (!hasRemote) {
+    return null;
+  }
+
+  const refAndPath = `${remoteTrackingRef}:${relativePath}`;
+  try {
+    const { stdout } = await execAsync(`git show ${escapeShellArg(refAndPath)}`);
+    return stdout;
+  } catch {
+    return null;
+  }
+}
+
+function removeWorktreeFiles(worktreePath: string): void {
+  for (const name of fs.readdirSync(worktreePath)) {
+    if (name === '.git') continue;
+    fs.rmSync(path.join(worktreePath, name), { recursive: true, force: true });
+  }
+}
+
+async function listTrackedFiles(worktreePath: string): Promise<string[]> {
+  const { stdout } = await execAsync(`git -C ${escapeShellArg(worktreePath)} ls-files -z`);
+  if (!stdout) return [];
+  return stdout.split('\0').map(s => s.trim()).filter(Boolean);
+}
+
+function ensureDir(p: string): void {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
+async function withTempWorktree<T>(
+  repoRootPath: string,
+  target: GitTarget,
+  run: (worktreePath: string) => Promise<T>
+): Promise<T> {
+  const worklogDir = path.join(repoRootPath, '.worklog');
+  ensureDir(worklogDir);
+
+  const tmpRoot = fs.mkdtempSync(path.join(worklogDir, 'tmp-worktree-'));
+  const worktreePath = path.join(tmpRoot, 'wt');
+
+  const { hasRemote, remoteTrackingRef } = await fetchTargetRef(target);
+  const baseRef = hasRemote ? remoteTrackingRef : 'HEAD';
+
+  try {
+    await execAsync(`git worktree add --detach ${escapeShellArg(worktreePath)} ${escapeShellArg(baseRef)}`);
+
+    // If remote branch doesn't exist, create an orphan branch in the temp worktree.
+    if (!hasRemote) {
+      // Create an orphan local branch name; it doesn't need to include refs/.
+      const localBranchName = target.branch.startsWith('refs/') ? target.branch.slice('refs/'.length) : target.branch;
+      await execAsync(`git -C ${escapeShellArg(worktreePath)} checkout --orphan ${escapeShellArg(localBranchName)}`);
+      // `checkout --orphan` keeps the index populated with the previously checked-out files.
+      // Clear the index + working tree so the branch starts empty.
+      try {
+        await execAsync(`git -C ${escapeShellArg(worktreePath)} rm -rf .`);
+      } catch {
+        // ignore
+      }
+      removeWorktreeFiles(worktreePath);
+      try {
+        await execAsync(`git -C ${escapeShellArg(worktreePath)} clean -fdx`);
+      } catch {
+        // ignore
+      }
+    }
+
+    return await run(worktreePath);
+  } finally {
+    try {
+      await execAsync(`git worktree remove --force ${escapeShellArg(worktreePath)}`);
+    } catch {
+      // ignore
+    }
+    try {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+}
+
 /**
  * Execute git add, commit, and push for the data file
  */
@@ -338,10 +592,8 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
     await execAsync('git rev-parse --git-dir');
 
     // Get repository root and compute repo-relative path (more reliable for pathspec)
-    const { stdout: repoRoot } = await execAsync('git rev-parse --show-toplevel');
-    const repoRootPath = repoRoot.trim();
-    const absolutePath = path.resolve(dataFilePath);
-    const relativePath = path.relative(repoRootPath, absolutePath);
+    const repoRootPath = await getRepoRoot();
+    const { absolutePath, relativePath } = getRepoRelativePath(repoRootPath, dataFilePath);
     const escapedRelativePath = escapeShellArg(relativePath);
     
     // Determine if file is already tracked. If it's ignored + untracked, git status won't show it,
@@ -374,70 +626,72 @@ export async function gitPushDataFile(dataFilePath: string, commitMessage: strin
     const escapedMessage = escapeShellArg(commitMessage);
     await execAsync(`git commit -m ${escapedMessage}`);
     
-    // Get the current branch name
+    // Push to remote on the current branch
     const { stdout: branchName } = await execAsync('git rev-parse --abbrev-ref HEAD');
     const branch = branchName.trim();
-
-    // Ensure our branch contains the latest remote commits so push is fast-forward.
-    // We do this after committing so we can rebase the sync commit on top of origin.
-    await execAsync(`git fetch origin ${escapeShellArg(branch)}`);
-
-    const remoteRef = `origin/${branch}`;
-    let remoteExists = true;
-    try {
-      await execAsync(`git rev-parse --verify ${escapeShellArg(remoteRef)}`);
-    } catch {
-      remoteExists = false;
-    }
-
-    if (remoteExists) {
-      const { stdout: counts } = await execAsync(
-        `git rev-list --left-right --count HEAD...${escapeShellArg(remoteRef)}`
-      );
-      const [aheadStr, behindStr] = counts.trim().split(/\s+/);
-      const behind = Number.parseInt(behindStr || '0', 10);
-
-      if (behind > 0) {
-        // Rebase our local commits on top of the remote branch.
-        // If the user has unrelated local changes, stash them (excluding the data file).
-        let stashRef: string | null = null;
-        try {
-          const { stdout: status } = await execAsync('git status --porcelain');
-          if (status.trim()) {
-            const exclude = `:(exclude)${relativePath}`;
-            const label = `worklog-sync-auto-stash:${new Date().toISOString()}`;
-            const { stdout: stashOut } = await execAsync(
-              `git stash push -u -m ${escapeShellArg(label)} -- . ${escapeShellArg(exclude)}`
-            );
-            if (!stashOut.includes('No local changes to save')) {
-              const { stdout: refOut } = await execAsync('git stash list -n 1 --pretty=format:%gd');
-              stashRef = refOut.trim() || null;
-            }
-          }
-
-          try {
-            await execAsync(`git rebase ${escapeShellArg(remoteRef)}`);
-          } catch (rebaseError) {
-            try {
-              await execAsync('git rebase --abort');
-            } catch {
-              // ignore
-            }
-            throw rebaseError;
-          }
-        } finally {
-          if (stashRef) {
-            await execAsync(`git stash pop ${escapeShellArg(stashRef)}`);
-          }
-        }
-      }
-    }
-    
-    // Push to remote on the current branch
     await execAsync(`git push origin ${escapeShellArg(branch)}`);
   } catch (error) {
     throw new Error(`Failed to push to git: ${(error as Error).message}`);
   }
+}
+
+export async function gitPushDataFileToBranch(
+  repoDataFilePath: string,
+  commitMessage: string,
+  target: GitTarget
+): Promise<void> {
+  // This pushes ONLY the data file by committing it on a dedicated branch
+  // in a temporary worktree based on the remote branch tip.
+  await execAsync('git rev-parse --git-dir');
+
+  const repoRootPath = await getRepoRoot();
+  const { relativePath } = getRepoRelativePath(repoRootPath, repoDataFilePath);
+  const srcAbsPath = path.resolve(repoDataFilePath);
+
+  if (!fs.existsSync(srcAbsPath)) {
+    return;
+  }
+
+  await withTempWorktree(repoRootPath, target, async (worktreePath) => {
+    // Ensure the dedicated data branch contains ONLY the JSONL file.
+    // If it was previously polluted with other repo files, we remove them here.
+    try {
+      const tracked = await listTrackedFiles(worktreePath);
+      const others = tracked.filter(p => p !== relativePath);
+      if (others.length > 0) {
+        for (const p of others) {
+          await execAsync(`git -C ${escapeShellArg(worktreePath)} rm -r -- ${escapeShellArg(p)}`);
+        }
+        await execAsync(`git -C ${escapeShellArg(worktreePath)} clean -fdx`);
+      }
+    } catch {
+      // ignore; we'll still proceed to commit the JSONL file
+    }
+
+    const dstAbsPath = path.join(worktreePath, relativePath);
+    ensureDir(path.dirname(dstAbsPath));
+    fs.copyFileSync(srcAbsPath, dstAbsPath);
+
+    const escapedMsg = escapeShellArg(commitMessage);
+    const escapedRel = escapeShellArg(relativePath);
+
+    // Stage and commit only the JSONL file
+    await execAsync(`git -C ${escapeShellArg(worktreePath)} add -- ${escapedRel}`);
+    const { stdout: staged } = await execAsync(
+      `git -C ${escapeShellArg(worktreePath)} diff --cached --name-only -- ${escapedRel}`
+    );
+    if (!staged.trim()) {
+      return;
+    }
+
+    await execAsync(`git -C ${escapeShellArg(worktreePath)} commit -m ${escapedMsg}`);
+
+    // Push only this commit to the dedicated ref.
+    const pushTarget = target.branch.startsWith('refs/') ? target.branch : `refs/heads/${target.branch}`;
+    await execAsync(
+      `git -C ${escapeShellArg(worktreePath)} push ${escapeShellArg(target.remote)} HEAD:${escapeShellArg(pushTarget)}`
+    );
+  });
 }
 
 /**

@@ -5,11 +5,12 @@
 
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
-import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
+import { importFromJsonl, importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
-import { gitPullDataFile, gitPushDataFile, mergeWorkItems, mergeComments, SyncResult } from './sync.js';
+import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
 import * as fs from 'fs';
+import chalk from 'chalk';
 
 const program = new Command();
 
@@ -34,6 +35,78 @@ function outputError(message: string, jsonData?: any) {
   } else {
     console.error(message);
   }
+}
+
+// Helper to format a value for display
+function formatValue(value: any): string {
+  if (value === null || value === undefined) {
+    return '(empty)';
+  }
+  if (value === '') {
+    return '(empty string)';
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '[]';
+    }
+    return `[${value.join(', ')}]`;
+  }
+  return String(value);
+}
+
+// Display detailed conflict information with color coding
+function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): void {
+  if (result.conflictDetails.length === 0) {
+    console.log('\n' + chalk.green('✓ No conflicts detected'));
+    return;
+  }
+
+  console.log('\n' + chalk.bold('Conflict Resolution Details:'));
+  console.log(chalk.gray('━'.repeat(80)));
+  
+  // Create a map for O(1) lookups of work items by ID
+  const itemsById = new Map(mergedItems.map(item => [item.id, item]));
+  
+  result.conflictDetails.forEach((conflict, index) => {
+    // Find the work item in the merged items to get the title
+    const workItem = itemsById.get(conflict.itemId);
+    const displayText = workItem ? `${workItem.title} (${conflict.itemId})` : conflict.itemId;
+    console.log(chalk.bold(`\n${index + 1}. Work Item: ${displayText}`));
+    
+    if (conflict.conflictType === 'same-timestamp') {
+      console.log(chalk.yellow(`   Same timestamp (${conflict.localUpdatedAt}) - merged deterministically`));
+    } else {
+      console.log(`   Local updated: ${conflict.localUpdatedAt || 'unknown'}`);
+      console.log(`   Remote updated: ${conflict.remoteUpdatedAt || 'unknown'}`);
+    }
+    
+    console.log(chalk.gray('   ─'.repeat(40)));
+    
+    conflict.fields.forEach(field => {
+      console.log(chalk.bold(`   Field: ${field.field}`));
+      
+      // For merged values (like tags union), both contribute to the result
+      if (field.chosenSource === 'merged') {
+        console.log(chalk.cyan(`     Local:  ${formatValue(field.localValue)}`));
+        console.log(chalk.cyan(`     Remote: ${formatValue(field.remoteValue)}`));
+        console.log(chalk.green(`     Merged: ${formatValue(field.chosenValue)}`));
+      } else {
+        // Show chosen value in green, lost value in red
+        if (field.chosenSource === 'local') {
+          console.log(chalk.green(`   ✓ Local:  ${formatValue(field.localValue)}`));
+          console.log(chalk.red(`   ✗ Remote: ${formatValue(field.remoteValue)}`));
+        } else {
+          console.log(chalk.red(`   ✗ Local:  ${formatValue(field.localValue)}`));
+          console.log(chalk.green(`   ✓ Remote: ${formatValue(field.remoteValue)}`));
+        }
+      }
+      
+      console.log(chalk.gray(`     Reason: ${field.reason}`));
+      console.log();
+    });
+  });
+  
+  console.log(chalk.gray('━'.repeat(80)));
 }
 
 // Get prefix from config or use default
@@ -366,6 +439,8 @@ program
   .description('Sync work items with git repository (pull, merge with conflict resolution, and push)')
   .option('-f, --file <filepath>', 'Data file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
+  .option('--git-remote <remote>', 'Git remote to use for syncing data', 'origin')
+  .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', 'refs/worklog/data')
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
@@ -390,24 +465,27 @@ program
       }
       
       if (!options.dryRun) {
-        await gitPullDataFile(options.file);
+        // No checkout/merge of repo code. We only read the remote JSONL content from a dedicated branch.
       }
       
+      const gitTarget: GitTarget = {
+        remote: options.gitRemote,
+        branch: options.gitBranch,
+      };
+
       // Import remote data
       let remoteItems: WorkItem[] = [];
       let remoteComments: Comment[] = [];
-      
-      if (fs.existsSync(options.file)) {
-        const remoteData = importFromJsonl(options.file);
+
+      const remoteContent = options.dryRun ? null : await getRemoteDataFileContent(options.file, gitTarget);
+      if (remoteContent) {
+        const remoteData = importFromJsonlContent(remoteContent);
         remoteItems = remoteData.items;
         remoteComments = remoteData.comments;
-        if (!isJsonMode) {
-          console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
-        }
-      } else {
-        if (!isJsonMode) {
-          console.log('No remote data file found - treating as empty');
-        }
+      }
+
+      if (!isJsonMode) {
+        console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
       }
       
       // Merge work items
@@ -435,7 +513,8 @@ program
         itemsUnchanged,
         commentsAdded,
         commentsUnchanged,
-        conflicts: itemMergeResult.conflicts
+        conflicts: itemMergeResult.conflicts,
+        conflictDetails: itemMergeResult.conflictDetails
       };
       
       if (isJsonMode) {
@@ -459,15 +538,8 @@ program
           return;
         }
       } else {
-        // Display conflicts
-        if (result.conflicts.length > 0) {
-          console.log('\nConflict resolution:');
-          result.conflicts.forEach(conflict => {
-            console.log(`  - ${conflict}`);
-          });
-        } else {
-          console.log('\nNo conflicts detected');
-        }
+        // Display detailed conflict information with colors
+        displayConflictDetails(result, itemMergeResult.merged);
         
         // Display summary
         console.log('\nSync summary:');
@@ -499,13 +571,17 @@ program
       if (!isJsonMode) {
         console.log('\nMerged data saved locally');
       }
+
+      // Ensure the JSONL file on disk reflects the merged state for this repo.
+      // This file is what we will commit to the dedicated data branch.
+      exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file);
       
       // Push to git if requested
       if (options.push !== false) {
         if (!isJsonMode) {
           console.log('\nPushing changes to git...');
         }
-        await gitPushDataFile(options.file, 'Sync work items and comments');
+        await gitPushDataFileToBranch(options.file, 'Sync work items and comments', gitTarget);
         if (!isJsonMode) {
           console.log('Changes pushed successfully');
         }
