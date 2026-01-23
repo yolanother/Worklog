@@ -10,6 +10,8 @@ import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, U
 import { initConfig, loadConfig, getDefaultPrefix, configExists, isInitialized, readInitSemaphore, writeInitSemaphore } from './config.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
 import * as fs from 'fs';
+import * as path from 'path';
+import { execSync } from 'child_process';
 import chalk from 'chalk';
 
 const WORKLOG_VERSION = '0.0.1';
@@ -122,6 +124,93 @@ function getPrefix(overridePrefix?: string): string {
 // Default sync configuration
 const DEFAULT_GIT_REMOTE = 'origin';
 const DEFAULT_GIT_BRANCH = 'refs/worklog/data';
+
+const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
+
+function installPrePushHook(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPath?: string; reason?: string } {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
+  } catch {
+    return { installed: false, skipped: true, present: false, reason: 'not a git repository' };
+  }
+
+  let repoRoot = '';
+  let hooksPath = '';
+  try {
+    repoRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+    hooksPath = execSync('git rev-parse --git-path hooks', { encoding: 'utf8' }).trim();
+  } catch (e) {
+    return { installed: false, skipped: true, present: false, reason: 'unable to locate git hooks directory' };
+  }
+
+  const hooksDir = path.isAbsolute(hooksPath) ? hooksPath : path.join(repoRoot, hooksPath);
+  const hookFile = path.join(hooksDir, 'pre-push');
+
+  const hookScript =
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_PRE_PUSH_HOOK_MARKER}\n` +
+    `# Auto-sync Worklog data before pushing.\n` +
+    `# Set WORKLOG_SKIP_PRE_PUSH=1 to bypass.\n` +
+    `\n` +
+    `set -e\n` +
+    `\n` +
+    `if [ \"$WORKLOG_SKIP_PRE_PUSH\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\n` +
+    `# Avoid recursion when worklog sync pushes refs/worklog/data.\n` +
+    `skip=0\n` +
+    `while read local_ref local_sha remote_ref remote_sha; do\n` +
+    `  if [ \"$remote_ref\" = \"refs/worklog/data\" ]; then\n` +
+    `    skip=1\n` +
+    `  fi\n` +
+    `done\n` +
+    `\n` +
+    `if [ \"$skip\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\n` +
+    `if command -v wf >/dev/null 2>&1; then\n` +
+    `  WL=wf\n` +
+    `elif command -v wl >/dev/null 2>&1; then\n` +
+    `  WL=wl\n` +
+    `elif command -v worklog >/dev/null 2>&1; then\n` +
+    `  WL=worklog\n` +
+    `else\n` +
+    `  echo \"worklog: wf/wl/worklog not found; skipping pre-push sync\" >&2\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\n` +
+    `\"$WL\" sync\n` +
+    `\n` +
+    `exit 0\n`;
+
+  try {
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    if (fs.existsSync(hookFile)) {
+      const existing = fs.readFileSync(hookFile, 'utf-8');
+      if (existing.includes(WORKLOG_PRE_PUSH_HOOK_MARKER)) {
+        return { installed: false, skipped: true, present: true, hookPath: hookFile, reason: 'hook already installed' };
+      }
+      return { installed: false, skipped: true, present: true, hookPath: hookFile, reason: `pre-push hook already exists at ${hookFile} (not overwriting)` };
+    }
+
+    fs.writeFileSync(hookFile, hookScript, { encoding: 'utf-8', mode: 0o755 });
+    try {
+      fs.chmodSync(hookFile, 0o755);
+    } catch {
+      // ignore
+    }
+
+    if (!options.silent) {
+      console.log(`✓ Installed git pre-push hook at ${hookFile}`);
+    }
+    return { installed: true, skipped: false, present: true, hookPath: hookFile };
+  } catch (e) {
+    return { installed: false, skipped: true, present: false, hookPath: hookFile, reason: (e as Error).message };
+  }
+}
 
 // Initialize database with default prefix (persistence and refresh handled automatically)
 const dataPath = getDefaultDataPath();
@@ -362,6 +451,7 @@ program
       const initInfo = readInitSemaphore();
       
       if (isJsonMode) {
+        const hookResult = installPrePushHook({ silent: true });
         // In JSON mode, we can't do interactive prompts, so just report the existing config
         outputJson({
           success: true,
@@ -371,7 +461,8 @@ program
             prefix: config?.prefix
           },
           version: initInfo?.version || WORKLOG_VERSION,
-          initializedAt: initInfo?.initializedAt
+          initializedAt: initInfo?.initializedAt,
+          gitHook: hookResult
         });
         return;
       } else {
@@ -383,7 +474,8 @@ program
           writeInitSemaphore(WORKLOG_VERSION);
           
           // Sync database after any changes
-          console.log('\nSyncing database...');
+          console.log('\n' + chalk.blue('## Git Sync') + '\n');
+          console.log('Syncing database...');
           
           try {
             await performSync({
@@ -398,6 +490,24 @@ program
           } catch (syncError) {
             console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
             console.log(`  ${(syncError as Error).message}`);
+          }
+
+          console.log('\n' + chalk.blue('## Git Hooks') + '\n');
+          const hookResult = installPrePushHook({ silent: false });
+          if (hookResult.present) {
+            if (hookResult.installed) {
+              console.log(`Git pre-push hook: present (installed)`);
+            } else {
+              console.log(`Git pre-push hook: present`);
+            }
+            if (hookResult.hookPath) {
+              console.log(`Hook path: ${hookResult.hookPath}`);
+            }
+          } else {
+            console.log('Git pre-push hook: not present');
+          }
+          if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
+            console.log(`\nNote: git pre-push hook not installed: ${hookResult.reason}`);
           }
           return;
         } catch (error) {
@@ -418,6 +528,7 @@ program
       const initInfo = readInitSemaphore();
       
       if (isJsonMode) {
+        const hookResult = installPrePushHook({ silent: true });
         outputJson({
           success: true,
           message: 'Configuration initialized',
@@ -426,13 +537,15 @@ program
             prefix: config?.prefix
           },
           version: WORKLOG_VERSION,
-          initializedAt: initInfo?.initializedAt
+          initializedAt: initInfo?.initializedAt,
+          gitHook: hookResult
         });
       }
       
       // Sync database after initialization
       if (!isJsonMode) {
-        console.log('\nSyncing database...');
+        console.log('\n' + chalk.blue('## Git Sync') + '\n');
+        console.log('Syncing database...');
       }
       
       try {
@@ -465,6 +578,26 @@ program
         } else {
           console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
           console.log(`  ${(syncError as Error).message}`);
+        }
+      }
+
+      if (!isJsonMode) {
+        console.log('\n' + chalk.blue('## Git Hooks') + '\n');
+        const hookResult = installPrePushHook({ silent: false });
+        if (hookResult.present) {
+          if (hookResult.installed) {
+            console.log(`Git pre-push hook: present (installed)`);
+          } else {
+            console.log(`Git pre-push hook: present`);
+          }
+          if (hookResult.hookPath) {
+            console.log(`Hook path: ${hookResult.hookPath}`);
+          }
+        } else {
+          console.log('Git pre-push hook: not present');
+        }
+        if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
+          console.log(`\nNote: git pre-push hook not installed: ${hookResult.reason}`);
         }
       }
     } catch (error) {

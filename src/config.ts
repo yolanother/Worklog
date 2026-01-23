@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { WorklogConfig } from './types.js';
 import * as readline from 'readline';
+import chalk from 'chalk';
 
 const CONFIG_DIR = '.worklog';
 const CONFIG_FILE = 'config.yaml';
@@ -190,12 +191,17 @@ function prompt(question: string): Promise<string> {
   });
 }
 
+function printHeading(title: string): void {
+  console.log(chalk.blue(`## ${title}`));
+  console.log();
+}
+
 /**
  * Interactive initialization of config
  */
 export async function initConfig(existingConfig?: WorklogConfig | null): Promise<WorklogConfig> {
   if (existingConfig) {
-    console.log('Current Worklog configuration:\n');
+    printHeading('Current Configuration');
     console.log(`  Project: ${existingConfig.projectName}`);
     console.log(`  Prefix: ${existingConfig.prefix}`);
     console.log(`  Auto-export: ${existingConfig.autoExport !== false ? 'enabled' : 'disabled'}\n`);
@@ -203,13 +209,14 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
     const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
     
     if (shouldChange.toLowerCase() !== 'y' && shouldChange.toLowerCase() !== 'yes') {
-      console.log('\nKeeping existing configuration.');
+      console.log(chalk.gray('\nKeeping existing configuration.'));
       return existingConfig;
     }
 
+    printHeading('Update Configuration');
     console.log('\nEnter new values (press Enter to keep current value):\n');
   } else {
-    console.log('Initializing Worklog configuration...\n');
+    printHeading('Initialize Configuration');
   }
 
   const projectNamePrompt = existingConfig 
@@ -254,10 +261,11 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   };
 
   saveConfig(config);
-  console.log(`\nConfiguration saved to ${getConfigPath()}`);
-  console.log(`Project: ${config.projectName}`);
-  console.log(`Prefix: ${config.prefix}`);
-  console.log(`Auto-export: ${config.autoExport ? 'enabled' : 'disabled'}`);
+  printHeading('Saved Configuration');
+  console.log(`\nSaved to: ${getConfigPath()}`);
+  console.log(`Project:  ${config.projectName}`);
+  console.log(`Prefix:   ${config.prefix}`);
+  console.log(`Export:   ${config.autoExport ? 'enabled' : 'disabled'}`);
 
   return config;
 }
