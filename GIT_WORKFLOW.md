@@ -72,28 +72,28 @@ npm run cli -- create \
 # Create sub-tasks
 npm run cli -- create \
   -t "Add password reset endpoint" \
-  -P WI-5 \
+  -P WI-0J8L1JQ3H8ZQ2K6D \
   -s open \
   -p high
 
 npm run cli -- create \
   -t "Send password reset email" \
-  -P WI-5 \
+  -P WI-0J8L1JQ3H8ZQ2K6D \
   -s open \
   -p medium
 
 # View your work
-npm run cli -- show WI-5 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### 3. Update Status as You Work
 
 ```bash
 # Start working on a task
-npm run cli -- update WI-6 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 
 # Mark it complete when done
-npm run cli -- update WI-6 -s completed
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s completed
 
 # View all in-progress items
 npm run cli -- list -s in-progress
@@ -107,8 +107,8 @@ git diff worklog-data.jsonl
 
 # The diff shows only the lines that changed - very Git-friendly!
 # Example diff:
-# -{"id":"WI-6","status":"open",...}
-# +{"id":"WI-6","status":"completed",...}
+# -{"id":"WI-0J8L1JQ3H8ZQ2K6E","status":"open",...}
+# +{"id":"WI-0J8L1JQ3H8ZQ2K6E","status":"completed",...}
 
 # Commit your work
 git add worklog-data.jsonl
@@ -131,9 +131,9 @@ npm run cli -- create \
   -p critical
 
 # Break down into features
-npm run cli -- create -t "User Authentication" -P WI-1 -p high
-npm run cli -- create -t "Admin Dashboard" -P WI-1 -p high
-npm run cli -- create -t "Reporting Module" -P WI-1 -p medium
+npm run cli -- create -t "User Authentication" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+npm run cli -- create -t "Admin Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+npm run cli -- create -t "Reporting Module" -P WI-0J8L1JQ3H8ZQ2K6D -p medium
 
 # Commit and push
 git add worklog-data.jsonl
@@ -151,7 +151,7 @@ git pull origin main
 npm run cli -- list -s open
 
 # Pick a task and update status
-npm run cli -- update WI-2 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 git add worklog-data.jsonl
 git commit -m "Start working on user authentication"
 git push origin main
@@ -162,7 +162,7 @@ git push origin main
 The `sync` command automatically handles concurrent updates:
 
 ```bash
-# You and a teammate both modify WI-5 at the same time
+# You and a teammate both modify WI-0J8L1JQ3H8ZQ2K6D at the same time
 # Your change: status = "in-progress"
 # Teammate's change: priority = "high"
 
@@ -177,7 +177,7 @@ npm run cli -- sync
 
 # Output will show:
 # Conflict resolution:
-#   - WI-5: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
+#   - WI-0J8L1JQ3H8ZQ2K6D: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
 # 
 # Sync summary:
 #   Work items updated: 1
@@ -287,7 +287,7 @@ When the same work item exists in both local and remote with different content:
 Example:
 ```
 Conflict resolution:
-  - TEST-1: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
+  - TEST-0J8L1JQ3H8ZQ2K6D: Remote version is newer (remote: 2024-01-15T14:30:00, local: 2024-01-15T14:25:00)
   - TEST-2: Local version is newer (local: 2024-01-15T14:35:00, remote: 2024-01-15T14:20:00)
 ```
 
@@ -313,7 +313,7 @@ npm run cli -- sync --dry-run --prefix PROJ
 ### When to Use Sync
 
 - **At the start of your workday**: Get the latest updates from your team
-- **Before creating new items**: Ensure you have the latest ID sequence
+- **Before creating new items**: Ensure you have the latest data
 - **After making changes**: Share your updates with the team
 - **When switching branches**: After checking out a different git branch
 - **Before major reorganizations**: Ensure you're working with the latest data
@@ -344,7 +344,7 @@ You can write scripts to sync with other tools:
 # Example: Export open items for external tracking
 
 npm run cli -- list -s open -p high | \
-  grep "^\[WI-" | \
+  grep '^\[[A-Z0-9]\+-' | \
   while read line; do
     # Parse and send to external API
     echo "Would sync: $line"

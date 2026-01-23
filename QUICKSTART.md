@@ -24,10 +24,10 @@ npm run cli -- create -t "My first task" -d "Let's get started!"
 npm run cli -- list
 
 # Update its status
-npm run cli -- update WI-1 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Mark it complete
-npm run cli -- update WI-1 -s completed
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed
 ```
 
 ### Using the API
@@ -56,15 +56,15 @@ curl http://localhost:3000/items | jq
 npm run cli -- create -t "Build MVP" -p critical
 
 # Add features under it
-npm run cli -- create -t "User registration" -P WI-1 -p high
-npm run cli -- create -t "User login" -P WI-1 -p high
+npm run cli -- create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6D -p high
+npm run cli -- create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6D -p high
 
 # Add tasks under features
-npm run cli -- create -t "Design login form" -P WI-2 -p medium
-npm run cli -- create -t "Implement auth API" -P WI-2 -p high
+npm run cli -- create -t "Design login form" -P WI-0J8L1JQ3H8ZQ2K6E -p medium
+npm run cli -- create -t "Implement auth API" -P WI-0J8L1JQ3H8ZQ2K6E -p high
 
 # View the hierarchy
-npm run cli -- show WI-1 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ## Working with Git
@@ -95,13 +95,13 @@ npm run cli -- list -p high
 npm run cli -- list -P null
 
 # View a specific item with its children
-npm run cli -- show WI-1 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 
 # Update multiple fields
-npm run cli -- update WI-1 -s completed -d "All done!"
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "All done!"
 
 # Delete a work item
-npm run cli -- delete WI-5
+npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6E
 
 # Export to backup
 npm run cli -- export -f backup.jsonl

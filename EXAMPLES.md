@@ -11,7 +11,7 @@ This document provides practical examples of using the Worklog system.
 npm run cli -- create -t "Build authentication system" -d "Implement user login and registration" -s open -p high --tags "security,backend"
 
 # Create a child work item
-npm run cli -- create -t "Design database schema" -d "Define user and session tables" -s open -p medium -P WI-1
+npm run cli -- create -t "Design database schema" -d "Define user and session tables" -s open -p medium -P WI-0J8L1JQ3H8ZQ2K6D
 
 # Create with minimal info
 npm run cli -- create -t "Fix bug in login"
@@ -43,36 +43,36 @@ npm run cli -- list -s open -p high
 
 ```bash
 # Show a specific item
-npm run cli -- show WI-1
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D
 
 # Show with children
-npm run cli -- show WI-1 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 ```
 
 ### Updating Work Items
 
 ```bash
 # Update status
-npm run cli -- update WI-1 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s in-progress
 
 # Update priority
-npm run cli -- update WI-1 -p critical
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -p critical
 
 # Update multiple fields
-npm run cli -- update WI-1 -s completed -d "Implementation finished and tested"
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D -s completed -d "Implementation finished and tested"
 
 # Change parent (move in hierarchy)
-npm run cli -- update WI-3 -P WI-2
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6F -P WI-0J8L1JQ3H8ZQ2K6E
 
 # Add tags
-npm run cli -- update WI-1 --tags "urgent,reviewed"
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6D --tags "urgent,reviewed"
 ```
 
 ### Deleting Work Items
 
 ```bash
 # Delete a work item
-npm run cli -- delete WI-5
+npm run cli -- delete WI-0J8L1JQ3H8ZQ2K6G
 ```
 
 ### Import/Export
@@ -97,7 +97,7 @@ curl http://localhost:3000/health
 curl http://localhost:3000/items
 
 # Get a specific work item
-curl http://localhost:3000/items/WI-1
+curl http://localhost:3000/items/WI-0J8L1JQ3H8ZQ2K6D
 
 # Create a new work item
 curl -X POST http://localhost:3000/items \
@@ -111,20 +111,20 @@ curl -X POST http://localhost:3000/items \
   }'
 
 # Update a work item
-curl -X PUT http://localhost:3000/items/WI-1 \
+curl -X PUT http://localhost:3000/items/WI-0J8L1JQ3H8ZQ2K6D \
   -H "Content-Type: application/json" \
   -d '{
     "status": "in-progress"
   }'
 
 # Delete a work item
-curl -X DELETE http://localhost:3000/items/WI-1
+curl -X DELETE http://localhost:3000/items/WI-0J8L1JQ3H8ZQ2K6D
 
 # Get children of a work item
-curl http://localhost:3000/items/WI-1/children
+curl http://localhost:3000/items/WI-0J8L1JQ3H8ZQ2K6D/children
 
 # Get all descendants
-curl http://localhost:3000/items/WI-1/descendants
+curl http://localhost:3000/items/WI-0J8L1JQ3H8ZQ2K6D/descendants
 
 # Filter by status
 curl "http://localhost:3000/items?status=open"
@@ -182,8 +182,8 @@ await fetch(`http://localhost:3000/items/${newItem.id}`, {
 ```bash
 # 1. Create some work items
 npm run cli -- create -t "Feature: User profiles" -s open -p high
-npm run cli -- create -t "Design profile layout" -P WI-1
-npm run cli -- create -t "Implement profile API" -P WI-1
+npm run cli -- create -t "Design profile layout" -P WI-0J8L1JQ3H8ZQ2K6D
+npm run cli -- create -t "Implement profile API" -P WI-0J8L1JQ3H8ZQ2K6D
 
 # 2. Commit to Git
 git add worklog-data.jsonl
@@ -194,7 +194,7 @@ git push origin main
 
 # 4. Team member pulls and updates
 git pull origin main
-npm run cli -- update WI-2 -s in-progress
+npm run cli -- update WI-0J8L1JQ3H8ZQ2K6E -s in-progress
 
 # 5. Commit the update
 git add worklog-data.jsonl
@@ -211,34 +211,34 @@ Here's an example of creating a hierarchical project structure:
 npm run cli -- create -t "MVP Release" -d "First production release" -s open -p critical
 
 # Create features under the epic
-npm run cli -- create -t "User Management" -P WI-1 -s open -p high
-npm run cli -- create -t "Dashboard" -P WI-1 -s open -p high
-npm run cli -- create -t "Reporting" -P WI-1 -s open -p medium
+npm run cli -- create -t "User Management" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
+npm run cli -- create -t "Dashboard" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p high
+npm run cli -- create -t "Reporting" -P WI-0J8L1JQ3H8ZQ2K6D -s open -p medium
 
 # Create tasks under features
-npm run cli -- create -t "User registration" -P WI-2 -s open -p high
-npm run cli -- create -t "User login" -P WI-2 -s open -p high
-npm run cli -- create -t "Password reset" -P WI-2 -s open -p medium
+npm run cli -- create -t "User registration" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
+npm run cli -- create -t "User login" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p high
+npm run cli -- create -t "Password reset" -P WI-0J8L1JQ3H8ZQ2K6E -s open -p medium
 
-npm run cli -- create -t "Dashboard layout" -P WI-3 -s open -p high
-npm run cli -- create -t "Dashboard widgets" -P WI-3 -s open -p medium
+npm run cli -- create -t "Dashboard layout" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p high
+npm run cli -- create -t "Dashboard widgets" -P WI-0J8L1JQ3H8ZQ2K6F -s open -p medium
 
 # List root items to see the hierarchy
 npm run cli -- list -P null
 
 # View a feature with its tasks
-npm run cli -- show WI-2 -c
+npm run cli -- show WI-0J8L1JQ3H8ZQ2K6E -c
 ```
 
 This creates a structure like:
 ```
-WI-1: MVP Release (epic)
-├── WI-2: User Management (feature)
-│   ├── WI-5: User registration (task)
-│   ├── WI-6: User login (task)
-│   └── WI-7: Password reset (task)
-├── WI-3: Dashboard (feature)
-│   ├── WI-8: Dashboard layout (task)
-│   └── WI-9: Dashboard widgets (task)
-└── WI-4: Reporting (feature)
+WI-0J8L1JQ3H8ZQ2K6D: MVP Release (epic)
+├── WI-0J8L1JQ3H8ZQ2K6E: User Management (feature)
+│   ├── WI-0J8L1JQ3H8ZQ2K6G: User registration (task)
+│   ├── WI-0J8L1JQ3H8ZQ2K6H: User login (task)
+│   └── WI-0J8L1JQ3H8ZQ2K6I: Password reset (task)
+├── WI-0J8L1JQ3H8ZQ2K6F: Dashboard (feature)
+│   ├── WI-0J8L1JQ3H8ZQ2K6J: Dashboard layout (task)
+│   └── WI-0J8L1JQ3H8ZQ2K6K: Dashboard widgets (task)
+└── WI-0J8L1JQ3H8ZQ2K6L: Reporting (feature)
 ```

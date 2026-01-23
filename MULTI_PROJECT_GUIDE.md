@@ -31,7 +31,7 @@ All CLI commands will use the prefix from your config by default:
 # Create a work item - will use WEB prefix
 npm run cli -- create -t "Add user authentication"
 
-# Output: Created work item with id WEB-1
+# Output: Created work item with id WEB-0J8L1JQ3H8ZQ2K6D
 ```
 
 ## Working with Multiple Projects
@@ -50,8 +50,8 @@ npm run cli -- create -t "Backend: Setup database" --prefix BACK
 npm run cli -- list --prefix API
 
 # Update items from different projects
-npm run cli -- update API-1 -s completed --prefix API
-npm run cli -- update FRONT-1 -s in-progress --prefix FRONT
+npm run cli -- update API-0J8L1JQ3H8ZQ2K6D -s completed --prefix API
+npm run cli -- update FRONT-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix FRONT
 ```
 
 ### Using API with Custom Prefix
@@ -87,10 +87,10 @@ curl -X POST http://localhost:3000/projects/FRONT/items \
   -d '{"title": "Create login form"}'
 
 # Get specific item
-curl http://localhost:3000/projects/API/items/API-1
+curl http://localhost:3000/projects/API/items/API-0J8L1JQ3H8ZQ2K6D
 
 # Update item
-curl -X PUT http://localhost:3000/projects/API/items/API-1 \
+curl -X PUT http://localhost:3000/projects/API/items/API-0J8L1JQ3H8ZQ2K6D \
   -H "Content-Type: application/json" \
   -d '{"status": "completed"}'
 ```
@@ -124,9 +124,9 @@ npm run cli -- list
 npm run cli -- list --prefix API
 
 # Update status
-npm run cli -- update WEB-1 -s completed
-npm run cli -- update API-1 -s in-progress --prefix API
-npm run cli -- update MOB-1 -s completed --prefix MOB
+npm run cli -- update WEB-0J8L1JQ3H8ZQ2K6D -s completed
+npm run cli -- update API-0J8L1JQ3H8ZQ2K6D -s in-progress --prefix API
+npm run cli -- update MOB-0J8L1JQ3H8ZQ2K6D -s completed --prefix MOB
 ```
 
 ## Best Practices

@@ -2,20 +2,23 @@
  * In-memory database for work items
  */
 
+import { randomBytes } from 'crypto';
 import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
+
+const UNIQUE_TIME_LENGTH = 9;
+const UNIQUE_RANDOM_BYTES = 4;
+const UNIQUE_RANDOM_LENGTH = 7;
+const UNIQUE_ID_LENGTH = UNIQUE_TIME_LENGTH + UNIQUE_RANDOM_LENGTH;
+const MAX_ID_GENERATION_ATTEMPTS = 10;
 
 export class WorklogDatabase {
   private items: Map<string, WorkItem>;
   private comments: Map<string, Comment>;
-  private nextId: number;
-  private nextCommentId: number;
   private prefix: string;
 
   constructor(prefix: string = 'WI') {
     this.items = new Map();
     this.comments = new Map();
-    this.nextId = 1;
-    this.nextCommentId = 1;
     this.prefix = prefix;
   }
 
@@ -37,14 +40,45 @@ export class WorklogDatabase {
    * Generate a unique ID for a work item
    */
   private generateId(): string {
-    return `${this.prefix}-${this.nextId++}`;
+    for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
+      const id = `${this.prefix}-${this.generateUniqueId()}`;
+      if (!this.items.has(id)) {
+        return id;
+      }
+    }
+    throw new Error('Unable to generate a unique work item ID');
   }
 
   /**
    * Generate a unique ID for a comment
    */
   private generateCommentId(): string {
-    return `${this.prefix}-C${this.nextCommentId++}`;
+    for (let attempt = 0; attempt < MAX_ID_GENERATION_ATTEMPTS; attempt += 1) {
+      const id = `${this.prefix}-C${this.generateUniqueId()}`;
+      if (!this.comments.has(id)) {
+        return id;
+      }
+    }
+    throw new Error('Unable to generate a unique comment ID');
+  }
+
+  /**
+   * Generate a globally unique, human-readable identifier
+   */
+  private generateUniqueId(): string {
+    const timeRaw = Date.now().toString(36).toUpperCase();
+    if (timeRaw.length > UNIQUE_TIME_LENGTH) {
+      throw new Error('Timestamp overflow while generating unique ID');
+    }
+    const timePart = timeRaw.padStart(UNIQUE_TIME_LENGTH, '0');
+    const randomBytesValue = randomBytes(UNIQUE_RANDOM_BYTES);
+    const randomNumber = randomBytesValue.readUInt32BE(0);
+    const randomPart = randomNumber.toString(36).toUpperCase().padStart(UNIQUE_RANDOM_LENGTH, '0');
+    const id = `${timePart}${randomPart}`;
+    if (id.length !== UNIQUE_ID_LENGTH) {
+      throw new Error('Generated unique ID has unexpected length');
+    }
+    return id;
   }
 
   /**
@@ -168,7 +202,6 @@ export class WorklogDatabase {
    */
   clear(): void {
     this.items.clear();
-    this.nextId = 1;
   }
 
   /**
@@ -183,25 +216,9 @@ export class WorklogDatabase {
    */
   import(items: WorkItem[]): void {
     this.clear();
-    
-    // Escape special regex characters in prefix
-    const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const workItemIdPattern = new RegExp(`${escapedPrefix}-(\\d+)`);
-    
-    // Find the highest ID number to continue from
-    let maxId = 0;
     for (const item of items) {
-      const match = item.id.match(workItemIdPattern);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxId) {
-          maxId = num;
-        }
-      }
       this.items.set(item.id, item);
     }
-    
-    this.nextId = maxId + 1;
   }
 
   /**
@@ -293,24 +310,8 @@ export class WorklogDatabase {
    */
   importComments(comments: Comment[]): void {
     this.comments.clear();
-    
-    // Escape special regex characters in prefix
-    const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const commentIdPattern = new RegExp(`${escapedPrefix}-C(\\d+)`);
-    
-    // Find the highest comment ID number to continue from
-    let maxCommentId = 0;
     for (const comment of comments) {
-      const match = comment.id.match(commentIdPattern);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxCommentId) {
-          maxCommentId = num;
-        }
-      }
       this.comments.set(comment.id, comment);
     }
-    
-    this.nextCommentId = maxCommentId + 1;
   }
 }
