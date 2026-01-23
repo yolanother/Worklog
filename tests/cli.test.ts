@@ -475,15 +475,15 @@ describe('CLI Integration Tests', () => {
       const { stdout } = await execAsync(`tsx ${cliPath} --json init`);
 
       const result = JSON.parse(stdout);
-      expect(result.success).toBe(false); // Config already exists
+      expect(result.success).toBe(true); // Init is now idempotent
       expect(result.message).toContain('already exists');
-      expect(result.version).toBe('1.0.0');
+      expect(result.version).toBe('0.0.1');
       expect(result.initializedAt).toBeDefined();
 
       // Verify semaphore was created
       expect(fs.existsSync('.worklog/initialized')).toBe(true);
       const semaphore = JSON.parse(fs.readFileSync('.worklog/initialized', 'utf-8'));
-      expect(semaphore.version).toBe('1.0.0');
+      expect(semaphore.version).toBe('0.0.1');
       expect(semaphore.initializedAt).toBeDefined();
     });
   });

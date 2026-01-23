@@ -193,11 +193,35 @@ function prompt(question: string): Promise<string> {
 /**
  * Interactive initialization of config
  */
-export async function initConfig(): Promise<WorklogConfig> {
-  console.log('Initializing Worklog configuration...\n');
+export async function initConfig(existingConfig?: WorklogConfig | null): Promise<WorklogConfig> {
+  if (existingConfig) {
+    console.log('Current Worklog configuration:\n');
+    console.log(`  Project: ${existingConfig.projectName}`);
+    console.log(`  Prefix: ${existingConfig.prefix}\n`);
 
-  const projectName = await prompt('Project name: ');
-  const prefix = await prompt('Issue ID prefix (e.g., WI, PROJ, TASK): ');
+    const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
+    
+    if (shouldChange.toLowerCase() !== 'y' && shouldChange.toLowerCase() !== 'yes') {
+      console.log('\nKeeping existing configuration.');
+      return existingConfig;
+    }
+
+    console.log('\nEnter new values (press Enter to keep current value):\n');
+  } else {
+    console.log('Initializing Worklog configuration...\n');
+  }
+
+  const projectNamePrompt = existingConfig 
+    ? `Project name (${existingConfig.projectName}): `
+    : 'Project name: ';
+  const projectNameInput = await prompt(projectNamePrompt);
+  const projectName = projectNameInput || existingConfig?.projectName;
+
+  const prefixPrompt = existingConfig
+    ? `Issue ID prefix (${existingConfig.prefix}): `
+    : 'Issue ID prefix (e.g., WI, PROJ, TASK): ';
+  const prefixInput = await prompt(prefixPrompt);
+  const prefix = prefixInput || existingConfig?.prefix;
 
   if (!projectName || !prefix) {
     throw new Error('Project name and prefix are required');

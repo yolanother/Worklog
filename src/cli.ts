@@ -340,8 +340,9 @@ program
       const initInfo = readInitSemaphore();
       
       if (isJsonMode) {
+        // In JSON mode, we can't do interactive prompts, so just report the existing config
         outputJson({
-          success: false,
+          success: true,
           message: 'Configuration already exists',
           config: {
             projectName: config?.projectName,
@@ -350,13 +351,38 @@ program
           version: initInfo?.version || WORKLOG_VERSION,
           initializedAt: initInfo?.initializedAt
         });
+        return;
       } else {
-        console.log('Configuration already exists:');
-        console.log(`  Project: ${config?.projectName}`);
-        console.log(`  Prefix: ${config?.prefix}`);
-        console.log('\nTo reinitialize, delete .worklog/config.yaml first.');
+        // In interactive mode, allow user to change settings
+        try {
+          const updatedConfig = await initConfig(config);
+          
+          // Update semaphore with current version
+          writeInitSemaphore(WORKLOG_VERSION);
+          
+          // Sync database after any changes
+          console.log('\nSyncing database...');
+          
+          try {
+            await performSync({
+              file: dataPath,
+              prefix: updatedConfig?.prefix,
+              gitRemote: DEFAULT_GIT_REMOTE,
+              gitBranch: DEFAULT_GIT_BRANCH,
+              push: true,
+              dryRun: false,
+              silent: false
+            });
+          } catch (syncError) {
+            console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
+            console.log(`  ${(syncError as Error).message}`);
+          }
+          return;
+        } catch (error) {
+          outputError('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
+          process.exit(1);
+        }
       }
-      return;
     }
     
     try {
