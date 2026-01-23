@@ -100,3 +100,26 @@ export interface UpdateCommentInput {
   comment?: string;
   references?: string[];
 }
+
+/**
+ * Details about a conflicting field in a work item
+ */
+export interface ConflictFieldDetail {
+  field: string;
+  localValue: any;
+  remoteValue: any;
+  chosenValue: any;
+  chosenSource: 'local' | 'remote' | 'merged';
+  reason: string;
+}
+
+/**
+ * Details about a conflict that occurred during sync
+ */
+export interface ConflictDetail {
+  itemId: string;
+  conflictType: 'same-timestamp' | 'different-timestamp';
+  fields: ConflictFieldDetail[];
+  localUpdatedAt?: string;
+  remoteUpdatedAt?: string;
+}

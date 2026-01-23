@@ -2,7 +2,7 @@
  * Sync functionality for merging local and remote work items with conflict resolution
  */
 
-import { WorkItem, Comment } from './types.js';
+import { WorkItem, Comment, ConflictDetail, ConflictFieldDetail } from './types.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,7 +27,8 @@ export interface SyncResult {
   itemsUnchanged: number;
   commentsAdded: number;
   commentsUnchanged: number;
-  conflicts: string[];
+  conflicts: string[]; // Legacy text-based conflicts (for backward compatibility)
+  conflictDetails: ConflictDetail[]; // Detailed conflict information
 }
 
 /**
@@ -85,8 +86,9 @@ function mergeTags(a: string[] | undefined, b: string[] | undefined): string[] {
 export function mergeWorkItems(
   localItems: WorkItem[],
   remoteItems: WorkItem[]
-): { merged: WorkItem[], conflicts: string[] } {
+): { merged: WorkItem[], conflicts: string[], conflictDetails: ConflictDetail[] } {
   const conflicts: string[] = [];
+  const conflictDetails: ConflictDetail[] = [];
   const mergedMap = new Map<string, WorkItem>();
   
   // Add all local items to the map
@@ -118,6 +120,7 @@ export function mergeWorkItems(
         const merged: WorkItem = { ...localItem };
         const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
         const mergedFields: string[] = [];
+        const fieldDetails: ConflictFieldDetail[] = [];
 
         for (const field of fields) {
           const localValue = localItem[field];
@@ -126,8 +129,17 @@ export function mergeWorkItems(
           if (valuesEqual) continue;
 
           if (field === 'tags') {
-            (merged as any)[field] = mergeTags(localValue as any, remoteValue as any);
+            const mergedTags = mergeTags(localValue as any, remoteValue as any);
+            (merged as any)[field] = mergedTags;
             mergedFields.push('tags (union)');
+            fieldDetails.push({
+              field: 'tags',
+              localValue,
+              remoteValue,
+              chosenValue: mergedTags,
+              chosenSource: 'merged',
+              reason: 'union of both tag sets'
+            });
             continue;
           }
 
@@ -137,8 +149,24 @@ export function mergeWorkItems(
           if (localIsDefault && !remoteIsDefault) {
             (merged as any)[field] = remoteValue;
             mergedFields.push(`${field} (from remote)`);
+            fieldDetails.push({
+              field,
+              localValue,
+              remoteValue,
+              chosenValue: remoteValue,
+              chosenSource: 'remote',
+              reason: 'remote has value, local is default'
+            });
           } else if (!localIsDefault && remoteIsDefault) {
             mergedFields.push(`${field} (from local)`);
+            fieldDetails.push({
+              field,
+              localValue,
+              remoteValue,
+              chosenValue: localValue,
+              chosenSource: 'local',
+              reason: 'local has value, remote is default'
+            });
           } else {
             // Deterministic tie-breaker: choose lexicographically by serialized value.
             const localKey = stableValueKey(localValue);
@@ -146,8 +174,24 @@ export function mergeWorkItems(
             if (remoteKey > localKey) {
               (merged as any)[field] = remoteValue;
               mergedFields.push(`${field} (tie-break: remote)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: remoteValue,
+                chosenSource: 'remote',
+                reason: 'deterministic tie-breaker (lexicographic)'
+              });
             } else {
               mergedFields.push(`${field} (tie-break: local)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: localValue,
+                chosenSource: 'local',
+                reason: 'deterministic tie-breaker (lexicographic)'
+              });
             }
           }
         }
@@ -161,6 +205,16 @@ export function mergeWorkItems(
         if (mergedFields.length > 0) {
           conflicts.push(`${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`);
         }
+        
+        if (fieldDetails.length > 0) {
+          conflictDetails.push({
+            itemId: remoteItem.id,
+            conflictType: 'same-timestamp',
+            fields: fieldDetails,
+            localUpdatedAt: localItem.updatedAt,
+            remoteUpdatedAt: remoteItem.updatedAt
+          });
+        }
       } else {
         // Different timestamps - perform field-by-field intelligent merge
         const isRemoteNewer = remoteUpdated > localUpdated;
@@ -169,6 +223,7 @@ export function mergeWorkItems(
         
         const mergedFields: string[] = [];
         const conflictedFields: string[] = [];
+        const fieldDetails: ConflictFieldDetail[] = [];
         
         for (const field of fields) {
           const localValue = localItem[field];
@@ -188,8 +243,17 @@ export function mergeWorkItems(
             const remoteIsDefault = isDefaultValue(remoteValue, field);
 
             if (field === 'tags' && Array.isArray(localValue) && Array.isArray(remoteValue)) {
-              (merged as any)[field] = mergeTags(localValue, remoteValue);
+              const mergedTags = mergeTags(localValue, remoteValue);
+              (merged as any)[field] = mergedTags;
               mergedFields.push('tags (union)');
+              fieldDetails.push({
+                field: 'tags',
+                localValue,
+                remoteValue,
+                chosenValue: mergedTags,
+                chosenSource: 'merged',
+                reason: 'union of both tag sets'
+              });
               continue;
             }
             
@@ -197,17 +261,49 @@ export function mergeWorkItems(
               // Remote has a value, local is default - use remote
               (merged as any)[field] = remoteValue;
               mergedFields.push(`${field} (from remote)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: remoteValue,
+                chosenSource: 'remote',
+                reason: 'remote has value, local is default'
+              });
             } else if (!localIsDefault && remoteIsDefault) {
               // Local has a value, remote is default - keep local
               mergedFields.push(`${field} (from local)`);
+              fieldDetails.push({
+                field,
+                localValue,
+                remoteValue,
+                chosenValue: localValue,
+                chosenSource: 'local',
+                reason: 'local has value, remote is default'
+              });
             } else {
               // Both have non-default values - use timestamp to decide
               if (isRemoteNewer) {
                 (merged as any)[field] = remoteValue;
                 conflictedFields.push(field);
+                fieldDetails.push({
+                  field,
+                  localValue,
+                  remoteValue,
+                  chosenValue: remoteValue,
+                  chosenSource: 'remote',
+                  reason: `remote is newer (${remoteItem.updatedAt})`
+                });
               } else {
                 // Keep local value
                 conflictedFields.push(field);
+                fieldDetails.push({
+                  field,
+                  localValue,
+                  remoteValue,
+                  chosenValue: localValue,
+                  chosenSource: 'local',
+                  reason: `local is newer (${localItem.updatedAt})`
+                });
               }
             }
           }
@@ -232,13 +328,24 @@ export function mergeWorkItems(
             `${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`
           );
         }
+        
+        if (fieldDetails.length > 0) {
+          conflictDetails.push({
+            itemId: remoteItem.id,
+            conflictType: 'different-timestamp',
+            fields: fieldDetails,
+            localUpdatedAt: localItem.updatedAt,
+            remoteUpdatedAt: remoteItem.updatedAt
+          });
+        }
       }
     }
   });
   
   return {
     merged: Array.from(mergedMap.values()),
-    conflicts
+    conflicts,
+    conflictDetails
   };
 }
 

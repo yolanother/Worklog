@@ -10,6 +10,7 @@ import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, U
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
 import { gitPullDataFile, gitPushDataFile, mergeWorkItems, mergeComments, SyncResult } from './sync.js';
 import * as fs from 'fs';
+import chalk from 'chalk';
 
 const program = new Command();
 
@@ -34,6 +35,80 @@ function outputError(message: string, jsonData?: any) {
   } else {
     console.error(message);
   }
+}
+
+// Helper to format a value for display
+function formatValue(value: any): string {
+  if (value === null || value === undefined) {
+    return '(empty)';
+  }
+  if (value === '') {
+    return '(empty string)';
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '[]';
+    }
+    return `[${value.join(', ')}]`;
+  }
+  return String(value);
+}
+
+// Display detailed conflict information with color coding
+function displayConflictDetails(result: SyncResult): void {
+  if (result.conflictDetails.length === 0) {
+    console.log('\n' + chalk.green('✓ No conflicts detected'));
+    return;
+  }
+
+  console.log('\n' + chalk.bold('Conflict Resolution Details:'));
+  console.log(chalk.gray('━'.repeat(80)));
+  
+  result.conflictDetails.forEach((conflict, index) => {
+    console.log(chalk.bold(`\n${index + 1}. Work Item: ${conflict.itemId}`));
+    
+    if (conflict.conflictType === 'same-timestamp') {
+      console.log(chalk.yellow(`   Same timestamp (${conflict.localUpdatedAt}) - merged deterministically`));
+    } else {
+      console.log(`   Local updated: ${conflict.localUpdatedAt || 'unknown'}`);
+      console.log(`   Remote updated: ${conflict.remoteUpdatedAt || 'unknown'}`);
+    }
+    
+    console.log(chalk.gray('   ─'.repeat(40)));
+    
+    conflict.fields.forEach(field => {
+      console.log(chalk.bold(`   Field: ${field.field}`));
+      
+      // Determine which value was chosen and which was lost
+      const localIsChosen = field.chosenSource === 'local' || 
+                            (field.chosenSource === 'merged' && 
+                             JSON.stringify(field.chosenValue) === JSON.stringify(field.localValue));
+      const remoteIsChosen = field.chosenSource === 'remote' || 
+                             (field.chosenSource === 'merged' && 
+                              JSON.stringify(field.chosenValue) === JSON.stringify(field.remoteValue));
+      
+      // For merged values (like tags union), both contribute to the result
+      if (field.chosenSource === 'merged') {
+        console.log(chalk.cyan(`     Local:  ${formatValue(field.localValue)}`));
+        console.log(chalk.cyan(`     Remote: ${formatValue(field.remoteValue)}`));
+        console.log(chalk.green(`     Merged: ${formatValue(field.chosenValue)}`));
+      } else {
+        // Show chosen value in green, lost value in red
+        if (localIsChosen) {
+          console.log(chalk.green(`   ✓ Local:  ${formatValue(field.localValue)}`));
+          console.log(chalk.red(`   ✗ Remote: ${formatValue(field.remoteValue)}`));
+        } else {
+          console.log(chalk.red(`   ✗ Local:  ${formatValue(field.localValue)}`));
+          console.log(chalk.green(`   ✓ Remote: ${formatValue(field.remoteValue)}`));
+        }
+      }
+      
+      console.log(chalk.gray(`     Reason: ${field.reason}`));
+      console.log();
+    });
+  });
+  
+  console.log(chalk.gray('━'.repeat(80)));
 }
 
 // Get prefix from config or use default
@@ -433,7 +508,8 @@ program
         itemsUnchanged,
         commentsAdded,
         commentsUnchanged,
-        conflicts: itemMergeResult.conflicts
+        conflicts: itemMergeResult.conflicts,
+        conflictDetails: itemMergeResult.conflictDetails
       };
       
       if (isJsonMode) {
@@ -457,15 +533,8 @@ program
           return;
         }
       } else {
-        // Display conflicts
-        if (result.conflicts.length > 0) {
-          console.log('\nConflict resolution:');
-          result.conflicts.forEach(conflict => {
-            console.log(`  - ${conflict}`);
-          });
-        } else {
-          console.log('\nNo conflicts detected');
-        }
+        // Display detailed conflict information with colors
+        displayConflictDetails(result);
         
         // Display summary
         console.log('\nSync summary:');
