@@ -203,8 +203,9 @@ export async function gitPullDataFile(dataFilePath: string): Promise<void> {
     const { stdout: repoRoot } = await execAsync('git rev-parse --show-toplevel');
     const repoRootPath = repoRoot.trim();
     
-    // Convert absolute path to repository-relative path
-    // git show requires a path relative to the repository root
+    // Convert data file path to repository-relative path for git show
+    // git show requires a path relative to the repository root, not an absolute path
+    // path.resolve ensures we have an absolute path even if dataFilePath is relative
     const absolutePath = path.resolve(dataFilePath);
     const relativePath = path.relative(repoRootPath, absolutePath);
     
