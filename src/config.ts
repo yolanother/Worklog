@@ -43,6 +43,23 @@ export function loadConfig(): WorklogConfig | null {
   try {
     const content = fs.readFileSync(getConfigPath(), 'utf-8');
     const config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
+    
+    // Validate config structure
+    if (!config || typeof config !== 'object') {
+      console.error('Invalid config: must be an object');
+      return null;
+    }
+    
+    if (!config.projectName || typeof config.projectName !== 'string') {
+      console.error('Invalid config: projectName must be a string');
+      return null;
+    }
+    
+    if (!config.prefix || typeof config.prefix !== 'string') {
+      console.error('Invalid config: prefix must be a string');
+      return null;
+    }
+    
     return config;
   } catch (error) {
     console.error('Error loading config:', error);

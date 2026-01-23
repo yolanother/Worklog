@@ -2,7 +2,7 @@
  * REST API for the Worklog system
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { WorklogDatabase } from './database.js';
 import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, WorkItemStatus, WorkItemPriority } from './types.js';
 import { exportToJsonl, importFromJsonl, getDefaultDataPath } from './jsonl.js';
@@ -17,7 +17,7 @@ export function createAPI(db: WorklogDatabase) {
   const defaultPrefix = config?.prefix || 'WI';
 
   // Middleware to set the database prefix based on the route
-  function setPrefixMiddleware(req: Request, res: Response, next: Function) {
+  function setPrefixMiddleware(req: Request, res: Response, next: NextFunction) {
     const prefix = req.params.prefix || defaultPrefix;
     db.setPrefix(prefix.toUpperCase());
     next();
