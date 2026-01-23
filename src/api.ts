@@ -4,7 +4,7 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import { WorklogDatabase } from './database.js';
-import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, WorkItemStatus, WorkItemPriority } from './types.js';
+import { CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, WorkItemStatus, WorkItemPriority, CreateCommentInput, UpdateCommentInput } from './types.js';
 import { exportToJsonl, importFromJsonl, getDefaultDataPath } from './jsonl.js';
 import { loadConfig } from './config.js';
 
@@ -121,6 +121,73 @@ export function createAPI(db: WorklogDatabase) {
     res.json(descendants);
   });
 
+  // Comment routes without prefix
+  // Create a comment for a work item
+  app.post('/items/:id/comments', (req: Request, res: Response) => {
+    try {
+      db.setPrefix(defaultPrefix);
+      const input: CreateCommentInput = {
+        workItemId: req.params.id,
+        author: req.body.author,
+        comment: req.body.comment,
+        references: req.body.references,
+      };
+      const comment = db.createComment(input);
+      if (!comment) {
+        res.status(404).json({ error: 'Work item not found' });
+        return;
+      }
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Get all comments for a work item
+  app.get('/items/:id/comments', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
+    const comments = db.getCommentsForWorkItem(req.params.id);
+    res.json(comments);
+  });
+
+  // Get a specific comment by ID
+  app.get('/comments/:commentId', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
+    const comment = db.getComment(req.params.commentId);
+    if (!comment) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+    res.json(comment);
+  });
+
+  // Update a comment
+  app.put('/comments/:commentId', (req: Request, res: Response) => {
+    try {
+      db.setPrefix(defaultPrefix);
+      const input: UpdateCommentInput = req.body;
+      const comment = db.updateComment(req.params.commentId, input);
+      if (!comment) {
+        res.status(404).json({ error: 'Comment not found' });
+        return;
+      }
+      res.json(comment);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Delete a comment
+  app.delete('/comments/:commentId', (req: Request, res: Response) => {
+    db.setPrefix(defaultPrefix);
+    const deleted = db.deleteComment(req.params.commentId);
+    if (!deleted) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+    res.status(204).send();
+  });
+
   // Routes with prefix
   // Create a work item with prefix
   app.post('/projects/:prefix/items', setPrefixMiddleware, (req: Request, res: Response) => {
@@ -207,14 +274,77 @@ export function createAPI(db: WorklogDatabase) {
     res.json(descendants);
   });
 
+  // Comment routes with prefix
+  // Create a comment for a work item with prefix
+  app.post('/projects/:prefix/items/:id/comments', setPrefixMiddleware, (req: Request, res: Response) => {
+    try {
+      const input: CreateCommentInput = {
+        workItemId: req.params.id,
+        author: req.body.author,
+        comment: req.body.comment,
+        references: req.body.references,
+      };
+      const comment = db.createComment(input);
+      if (!comment) {
+        res.status(404).json({ error: 'Work item not found' });
+        return;
+      }
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Get all comments for a work item with prefix
+  app.get('/projects/:prefix/items/:id/comments', setPrefixMiddleware, (req: Request, res: Response) => {
+    const comments = db.getCommentsForWorkItem(req.params.id);
+    res.json(comments);
+  });
+
+  // Get a specific comment by ID with prefix
+  app.get('/projects/:prefix/comments/:commentId', setPrefixMiddleware, (req: Request, res: Response) => {
+    const comment = db.getComment(req.params.commentId);
+    if (!comment) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+    res.json(comment);
+  });
+
+  // Update a comment with prefix
+  app.put('/projects/:prefix/comments/:commentId', setPrefixMiddleware, (req: Request, res: Response) => {
+    try {
+      const input: UpdateCommentInput = req.body;
+      const comment = db.updateComment(req.params.commentId, input);
+      if (!comment) {
+        res.status(404).json({ error: 'Comment not found' });
+        return;
+      }
+      res.json(comment);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  // Delete a comment with prefix
+  app.delete('/projects/:prefix/comments/:commentId', setPrefixMiddleware, (req: Request, res: Response) => {
+    const deleted = db.deleteComment(req.params.commentId);
+    if (!deleted) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+    res.status(204).send();
+  });
+
   // Export to JSONL
   app.post('/export', (req: Request, res: Response) => {
     try {
       db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = db.getAll();
-      exportToJsonl(items, filepath);
-      res.json({ message: 'Export successful', filepath, count: items.length });
+      const comments = db.getAllComments();
+      exportToJsonl(items, comments, filepath);
+      res.json({ message: 'Export successful', filepath, count: items.length, commentCount: comments.length });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
@@ -225,9 +355,10 @@ export function createAPI(db: WorklogDatabase) {
     try {
       db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
-      const items = importFromJsonl(filepath);
+      const { items, comments } = importFromJsonl(filepath);
       db.import(items);
-      res.json({ message: 'Import successful', count: items.length });
+      db.importComments(comments);
+      res.json({ message: 'Import successful', count: items.length, commentCount: comments.length });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

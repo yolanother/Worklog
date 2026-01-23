@@ -69,3 +69,34 @@ export interface WorklogConfig {
   projectName: string;
   prefix: string;
 }
+
+/**
+ * Represents a comment on a work item
+ */
+export interface Comment {
+  id: string;
+  workItemId: string;
+  author: string;
+  comment: string;
+  createdAt: string;
+  references: string[];
+}
+
+/**
+ * Input for creating a new comment
+ */
+export interface CreateCommentInput {
+  workItemId: string;
+  author: string;
+  comment: string;
+  references?: string[];
+}
+
+/**
+ * Input for updating an existing comment
+ */
+export interface UpdateCommentInput {
+  author?: string;
+  comment?: string;
+  references?: string[];
+}

@@ -2,16 +2,20 @@
  * In-memory database for work items
  */
 
-import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery } from './types.js';
+import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput } from './types.js';
 
 export class WorklogDatabase {
   private items: Map<string, WorkItem>;
+  private comments: Map<string, Comment>;
   private nextId: number;
+  private nextCommentId: number;
   private prefix: string;
 
   constructor(prefix: string = 'WI') {
     this.items = new Map();
+    this.comments = new Map();
     this.nextId = 1;
+    this.nextCommentId = 1;
     this.prefix = prefix;
   }
 
@@ -34,6 +38,13 @@ export class WorklogDatabase {
    */
   private generateId(): string {
     return `${this.prefix}-${this.nextId++}`;
+  }
+
+  /**
+   * Generate a unique ID for a comment
+   */
+  private generateCommentId(): string {
+    return `${this.prefix}-C${this.nextCommentId++}`;
   }
 
   /**
@@ -175,11 +186,12 @@ export class WorklogDatabase {
     
     // Escape special regex characters in prefix
     const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const workItemIdPattern = new RegExp(`${escapedPrefix}-(\\d+)`);
     
     // Find the highest ID number to continue from
     let maxId = 0;
     for (const item of items) {
-      const match = item.id.match(new RegExp(`${escapedPrefix}-(\\d+)`));
+      const match = item.id.match(workItemIdPattern);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num > maxId) {
@@ -190,5 +202,115 @@ export class WorklogDatabase {
     }
     
     this.nextId = maxId + 1;
+  }
+
+  /**
+   * Create a new comment
+   */
+  createComment(input: CreateCommentInput): Comment | null {
+    // Validate required fields
+    if (!input.author || input.author.trim() === '') {
+      throw new Error('Author is required');
+    }
+    if (!input.comment || input.comment.trim() === '') {
+      throw new Error('Comment text is required');
+    }
+    
+    // Verify that the work item exists
+    if (!this.items.has(input.workItemId)) {
+      return null;
+    }
+
+    const id = this.generateCommentId();
+    const now = new Date().toISOString();
+    
+    const comment: Comment = {
+      id,
+      workItemId: input.workItemId,
+      author: input.author,
+      comment: input.comment,
+      createdAt: now,
+      references: input.references || [],
+    };
+
+    this.comments.set(id, comment);
+    return comment;
+  }
+
+  /**
+   * Get a comment by ID
+   */
+  getComment(id: string): Comment | null {
+    return this.comments.get(id) || null;
+  }
+
+  /**
+   * Update a comment
+   */
+  updateComment(id: string, input: UpdateCommentInput): Comment | null {
+    const comment = this.comments.get(id);
+    if (!comment) {
+      return null;
+    }
+
+    const updated: Comment = {
+      ...comment,
+      ...input,
+      id: comment.id, // Prevent ID changes
+      workItemId: comment.workItemId, // Prevent workItemId changes
+      createdAt: comment.createdAt, // Prevent createdAt changes
+    };
+
+    this.comments.set(id, updated);
+    return updated;
+  }
+
+  /**
+   * Delete a comment
+   */
+  deleteComment(id: string): boolean {
+    return this.comments.delete(id);
+  }
+
+  /**
+   * Get all comments for a work item
+   */
+  getCommentsForWorkItem(workItemId: string): Comment[] {
+    return Array.from(this.comments.values())
+      .filter(comment => comment.workItemId === workItemId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /**
+   * Get all comments as an array
+   */
+  getAllComments(): Comment[] {
+    return Array.from(this.comments.values());
+  }
+
+  /**
+   * Import comments
+   */
+  importComments(comments: Comment[]): void {
+    this.comments.clear();
+    
+    // Escape special regex characters in prefix
+    const escapedPrefix = this.prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const commentIdPattern = new RegExp(`${escapedPrefix}-C(\\d+)`);
+    
+    // Find the highest comment ID number to continue from
+    let maxCommentId = 0;
+    for (const comment of comments) {
+      const match = comment.id.match(commentIdPattern);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxCommentId) {
+          maxCommentId = num;
+        }
+      }
+      this.comments.set(comment.id, comment);
+    }
+    
+    this.nextCommentId = maxCommentId + 1;
   }
 }

@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
-import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery } from './types.js';
+import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput } from './types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
 import * as fs from 'fs';
 
@@ -30,15 +30,17 @@ function loadData(prefix?: string) {
   db.setPrefix(actualPrefix);
   
   if (fs.existsSync(dataPath)) {
-    const items = importFromJsonl(dataPath);
+    const { items, comments } = importFromJsonl(dataPath);
     db.import(items);
+    db.importComments(comments);
   }
 }
 
 // Save data
 function saveData() {
   const items = db.getAll();
-  exportToJsonl(items, dataPath);
+  const comments = db.getAllComments();
+  exportToJsonl(items, comments, dataPath);
 }
 
 program
@@ -232,28 +234,153 @@ program
 // Export data
 program
   .command('export')
-  .description('Export work items to JSONL file')
+  .description('Export work items and comments to JSONL file')
   .option('-f, --file <filepath>', 'Output file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     loadData(options.prefix);
     const items = db.getAll();
-    exportToJsonl(items, options.file);
-    console.log(`Exported ${items.length} work items to ${options.file}`);
+    const comments = db.getAllComments();
+    exportToJsonl(items, comments, options.file);
+    console.log(`Exported ${items.length} work items and ${comments.length} comments to ${options.file}`);
   });
 
 // Import data
 program
   .command('import')
-  .description('Import work items from JSONL file')
+  .description('Import work items and comments from JSONL file')
   .option('-f, --file <filepath>', 'Input file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
   .action((options) => {
     loadData(options.prefix);
-    const items = importFromJsonl(options.file);
+    const { items, comments } = importFromJsonl(options.file);
     db.import(items);
+    db.importComments(comments);
     saveData();
-    console.log(`Imported ${items.length} work items from ${options.file}`);
+    console.log(`Imported ${items.length} work items and ${comments.length} comments from ${options.file}`);
+  });
+
+// Comment commands
+// Create a comment
+program
+  .command('comment-create <workItemId>')
+  .description('Create a comment on a work item')
+  .requiredOption('-a, --author <author>', 'Author of the comment')
+  .requiredOption('-c, --comment <comment>', 'Comment text (markdown supported)')
+  .option('-r, --references <references>', 'Comma-separated list of references (work item IDs, file paths, or URLs)')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((workItemId, options) => {
+    loadData(options.prefix);
+    
+    const comment = db.createComment({
+      workItemId,
+      author: options.author,
+      comment: options.comment,
+      references: options.references ? options.references.split(',').map((r: string) => r.trim()) : [],
+    });
+    
+    if (!comment) {
+      console.error(`Work item not found: ${workItemId}`);
+      process.exit(1);
+    }
+    
+    saveData();
+    console.log('Created comment:');
+    console.log(JSON.stringify(comment, null, 2));
+  });
+
+// List comments for a work item
+program
+  .command('comment-list <workItemId>')
+  .description('List all comments for a work item')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((workItemId, options) => {
+    loadData(options.prefix);
+    
+    const workItem = db.get(workItemId);
+    if (!workItem) {
+      console.error(`Work item not found: ${workItemId}`);
+      process.exit(1);
+    }
+    
+    const comments = db.getCommentsForWorkItem(workItemId);
+    
+    if (comments.length === 0) {
+      console.log('No comments found for this work item');
+      return;
+    }
+    
+    console.log(`Found ${comments.length} comment(s) for ${workItemId}:\n`);
+    comments.forEach(comment => {
+      console.log(`[${comment.id}] by ${comment.author} at ${comment.createdAt}`);
+      console.log(`  ${comment.comment}`);
+      if (comment.references.length > 0) {
+        console.log(`  References: ${comment.references.join(', ')}`);
+      }
+      console.log();
+    });
+  });
+
+// Show a specific comment
+program
+  .command('comment-show <commentId>')
+  .description('Show details of a comment')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((commentId, options) => {
+    loadData(options.prefix);
+    
+    const comment = db.getComment(commentId);
+    if (!comment) {
+      console.error(`Comment not found: ${commentId}`);
+      process.exit(1);
+    }
+    
+    console.log(JSON.stringify(comment, null, 2));
+  });
+
+// Update a comment
+program
+  .command('comment-update <commentId>')
+  .description('Update a comment')
+  .option('-a, --author <author>', 'New author')
+  .option('-c, --comment <comment>', 'New comment text')
+  .option('-r, --references <references>', 'New references (comma-separated)')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((commentId, options) => {
+    loadData(options.prefix);
+    
+    const updates: UpdateCommentInput = {};
+    if (options.author) updates.author = options.author;
+    if (options.comment) updates.comment = options.comment;
+    if (options.references) updates.references = options.references.split(',').map((r: string) => r.trim());
+    
+    const comment = db.updateComment(commentId, updates);
+    if (!comment) {
+      console.error(`Comment not found: ${commentId}`);
+      process.exit(1);
+    }
+    
+    saveData();
+    console.log('Updated comment:');
+    console.log(JSON.stringify(comment, null, 2));
+  });
+
+// Delete a comment
+program
+  .command('comment-delete <commentId>')
+  .description('Delete a comment')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((commentId, options) => {
+    loadData(options.prefix);
+    
+    const deleted = db.deleteComment(commentId);
+    if (!deleted) {
+      console.error(`Comment not found: ${commentId}`);
+      process.exit(1);
+    }
+    
+    saveData();
+    console.log(`Deleted comment: ${commentId}`);
   });
 
 program.parse();

@@ -9,6 +9,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Git-Friendly**: Data stored in JSONL format for easy Git syncing
 - **In-Memory Database**: Fast runtime performance
 - **Hierarchical Work Items**: Support for parent-child relationships
+- **Comments**: Add comments to work items with markdown support and references
 - **Multi-Project Support**: Configure custom prefixes for issue IDs per project
 
 ## Installation
@@ -75,6 +76,21 @@ npm run cli -- update WI-1 -s in-progress
 # Delete a work item
 npm run cli -- delete WI-1
 
+# Create a comment on a work item
+npm run cli -- comment-create WI-1 -a "John Doe" -c "This is a comment with **markdown**" -r "WI-2,src/api.ts,https://example.com"
+
+# List comments for a work item
+npm run cli -- comment-list WI-1
+
+# Show a specific comment
+npm run cli -- comment-show WI-C1
+
+# Update a comment
+npm run cli -- comment-update WI-C1 -c "Updated comment text"
+
+# Delete a comment
+npm run cli -- comment-delete WI-C1
+
 # Export data
 npm run cli -- export -f backup.jsonl
 
@@ -103,6 +119,7 @@ npm start
 
 #### API Endpoints
 
+**Work Items:**
 - `GET /health` - Health check
 - `POST /items` - Create a work item
 - `GET /items` - List work items (with optional filters)
@@ -111,12 +128,23 @@ npm start
 - `DELETE /items/:id` - Delete a work item
 - `GET /items/:id/children` - Get children of a work item
 - `GET /items/:id/descendants` - Get all descendants
+
+**Comments:**
+- `POST /items/:id/comments` - Create a comment on a work item
+- `GET /items/:id/comments` - Get all comments for a work item
+- `GET /comments/:commentId` - Get a specific comment
+- `PUT /comments/:commentId` - Update a comment
+- `DELETE /comments/:commentId` - Delete a comment
+
+**Data Management:**
 - `POST /export` - Export data to JSONL
 - `POST /import` - Import data from JSONL
 
+**Note:** All endpoints also support project prefix routing via `/projects/:prefix/...`
+
 ## Data Format
 
-Work items are stored in JSONL (JSON Lines) format, with each line representing one work item. This format is Git-friendly as changes to individual items create minimal diffs.
+Work items and comments are stored in JSONL (JSON Lines) format, with each line representing one item. This format is Git-friendly as changes to individual items create minimal diffs.
 
 ### Work Item Structure
 
@@ -136,7 +164,7 @@ Work items are stored in JSONL (JSON Lines) format, with each line representing 
 }
 ```
 
-### Fields
+#### Work Item Fields
 
 - **id**: Unique identifier (auto-generated)
 - **title**: Short title of the work item
@@ -149,6 +177,28 @@ Work items are stored in JSONL (JSON Lines) format, with each line representing 
 - **tags**: Array of string tags
 - **assignee**: Person assigned to the work item
 - **stage**: Current stage of the work item in the workflow
+
+### Comment Structure
+
+```json
+{
+  "id": "WI-C1",
+  "workItemId": "WI-1",
+  "author": "Jane Doe",
+  "comment": "This is a comment with **markdown** support!",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "references": ["WI-2", "src/api.ts", "https://example.com/docs"]
+}
+```
+
+#### Comment Fields
+
+- **id**: Unique identifier (auto-generated, format: `PREFIX-C#`)
+- **workItemId**: ID of the work item this comment belongs to
+- **author**: Name of the comment author (freeform string)
+- **comment**: Comment text in markdown format
+- **createdAt**: ISO timestamp of creation
+- **references**: Array of references (work item IDs, relative file paths, or URLs)
 
 ## Development
 
