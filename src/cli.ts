@@ -5,10 +5,10 @@
 
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
-import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
+import { importFromJsonl, importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists } from './config.js';
-import { gitPullDataFile, gitPushDataFile, mergeWorkItems, mergeComments, SyncResult } from './sync.js';
+import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
 import * as fs from 'fs';
 import chalk from 'chalk';
 
@@ -431,6 +431,8 @@ program
   .description('Sync work items with git repository (pull, merge with conflict resolution, and push)')
   .option('-f, --file <filepath>', 'Data file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
+  .option('--git-remote <remote>', 'Git remote to use for syncing data', 'origin')
+  .option('--git-branch <branch>', 'Dedicated branch to store worklog data', 'worklog-data')
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
   .action(async (options) => {
@@ -455,24 +457,27 @@ program
       }
       
       if (!options.dryRun) {
-        await gitPullDataFile(options.file);
+        // No checkout/merge of repo code. We only read the remote JSONL content from a dedicated branch.
       }
       
+      const gitTarget: GitTarget = {
+        remote: options.gitRemote,
+        branch: options.gitBranch,
+      };
+
       // Import remote data
       let remoteItems: WorkItem[] = [];
       let remoteComments: Comment[] = [];
-      
-      if (fs.existsSync(options.file)) {
-        const remoteData = importFromJsonl(options.file);
+
+      const remoteContent = options.dryRun ? null : await getRemoteDataFileContent(options.file, gitTarget);
+      if (remoteContent) {
+        const remoteData = importFromJsonlContent(remoteContent);
         remoteItems = remoteData.items;
         remoteComments = remoteData.comments;
-        if (!isJsonMode) {
-          console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
-        }
-      } else {
-        if (!isJsonMode) {
-          console.log('No remote data file found - treating as empty');
-        }
+      }
+
+      if (!isJsonMode) {
+        console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
       }
       
       // Merge work items
@@ -558,13 +563,17 @@ program
       if (!isJsonMode) {
         console.log('\nMerged data saved locally');
       }
+
+      // Ensure the JSONL file on disk reflects the merged state for this repo.
+      // This file is what we will commit to the dedicated data branch.
+      exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file);
       
       // Push to git if requested
       if (options.push !== false) {
         if (!isJsonMode) {
           console.log('\nPushing changes to git...');
         }
-        await gitPushDataFile(options.file, 'Sync work items and comments');
+        await gitPushDataFileToBranch(options.file, 'Sync work items and comments', gitTarget);
         if (!isJsonMode) {
           console.log('Changes pushed successfully');
         }

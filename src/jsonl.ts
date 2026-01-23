@@ -7,6 +7,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorkItem, Comment } from './types.js';
 
+function normalizeForStableJson(value: any): any {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(v => normalizeForStableJson(v));
+  if (typeof value !== 'object') return value;
+
+  const out: any = {};
+  for (const key of Object.keys(value).sort()) {
+    out[key] = normalizeForStableJson(value[key]);
+  }
+  return out;
+}
+
+function stableStringify(value: any): string {
+  return JSON.stringify(normalizeForStableJson(value));
+}
+
 interface JsonlRecord {
   type: 'workitem' | 'comment';
   data: WorkItem | Comment;
@@ -17,15 +33,24 @@ interface JsonlRecord {
  */
 export function exportToJsonl(items: WorkItem[], comments: Comment[], filepath: string): void {
   const lines: string[] = [];
+
+  const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedComments = [...comments].sort((a, b) => {
+    const wi = a.workItemId.localeCompare(b.workItemId);
+    if (wi !== 0) return wi;
+    const ca = a.createdAt.localeCompare(b.createdAt);
+    if (ca !== 0) return ca;
+    return a.id.localeCompare(b.id);
+  });
   
   // Add work items
-  items.forEach(item => {
-    lines.push(JSON.stringify({ type: 'workitem', data: item }));
+  sortedItems.forEach(item => {
+    lines.push(stableStringify({ type: 'workitem', data: item }));
   });
   
   // Add comments
-  comments.forEach(comment => {
-    lines.push(JSON.stringify({ type: 'comment', data: comment }));
+  sortedComments.forEach(comment => {
+    lines.push(stableStringify({ type: 'comment', data: comment }));
   });
   
   // Ensure directory exists
@@ -46,6 +71,10 @@ export function importFromJsonl(filepath: string): { items: WorkItem[], comments
   }
 
   const content = fs.readFileSync(filepath, 'utf-8');
+  return importFromJsonlContent(content);
+}
+
+export function importFromJsonlContent(content: string): { items: WorkItem[], comments: Comment[] } {
   const lines = content.split('\n').filter(line => line.trim() !== '');
   
   const items: WorkItem[] = [];
