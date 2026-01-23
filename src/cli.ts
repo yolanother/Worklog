@@ -58,12 +58,13 @@ function formatValue(value: any): string {
 
 // Priority ordering for sorting work items (higher number = higher priority)
 const PRIORITY_ORDER = { critical: 4, high: 3, medium: 2, low: 1 } as const;
+const DEFAULT_PRIORITY = PRIORITY_ORDER.medium; // Fallback for unknown priorities
 
 // Helper function to sort items by priority and creation date
 function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
   // Higher priority comes first (descending order)
-  const aPriority = PRIORITY_ORDER[a.priority] ?? 2; // Default to 'medium' if unknown
-  const bPriority = PRIORITY_ORDER[b.priority] ?? 2;
+  const aPriority = PRIORITY_ORDER[a.priority] ?? DEFAULT_PRIORITY;
+  const bPriority = PRIORITY_ORDER[b.priority] ?? DEFAULT_PRIORITY;
   const priorityDiff = bPriority - aPriority;
   if (priorityDiff !== 0) return priorityDiff;
   // If priorities are equal, sort by creation time (oldest first, ascending order)
@@ -72,11 +73,14 @@ function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
 
 // Helper to display work items in a tree structure
 function displayItemTree(items: WorkItem[]): void {
+  // Create a set of item IDs for O(1) lookup
+  const itemIds = new Set(items.map(i => i.id));
+  
   // Display root items (those without parents or whose parents are not in the filtered list)
   const rootItems = items.filter(item => {
     if (item.parentId === null) return true;
     // If parent is not in the filtered list, treat as root
-    return !items.some(i => i.id === item.parentId);
+    return !itemIds.has(item.parentId);
   });
   
   // Sort by priority and creation date
