@@ -11,11 +11,13 @@ const PORT = process.env.PORT || 3000;
 // Load configuration and create database instance with prefix
 const config = loadConfig();
 const prefix = config?.prefix || 'WI';
+const autoExport = config?.autoExport !== false; // Default to true for backwards compatibility
 
 // Create database instance - it will automatically:
 // 1. Connect to persistent SQLite storage
 // 2. Check if JSONL is newer than DB and refresh if needed
-const db = new WorklogDatabase(prefix);
+// 3. Auto-export to JSONL on all write operations (if autoExport is enabled)
+const db = new WorklogDatabase(prefix, undefined, undefined, autoExport);
 
 if (config) {
   console.log(`Using project: ${config.projectName} (prefix: ${config.prefix})`);

@@ -197,7 +197,8 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   if (existingConfig) {
     console.log('Current Worklog configuration:\n');
     console.log(`  Project: ${existingConfig.projectName}`);
-    console.log(`  Prefix: ${existingConfig.prefix}\n`);
+    console.log(`  Prefix: ${existingConfig.prefix}`);
+    console.log(`  Auto-export: ${existingConfig.autoExport !== false ? 'enabled' : 'disabled'}\n`);
 
     const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
     
@@ -223,6 +224,20 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   const prefixInput = await prompt(prefixPrompt);
   const prefix = prefixInput || existingConfig?.prefix;
 
+  // Prompt for auto-export setting
+  const currentAutoExport = existingConfig?.autoExport !== false ? 'Y' : 'n';
+  const autoExportPrompt = existingConfig
+    ? `Auto-export data to JSONL after changes? (Y/n) [${currentAutoExport}]: `
+    : 'Auto-export data to JSONL after changes? (Y/n) [Y]: ';
+  const autoExportInput = await prompt(autoExportPrompt);
+  let autoExport: boolean;
+  if (autoExportInput.trim() === '') {
+    // Use default or existing value
+    autoExport = existingConfig?.autoExport !== false;
+  } else {
+    autoExport = autoExportInput.toLowerCase() !== 'n' && autoExportInput.toLowerCase() !== 'no';
+  }
+
   if (!projectName || !prefix) {
     throw new Error('Project name and prefix are required');
   }
@@ -234,13 +249,15 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
 
   const config: WorklogConfig = {
     projectName,
-    prefix: prefix.toUpperCase()
+    prefix: prefix.toUpperCase(),
+    autoExport
   };
 
   saveConfig(config);
   console.log(`\nConfiguration saved to ${getConfigPath()}`);
   console.log(`Project: ${config.projectName}`);
   console.log(`Prefix: ${config.prefix}`);
+  console.log(`Auto-export: ${config.autoExport ? 'enabled' : 'disabled'}`);
 
   return config;
 }
