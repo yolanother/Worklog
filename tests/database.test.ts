@@ -411,4 +411,116 @@ describe('WorklogDatabase', () => {
       expect(fs.existsSync(jsonlPath)).toBe(false);
     });
   });
+
+  describe('findNextWorkItem', () => {
+    it('should return null when no work items exist', () => {
+      const next = db.findNextWorkItem();
+      expect(next).toBeNull();
+    });
+
+    it('should return the only open item when no in-progress items exist', () => {
+      const item = db.create({ title: 'Only task', priority: 'high' });
+      const next = db.findNextWorkItem();
+      
+      expect(next).not.toBeNull();
+      expect(next?.id).toBe(item.id);
+    });
+
+    it('should return highest priority item when multiple open items exist', () => {
+      db.create({ title: 'Low priority', priority: 'low', status: 'open' });
+      const highPrio = db.create({ title: 'High priority', priority: 'high', status: 'open' });
+      db.create({ title: 'Medium priority', priority: 'medium', status: 'open' });
+      
+      const next = db.findNextWorkItem();
+      expect(next?.id).toBe(highPrio.id);
+    });
+
+    it('should return oldest item when priorities are equal', () => {
+      // Create items with same priority but different times
+      const oldest = db.create({ title: 'Oldest', priority: 'high', status: 'open' });
+      // Small delay to ensure different timestamps
+      const delay = () => new Promise(resolve => setTimeout(resolve, 10));
+      
+      return delay().then(() => {
+        db.create({ title: 'Newer', priority: 'high', status: 'open' });
+        const next = db.findNextWorkItem();
+        expect(next?.id).toBe(oldest.id);
+      });
+    });
+
+    it('should walk down tree from in-progress item to find leaf nodes', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      const child = db.create({ title: 'Child', priority: 'high', status: 'open', parentId: parent.id });
+      const grandchild = db.create({ title: 'Grandchild', priority: 'high', status: 'open', parentId: child.id });
+      
+      const next = db.findNextWorkItem();
+      // Should select the leaf node (grandchild) since parent is in-progress
+      expect(next?.id).toBe(grandchild.id);
+    });
+
+    it('should skip completed and deleted items', () => {
+      db.create({ title: 'Completed', priority: 'critical', status: 'completed' });
+      db.create({ title: 'Deleted', priority: 'critical', status: 'deleted' });
+      const openItem = db.create({ title: 'Open', priority: 'low', status: 'open' });
+      
+      const next = db.findNextWorkItem();
+      expect(next?.id).toBe(openItem.id);
+    });
+
+    it('should filter by assignee when provided', () => {
+      const johnItem = db.create({ title: 'John task', priority: 'high', status: 'open', assignee: 'john' });
+      db.create({ title: 'Jane task', priority: 'critical', status: 'open', assignee: 'jane' });
+      
+      const next = db.findNextWorkItem('john');
+      expect(next?.id).toBe(johnItem.id);
+    });
+
+    it('should filter by search term in title', () => {
+      db.create({ title: 'Unrelated task', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Bug fix needed', priority: 'low', status: 'open' });
+      
+      const next = db.findNextWorkItem(undefined, 'bug');
+      expect(next?.id).toBe(searchItem.id);
+    });
+
+    it('should filter by search term in description', () => {
+      db.create({ title: 'Task 1', description: 'Something else', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Task 2', description: 'Fix the authentication bug', priority: 'low', status: 'open' });
+      
+      const next = db.findNextWorkItem(undefined, 'authentication');
+      expect(next?.id).toBe(searchItem.id);
+    });
+
+    it('should filter by search term in comments', () => {
+      db.create({ title: 'Task 1', priority: 'critical', status: 'open' });
+      const searchItem = db.create({ title: 'Task 2', priority: 'low', status: 'open' });
+      
+      // Add a comment with the search term
+      db.createComment({
+        workItemId: searchItem.id,
+        author: 'test',
+        comment: 'This needs database optimization'
+      });
+      
+      const next = db.findNextWorkItem(undefined, 'database');
+      expect(next?.id).toBe(searchItem.id);
+    });
+
+    it('should return in-progress item if it has no suitable descendants', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Completed child', priority: 'high', status: 'completed', parentId: parent.id });
+      
+      const next = db.findNextWorkItem();
+      expect(next?.id).toBe(parent.id);
+    });
+
+    it('should select highest priority leaf when multiple leaves exist', () => {
+      const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
+      db.create({ title: 'Low leaf', priority: 'low', status: 'open', parentId: parent.id });
+      const highLeaf = db.create({ title: 'High leaf', priority: 'high', status: 'open', parentId: parent.id });
+      
+      const next = db.findNextWorkItem();
+      expect(next?.id).toBe(highLeaf.id);
+    });
+  });
 });

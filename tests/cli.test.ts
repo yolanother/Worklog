@@ -635,6 +635,18 @@ describe('CLI Integration Tests', () => {
       }
     });
 
+    it('should fail next command when not initialized', async () => {
+      try {
+        await execAsync(`tsx ${cliPath} --json next`);
+        throw new Error('Expected next command to fail, but it succeeded');
+      } catch (error: any) {
+        const result = JSON.parse(error.stdout || '{}');
+        expect(result.success).toBe(false);
+        expect(result.initialized).toBe(false);
+        expect(result.error).toContain('not initialized');
+      }
+    });
+
     it('should fail comment create command when not initialized', async () => {
       try {
         await execAsync(`tsx ${cliPath} --json comment create TEST-1 -a "Author" -c "Comment"`);
@@ -693,6 +705,90 @@ describe('CLI Integration Tests', () => {
         expect(result.initialized).toBe(false);
         expect(result.error).toContain('not initialized');
       }
+    });
+  });
+
+  describe('next command', () => {
+    it('should find the next work item when items exist', async () => {
+      // Create some work items
+      await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p low`);
+      await execAsync(`tsx ${cliPath} create -t "Task 2" -s open -p high`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem).toBeDefined();
+      expect(result.workItem.title).toBe('Task 2'); // Should select high priority
+    });
+
+    it('should return null when no work items exist', async () => {
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem).toBeNull();
+    });
+
+    it('should filter by assignee', async () => {
+      await execAsync(`tsx ${cliPath} create -t "John task" -p high -a "john"`);
+      await execAsync(`tsx ${cliPath} create -t "Jane task" -p critical -a "jane"`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next -a john`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.title).toBe('John task');
+      expect(result.workItem.assignee).toBe('john');
+    });
+
+    it('should filter by search term in title', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Regular task" -p critical`);
+      await execAsync(`tsx ${cliPath} create -t "Bug fix needed" -p low`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next -s bug`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.title).toBe('Bug fix needed');
+    });
+
+    it('should filter by search term in description', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Task 1" -d "Some work" -p critical`);
+      await execAsync(`tsx ${cliPath} create -t "Task 2" -d "Authentication issue" -p low`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next -s authentication`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.title).toBe('Task 2');
+    });
+
+    it('should prioritize in-progress items', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Open task" -s open -p critical`);
+      const { stdout: inProgressStdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress task" -s in-progress -p low`);
+      const inProgressResult = JSON.parse(inProgressStdout);
+      const inProgressId = inProgressResult.workItem.id;
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      // When there's an in-progress item, it should look at that or its descendants
+      // Since in-progress has no children, it should return itself
+      expect(result.workItem.id).toBe(inProgressId);
+    });
+
+    it('should skip completed items', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed -p critical`);
+      const { stdout: openStdout } = await execAsync(`tsx ${cliPath} --json create -t "Open task" -s open -p low`);
+      const openResult = JSON.parse(openStdout);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next`);
+      
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.title).toBe('Open task');
     });
   });
 });

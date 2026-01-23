@@ -800,6 +800,55 @@ program
     }
   });
 
+// Find the next work item to work on
+program
+  .command('next')
+  .description('Find the next work item to work on based on priority and status')
+  .option('-a, --assignee <assignee>', 'Filter by assignee')
+  .option('-s, --search <term>', 'Search term for fuzzy matching against title, description, and comments')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action(async (options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+    
+    const nextItem = db.findNextWorkItem(options.assignee, options.search);
+    
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      if (nextItem) {
+        outputJson({ success: true, workItem: nextItem });
+      } else {
+        outputJson({ success: true, workItem: null, message: 'No work items found' });
+      }
+    } else {
+      if (!nextItem) {
+        console.log('No work items found to work on.');
+        return;
+      }
+      
+      console.log('\nNext work item to work on:');
+      console.log('==========================\n');
+      console.log(`ID:          ${nextItem.id}`);
+      console.log(`Title:       ${nextItem.title}`);
+      console.log(`Status:      ${nextItem.status}`);
+      console.log(`Priority:    ${nextItem.priority}`);
+      if (nextItem.assignee) console.log(`Assignee:    ${nextItem.assignee}`);
+      if (nextItem.parentId) console.log(`Parent:      ${nextItem.parentId}`);
+      if (nextItem.description) {
+        console.log(`Description: ${nextItem.description}`);
+      }
+      
+      // Offer to copy ID to clipboard
+      console.log('\n');
+      
+      // Simple clipboard prompt (no actual clipboard functionality yet)
+      // Note: For actual clipboard support, we would need a package like 'clipboardy'
+      // For now, we just display the ID prominently
+      console.log(`Work item ID: ${chalk.green.bold(nextItem.id)}`);
+      console.log(`(Copy the ID above to use it in other commands)`);
+    }
+  });
+
 // Sync with git
 program
   .command('sync')

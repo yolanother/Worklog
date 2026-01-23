@@ -285,6 +285,119 @@ export class WorklogDatabase {
   }
 
   /**
+   * Check if a work item is a leaf node (has no children)
+   */
+  isLeafNode(itemId: string): boolean {
+    return this.getChildren(itemId).length === 0;
+  }
+
+  /**
+   * Get all leaf nodes that are descendants of a parent item
+   */
+  getLeafDescendants(parentId: string): WorkItem[] {
+    const descendants = this.getDescendants(parentId);
+    return descendants.filter(item => this.isLeafNode(item.id));
+  }
+
+  /**
+   * Find the next work item to work on based on priority and creation time
+   * @param assignee - Optional assignee filter
+   * @param searchTerm - Optional search term for fuzzy matching
+   * @returns The next work item to work on, or null if none found
+   */
+  findNextWorkItem(assignee?: string, searchTerm?: string): WorkItem | null {
+    let items = this.store.getAllWorkItems();
+
+    // Filter by assignee if provided
+    if (assignee) {
+      items = items.filter(item => item.assignee === assignee);
+    }
+
+    // Filter by search term if provided (fuzzy match against title, description, and comments)
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      items = items.filter(item => {
+        // Check title and description
+        const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
+        const descriptionMatch = item.description.toLowerCase().includes(lowerSearchTerm);
+        
+        // Check comments
+        const comments = this.getCommentsForWorkItem(item.id);
+        const commentMatch = comments.some(comment => 
+          comment.comment.toLowerCase().includes(lowerSearchTerm)
+        );
+        
+        return titleMatch || descriptionMatch || commentMatch;
+      });
+    }
+
+    // Filter out deleted items
+    items = items.filter(item => item.status !== 'deleted');
+
+    // Find in-progress items
+    const inProgressItems = items.filter(item => item.status === 'in-progress');
+
+    if (inProgressItems.length === 0) {
+      // No in-progress items, find highest priority and oldest non-in-progress item
+      const openItems = items.filter(item => item.status !== 'completed');
+      if (openItems.length === 0) {
+        return null;
+      }
+      return this.selectHighestPriorityOldest(openItems);
+    }
+
+    // There are in-progress items
+    // Find the highest priority and oldest in-progress item
+    const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
+    if (!selectedInProgress) {
+      return null;
+    }
+
+    // Get leaf descendants that are not in progress
+    const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
+    const notInProgressLeaves = leafDescendants.filter(
+      item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
+    );
+
+    if (notInProgressLeaves.length === 0) {
+      // No suitable leaf descendants, return the in-progress item itself
+      return selectedInProgress;
+    }
+
+    // Select highest priority and oldest leaf descendant
+    return this.selectHighestPriorityOldest(notInProgressLeaves);
+  }
+
+  /**
+   * Helper method to select the highest priority and oldest item from a list
+   */
+  private selectHighestPriorityOldest(items: WorkItem[]): WorkItem | null {
+    if (items.length === 0) {
+      return null;
+    }
+
+    // Define priority order
+    const priorityOrder: { [key: string]: number } = {
+      'critical': 4,
+      'high': 3,
+      'medium': 2,
+      'low': 1,
+    };
+
+    // Sort by priority (descending) then by createdAt (ascending - oldest first)
+    const sorted = items.sort((a, b) => {
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority];
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      // If priorities are equal, sort by creation time (oldest first)
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+    return sorted[0];
+  }
+
+  /**
    * Clear all work items (useful for import)
    */
   clear(): void {
