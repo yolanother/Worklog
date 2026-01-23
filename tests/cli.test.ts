@@ -19,10 +19,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(projectRoot, 'src', 'cli.ts');
 
-// NOTE: These CLI integration tests are skipped because the database outputs
-// "Refreshing database..." messages that interfere with JSON parsing.
-// The unit tests cover most of the functionality already.
-describe.skip('CLI Integration Tests', () => {
+describe('CLI Integration Tests', () => {
   let tempDir: string;
   let originalCwd: string;
 
@@ -47,7 +44,7 @@ describe.skip('CLI Integration Tests', () => {
 
   describe('create command', () => {
     it('should create a work item with required fields', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Test task" 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Test task"`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -60,7 +57,7 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should create a work item with all optional fields', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json create -t "Full task" -d "Description" -s in-progress -p high --tags "tag1,tag2" -a "john" --stage "dev" 2>/dev/null`
+        `tsx ${cliPath} --json create -t "Full task" -d "Description" -s in-progress -p high --tags "tag1,tag2" -a "john" --stage "dev"`
       );
 
       const result = JSON.parse(stdout);
@@ -78,13 +75,13 @@ describe.skip('CLI Integration Tests', () => {
   describe('list command', () => {
     beforeEach(async () => {
       // Create some test items
-      await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p high 2>/dev/null 2>/dev/null`);
-      await execAsync(`tsx ${cliPath} create -t "Task 2" -s in-progress -p medium 2>/dev/null 2>/dev/null`);
-      await execAsync(`tsx ${cliPath} create -t "Task 3" -s completed -p low 2>/dev/null 2>/dev/null`);
+      await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p high`);
+      await execAsync(`tsx ${cliPath} create -t "Task 2" -s in-progress -p medium`);
+      await execAsync(`tsx ${cliPath} create -t "Task 3" -s completed -p low`);
     });
 
     it('should list all work items', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json list 2>/dev/null 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -92,7 +89,7 @@ describe.skip('CLI Integration Tests', () => {
     });
 
     it('should filter by status', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json list -s open 2>/dev/null 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list -s open`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -101,7 +98,7 @@ describe.skip('CLI Integration Tests', () => {
     });
 
     it('should filter by priority', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json list -p high 2>/dev/null 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list -p high`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -110,7 +107,7 @@ describe.skip('CLI Integration Tests', () => {
     });
 
     it('should filter by multiple criteria', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json list -s open -p high 2>/dev/null 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list -s open -p high`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -124,13 +121,13 @@ describe.skip('CLI Integration Tests', () => {
     let workItemId: string;
 
     beforeEach(async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Test task" 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Test task"`);
       const result = JSON.parse(stdout);
       workItemId = result.workItem.id;
     });
 
     it('should show a work item by ID', async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json show ${workItemId} 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json show ${workItemId}`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -140,9 +137,9 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should show children when -c flag is used', async () => {
       // Create a child
-      await execAsync(`tsx ${cliPath} create -t "Child task" -P ${workItemId} 2>/dev/null`);
+      await execAsync(`tsx ${cliPath} create -t "Child task" -P ${workItemId}`);
 
-      const { stdout } = await execAsync(`tsx ${cliPath} --json show ${workItemId} -c 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json show ${workItemId} -c`);
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
@@ -153,10 +150,11 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should return error for non-existent ID', async () => {
       try {
-        await execAsync(`tsx ${cliPath} --json show TEST-NONEXISTENT 2>/dev/null`);
+        await execAsync(`tsx ${cliPath} --json show TEST-NONEXISTENT`);
         expect.fail('Should have thrown an error');
       } catch (error: any) {
-        const result = JSON.parse(error.stdout || '{}');
+        // Error output goes to stderr in JSON mode
+        const result = JSON.parse(error.stderr || '{}');
         expect(result.success).toBe(false);
       }
     });
@@ -166,14 +164,14 @@ describe.skip('CLI Integration Tests', () => {
     let workItemId: string;
 
     beforeEach(async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Original title" 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Original title"`);
       const result = JSON.parse(stdout);
       workItemId = result.workItem.id;
     });
 
     it('should update a work item title', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json update ${workItemId} -t "Updated title" 2>/dev/null`
+        `tsx ${cliPath} --json update ${workItemId} -t "Updated title"`
       );
 
       const result = JSON.parse(stdout);
@@ -183,7 +181,7 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should update multiple fields', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json update ${workItemId} -t "Updated" -s completed -p high 2>/dev/null`
+        `tsx ${cliPath} --json update ${workItemId} -t "Updated" -s completed -p high`
       );
 
       const result = JSON.parse(stdout);
@@ -196,12 +194,12 @@ describe.skip('CLI Integration Tests', () => {
 
   describe('delete command', () => {
     it('should delete a work item', async () => {
-      const createResult = await execAsync(`tsx ${cliPath} --json create -t "To delete" 2>/dev/null`);
+      const createResult = await execAsync(`tsx ${cliPath} --json create -t "To delete"`);
       const created = JSON.parse(createResult.stdout);
       const workItemId = created.workItem.id;
 
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json delete ${workItemId} 2>/dev/null`
+        `tsx ${cliPath} --json delete ${workItemId}`
       );
 
       const result = JSON.parse(stdout);
@@ -210,10 +208,11 @@ describe.skip('CLI Integration Tests', () => {
 
       // Verify it's deleted
       try {
-        await execAsync(`tsx ${cliPath} --json show ${workItemId} 2>/dev/null`);
+        await execAsync(`tsx ${cliPath} --json show ${workItemId}`);
         expect.fail('Should have thrown an error');
       } catch (error: any) {
-        const result = JSON.parse(error.stdout || '{}');
+        // Error output goes to stderr in JSON mode
+        const result = JSON.parse(error.stderr || '{}');
         expect(result.success).toBe(false);
       }
     });
@@ -223,14 +222,14 @@ describe.skip('CLI Integration Tests', () => {
     let workItemId: string;
 
     beforeEach(async () => {
-      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Task with comments" 2>/dev/null`);
+      const { stdout } = await execAsync(`tsx ${cliPath} --json create -t "Task with comments"`);
       const result = JSON.parse(stdout);
       workItemId = result.workItem.id;
     });
 
     it('should create a comment', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Test comment" 2>/dev/null`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Test comment"`
       );
 
       const result = JSON.parse(stdout);
@@ -243,14 +242,14 @@ describe.skip('CLI Integration Tests', () => {
     it('should list comments for a work item', async () => {
       // Create a comment first
       await execAsync(
-        `tsx ${cliPath} comment create ${workItemId} -a "Alice" -c "Comment 1" 2>/dev/null`
+        `tsx ${cliPath} comment create ${workItemId} -a "Alice" -c "Comment 1"`
       );
       await execAsync(
-        `tsx ${cliPath} comment create ${workItemId} -a "Bob" -c "Comment 2" 2>/dev/null`
+        `tsx ${cliPath} comment create ${workItemId} -a "Bob" -c "Comment 2"`
       );
 
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment list ${workItemId} 2>/dev/null`
+        `tsx ${cliPath} --json comment list ${workItemId}`
       );
 
       const result = JSON.parse(stdout);
@@ -260,13 +259,13 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should show a specific comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Test" 2>/dev/null`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Test"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
 
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment show ${commentId} 2>/dev/null`
+        `tsx ${cliPath} --json comment show ${commentId}`
       );
 
       const result = JSON.parse(stdout);
@@ -276,13 +275,13 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should update a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Original" 2>/dev/null`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Original"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
 
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment update ${commentId} -c "Updated comment" 2>/dev/null`
+        `tsx ${cliPath} --json comment update ${commentId} -c "Updated comment"`
       );
 
       const result = JSON.parse(stdout);
@@ -292,13 +291,13 @@ describe.skip('CLI Integration Tests', () => {
 
     it('should delete a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "To delete" 2>/dev/null`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "To delete"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
 
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment delete ${commentId} 2>/dev/null`
+        `tsx ${cliPath} --json comment delete ${commentId}`
       );
 
       const result = JSON.parse(stdout);
@@ -310,14 +309,14 @@ describe.skip('CLI Integration Tests', () => {
   describe('export and import commands', () => {
     beforeEach(async () => {
       // Create some test data
-      await execAsync(`tsx ${cliPath} create -t "Task 1" 2>/dev/null`);
-      await execAsync(`tsx ${cliPath} create -t "Task 2" 2>/dev/null`);
+      await execAsync(`tsx ${cliPath} create -t "Task 1"`);
+      await execAsync(`tsx ${cliPath} create -t "Task 2"`);
     });
 
     it('should export data to a file', async () => {
       const exportPath = path.join(tempDir, 'export-test.jsonl');
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json export -f ${exportPath} 2>/dev/null`
+        `tsx ${cliPath} --json export -f ${exportPath}`
       );
 
       const result = JSON.parse(stdout);
@@ -330,7 +329,7 @@ describe.skip('CLI Integration Tests', () => {
       const exportPath = path.join(tempDir, 'export-test.jsonl');
       
       // Export first
-      await execAsync(`tsx ${cliPath} export -f ${exportPath} 2>/dev/null`);
+      await execAsync(`tsx ${cliPath} export -f ${exportPath}`);
 
       // Create a new temp dir for import test
       const importTempDir = createTempDir();
@@ -348,7 +347,7 @@ describe.skip('CLI Integration Tests', () => {
 
         // Import
         const { stdout } = await execAsync(
-          `tsx ${cliPath} --json import -f ${exportPath} 2>/dev/null`
+          `tsx ${cliPath} --json import -f ${exportPath}`
         );
 
         const result = JSON.parse(stdout);
