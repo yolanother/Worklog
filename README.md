@@ -325,6 +325,30 @@ Run in development mode with auto-reload:
 npm run dev
 ```
 
+### Testing
+
+The project includes a comprehensive test suite with 67 passing tests covering:
+
+- Database operations (CRUD, queries, relationships)
+- JSONL import/export functionality
+- Sync operations and conflict resolution
+- Configuration management
+
+Run tests:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+See [tests/README.md](tests/README.md) for detailed testing documentation.
+
 ## Git Workflow
 
 The system is optimized for Git-based workflows:
