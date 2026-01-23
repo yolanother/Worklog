@@ -55,7 +55,7 @@ function formatValue(value: any): string {
 }
 
 // Display detailed conflict information with color coding
-function displayConflictDetails(result: SyncResult): void {
+function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): void {
   if (result.conflictDetails.length === 0) {
     console.log('\n' + chalk.green('✓ No conflicts detected'));
     return;
@@ -65,7 +65,12 @@ function displayConflictDetails(result: SyncResult): void {
   console.log(chalk.gray('━'.repeat(80)));
   
   result.conflictDetails.forEach((conflict, index) => {
-    console.log(chalk.bold(`\n${index + 1}. Work Item: ${conflict.itemId}`));
+    // Find the work item in the merged items to get the title
+    const workItem = mergedItems.find(item => item.id === conflict.itemId);
+    const displayText = workItem 
+      ? `${workItem.title} (${conflict.itemId})`
+      : conflict.itemId;
+    console.log(chalk.bold(`\n${index + 1}. Work Item: ${displayText}`));
     
     if (conflict.conflictType === 'same-timestamp') {
       console.log(chalk.yellow(`   Same timestamp (${conflict.localUpdatedAt}) - merged deterministically`));
@@ -531,7 +536,7 @@ program
         }
       } else {
         // Display detailed conflict information with colors
-        displayConflictDetails(result);
+        displayConflictDetails(result, itemMergeResult.merged);
         
         // Display summary
         console.log('\nSync summary:');
