@@ -146,7 +146,7 @@ npm run cli -- update MOB-0J8L1JQ3H8ZQ2K6D -s completed --prefix MOB
    - `DOC` for documentation
    - `TEST` for testing tasks
 
-3. **Shared Data**: All items regardless of prefix are stored in the same `worklog-data.jsonl` file, making it easy to track work across projects.
+3. **Shared Data**: All items regardless of prefix are stored in the same `.worklog/worklog-data.jsonl` file, making it easy to track work across projects.
 
 4. **Override When Needed**: Use `--prefix` flag only when you need to work with a different project temporarily. Most of the time, use the default prefix from config.
 

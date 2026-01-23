@@ -94,5 +94,5 @@ export function importFromJsonl(filepath: string): { items: WorkItem[], comments
  * Get the default data file path
  */
 export function getDefaultDataPath(): string {
-  return path.join(process.cwd(), 'worklog-data.jsonl');
+  return path.join(process.cwd(), '.worklog', 'worklog-data.jsonl');
 }

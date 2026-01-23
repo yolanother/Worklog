@@ -70,10 +70,10 @@ npm run cli -- show WI-0J8L1JQ3H8ZQ2K6D -c
 ## Working with Git
 
 ```bash
-# Your work items are automatically saved to worklog-data.jsonl
+# Your work items are automatically saved to .worklog/worklog-data.jsonl
 
 # Add to Git
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Add project tasks"
 git push
 

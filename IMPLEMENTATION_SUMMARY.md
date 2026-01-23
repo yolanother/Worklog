@@ -171,7 +171,7 @@ curl http://localhost:3000/items
 npm run cli -- create -t "New feature"
 
 # 2. Commit changes
-git add worklog-data.jsonl
+git add .worklog/worklog-data.jsonl
 git commit -m "Add new feature task"
 
 # 3. Push to team
