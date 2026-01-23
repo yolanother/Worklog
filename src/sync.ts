@@ -30,8 +30,29 @@ export interface SyncResult {
 }
 
 /**
- * Merge two sets of work items, resolving conflicts by updatedAt timestamp
- * More recent updates take precedence
+ * Check if a value appears to be a default/empty value
+ */
+function isDefaultValue(value: any, field: string): boolean {
+  if (value === null || value === undefined || value === '') {
+    return true;
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return true;
+  }
+  // For status and priority, 'open' and 'medium' are defaults
+  if (field === 'status' && value === 'open') {
+    return true;
+  }
+  if (field === 'priority' && value === 'medium') {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Merge two sets of work items with intelligent field-level conflict resolution
+ * Strategy: For each field, prefer non-default values, or use the value from the newer version
+ * This heuristic allows merging changes from both versions without needing a common ancestor
  */
 export function mergeWorkItems(
   localItems: WorkItem[],
@@ -53,23 +74,83 @@ export function mergeWorkItems(
       // New item from remote - add it
       mergedMap.set(remoteItem.id, remoteItem);
     } else {
-      // Item exists in both - check for conflicts
+      // Item exists in both - perform intelligent field-level merge
       const localUpdated = new Date(localItem.updatedAt).getTime();
       const remoteUpdated = new Date(remoteItem.updatedAt).getTime();
       
+      if (JSON.stringify(localItem) === JSON.stringify(remoteItem)) {
+        // Items are identical - no action needed
+        return;
+      }
+      
       if (localUpdated === remoteUpdated) {
-        // Same timestamp - check if data is actually different
-        if (JSON.stringify(localItem) !== JSON.stringify(remoteItem)) {
-          conflicts.push(`${remoteItem.id}: Same updatedAt but different content`);
-        }
-        // Keep local version
-      } else if (remoteUpdated > localUpdated) {
-        // Remote is newer - use remote version
-        mergedMap.set(remoteItem.id, remoteItem);
-        conflicts.push(`${remoteItem.id}: Remote version is newer (remote: ${remoteItem.updatedAt}, local: ${localItem.updatedAt})`);
+        // Same timestamp but different content - keep local version
+        conflicts.push(`${remoteItem.id}: Same updatedAt but different content - using local version`);
       } else {
-        // Local is newer - keep local version
-        conflicts.push(`${remoteItem.id}: Local version is newer (local: ${localItem.updatedAt}, remote: ${remoteItem.updatedAt})`);
+        // Different timestamps - perform field-by-field intelligent merge
+        const isRemoteNewer = remoteUpdated > localUpdated;
+        const merged: WorkItem = { ...localItem };  // Start with local
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage'];
+        
+        const mergedFields: string[] = [];
+        const conflictedFields: string[] = [];
+        
+        for (const field of fields) {
+          const localValue = localItem[field];
+          const remoteValue = remoteItem[field];
+          
+          // Compare values
+          let valuesEqual = false;
+          if (Array.isArray(localValue) && Array.isArray(remoteValue)) {
+            valuesEqual = JSON.stringify([...localValue].sort()) === JSON.stringify([...remoteValue].sort());
+          } else {
+            valuesEqual = localValue === remoteValue;
+          }
+          
+          if (!valuesEqual) {
+            // Values differ - decide which to use
+            const localIsDefault = isDefaultValue(localValue, field);
+            const remoteIsDefault = isDefaultValue(remoteValue, field);
+            
+            if (localIsDefault && !remoteIsDefault) {
+              // Remote has a value, local is default - use remote
+              (merged as any)[field] = remoteValue;
+              mergedFields.push(`${field} (from remote)`);
+            } else if (!localIsDefault && remoteIsDefault) {
+              // Local has a value, remote is default - keep local
+              mergedFields.push(`${field} (from local)`);
+            } else {
+              // Both have non-default values - use timestamp to decide
+              if (isRemoteNewer) {
+                (merged as any)[field] = remoteValue;
+                conflictedFields.push(field);
+              } else {
+                // Keep local value
+                conflictedFields.push(field);
+              }
+            }
+          }
+        }
+        
+        // Use the most recent updatedAt
+        merged.updatedAt = isRemoteNewer ? remoteItem.updatedAt : localItem.updatedAt;
+        merged.createdAt = localItem.createdAt; // Preserve original createdAt
+        
+        // Update the map
+        mergedMap.set(remoteItem.id, merged);
+        
+        // Report results
+        if (conflictedFields.length > 0) {
+          conflicts.push(
+            `${remoteItem.id}: Conflicting fields [${conflictedFields.join(', ')}] resolved using ${isRemoteNewer ? 'remote' : 'local'} values (${isRemoteNewer ? 'remote' : 'local'}: ${isRemoteNewer ? remoteItem.updatedAt : localItem.updatedAt}, ${isRemoteNewer ? 'local' : 'remote'}: ${isRemoteNewer ? localItem.updatedAt : remoteItem.updatedAt})`
+          );
+        }
+        
+        if (mergedFields.length > 0) {
+          conflicts.push(
+            `${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`
+          );
+        }
       }
     }
   });
