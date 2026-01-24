@@ -270,6 +270,11 @@ describe('JSONL Import/Export', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '',
+          effort: '',
+          githubIssueNumber: undefined,
+          githubIssueId: undefined,
+          githubIssueUpdatedAt: undefined,
         },
         {
           id: 'WI-002',
@@ -288,6 +293,11 @@ describe('JSONL Import/Export', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '',
+          effort: '',
+          githubIssueNumber: undefined,
+          githubIssueId: undefined,
+          githubIssueUpdatedAt: undefined,
         },
       ];
 

@@ -456,6 +456,12 @@ export function workItemToIssuePayload(
   if (item.issueType) {
     labels.add(`${labelPrefix}type:${item.issueType}`);
   }
+  if (item.risk) {
+    labels.add(`${labelPrefix}risk:${item.risk}`);
+  }
+  if (item.effort) {
+    labels.add(`${labelPrefix}effort:${item.effort}`);
+  }
   for (const tag of item.tags) {
     labels.add(`${labelPrefix}tag:${tag}`);
   }
@@ -506,11 +512,13 @@ export function updateGithubIssueComment(config: GithubConfig, commentId: number
 export function issueToWorkItemFields(
   issue: GithubIssueRecord,
   labelPrefix: string
-): { status: WorkItemStatus; priority: WorkItemPriority; tags: string[] } {
+): { status: WorkItemStatus; priority: WorkItemPriority; tags: string[]; risk: string; effort: string } {
   const normalizedPrefix = normalizeGithubLabelPrefix(labelPrefix);
   const tags: string[] = [];
   let status: WorkItemStatus = issue.state === 'closed' ? 'completed' : 'open';
   let priority: WorkItemPriority = 'medium';
+  let risk = '';
+  let effort = '';
 
   for (const label of issue.labels) {
     if (label.startsWith(normalizedPrefix)) {
@@ -533,6 +541,20 @@ export function issueToWorkItemFields(
         }
         continue;
       }
+      if (value.startsWith('risk:')) {
+        const riskValue = value.slice('risk:'.length);
+        if (riskValue === 'low' || riskValue === 'medium' || riskValue === 'high') {
+          risk = riskValue;
+        }
+        continue;
+      }
+      if (value.startsWith('effort:')) {
+        const effortValue = value.slice('effort:'.length);
+        if (effortValue === 'low' || effortValue === 'medium' || effortValue === 'high') {
+          effort = effortValue;
+        }
+        continue;
+      }
       if (value.startsWith('tag:')) {
         const tag = value.slice('tag:'.length);
         if (tag) {
@@ -544,7 +566,7 @@ export function issueToWorkItemFields(
     tags.push(label);
   }
 
-  return { status, priority, tags: Array.from(new Set(tags)) };
+  return { status, priority, tags: Array.from(new Set(tags)), risk, effort };
 }
 
 export function createGithubIssue(config: GithubConfig, payload: { title: string; body: string; labels: string[] }): GithubIssueRecord {

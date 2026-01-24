@@ -107,6 +107,12 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if ((item as any).deleteReason === undefined) {
           (item as any).deleteReason = '';
         }
+        if ((item as any).risk === undefined) {
+          (item as any).risk = '';
+        }
+        if ((item as any).effort === undefined) {
+          (item as any).effort = '';
+        }
         if ((item as any).githubIssueNumber === undefined) {
           (item as any).githubIssueNumber = undefined;
         }
@@ -153,6 +159,12 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         }
         if ((item as any).deleteReason === undefined) {
           (item as any).deleteReason = '';
+        }
+        if ((item as any).risk === undefined) {
+          (item as any).risk = '';
+        }
+        if ((item as any).effort === undefined) {
+          (item as any).effort = '';
         }
         if ((item as any).githubIssueNumber === undefined) {
           (item as any).githubIssueNumber = undefined;

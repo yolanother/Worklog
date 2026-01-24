@@ -44,6 +44,8 @@ describe('WorklogDatabase', () => {
       expect(item.createdBy).toBe('');
       expect(item.deletedBy).toBe('');
       expect(item.deleteReason).toBe('');
+      expect(item.risk).toBe('');
+      expect(item.effort).toBe('');
       expect(item.githubIssueNumber).toBeUndefined();
       expect(item.githubIssueId).toBeUndefined();
       expect(item.githubIssueUpdatedAt).toBeUndefined();
@@ -352,6 +354,8 @@ describe('WorklogDatabase', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
         {
           id: 'TEST-002',
@@ -369,6 +373,8 @@ describe('WorklogDatabase', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 

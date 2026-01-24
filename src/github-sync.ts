@@ -1,4 +1,4 @@
-import { WorkItem, Comment } from './types.js';
+import { WorkItem, Comment, WorkItemRiskLevel, WorkItemEffortLevel } from './types.js';
 import {
   GithubConfig,
   GithubIssueRecord,
@@ -486,6 +486,8 @@ export function importIssuesToWorkItems(
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '',
+          effort: '',
         };
 
     const tags = labelFields.tags.length > 0
@@ -499,6 +501,8 @@ export function importIssuesToWorkItems(
       status: isClosed ? 'completed' : (labelFields.status || base.status),
       priority: labelFields.priority || base.priority,
       tags,
+      risk: (labelFields.risk || base.risk) as WorkItemRiskLevel | '',
+      effort: (labelFields.effort || base.effort) as WorkItemEffortLevel | '',
       updatedAt: updatedAt,
     };
 
@@ -575,6 +579,8 @@ export function importIssuesToWorkItems(
         status: 'completed',
         priority: labelFields.priority || item.priority,
         tags,
+        risk: (labelFields.risk || item.risk) as WorkItemRiskLevel | '',
+        effort: (labelFields.effort || item.effort) as WorkItemEffortLevel | '',
         updatedAt: issue.updatedAt,
       });
       if (parentId) {

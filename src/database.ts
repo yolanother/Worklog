@@ -204,6 +204,8 @@ export class WorklogDatabase {
       createdBy: input.createdBy || '',
       deletedBy: input.deletedBy || '',
       deleteReason: input.deleteReason || '',
+      risk: input.risk || '',
+      effort: input.effort || '',
       githubIssueNumber: undefined,
       githubIssueId: undefined,
       githubIssueUpdatedAt: undefined,

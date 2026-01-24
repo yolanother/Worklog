@@ -14,6 +14,8 @@ export interface CreateOptions {
   tags?: string;
   assignee?: string;
   stage?: string;
+  risk?: string;
+  effort?: string;
   issueType?: string;
   createdBy?: string;
   deletedBy?: string;
@@ -42,6 +44,8 @@ export interface UpdateOptions {
   tags?: string;
   assignee?: string;
   stage?: string;
+  risk?: string;
+  effort?: string;
   issueType?: string;
   createdBy?: string;
   deletedBy?: string;

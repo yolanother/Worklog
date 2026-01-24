@@ -4,6 +4,8 @@
 
 export type WorkItemStatus = 'open' | 'in-progress' | 'completed' | 'blocked' | 'deleted';
 export type WorkItemPriority = 'low' | 'medium' | 'high' | 'critical';
+export type WorkItemRiskLevel = 'low' | 'medium' | 'high';
+export type WorkItemEffortLevel = 'low' | 'medium' | 'high';
 
 /**
  * Represents a work item in the system
@@ -27,6 +29,10 @@ export interface WorkItem {
   deletedBy: string;
   deleteReason: string;
 
+  // Risk and effort estimation (no default)
+  risk: WorkItemRiskLevel | '';
+  effort: WorkItemEffortLevel | '';
+
   githubIssueNumber?: number;
   githubIssueId?: number;
   githubIssueUpdatedAt?: string;
@@ -49,6 +55,9 @@ export interface CreateWorkItemInput {
   createdBy?: string;
   deletedBy?: string;
   deleteReason?: string;
+
+  risk?: WorkItemRiskLevel | '';
+  effort?: WorkItemEffortLevel | '';
 }
 
 /**
@@ -68,6 +77,9 @@ export interface UpdateWorkItemInput {
   createdBy?: string;
   deletedBy?: string;
   deleteReason?: string;
+
+  risk?: WorkItemRiskLevel | '';
+  effort?: WorkItemEffortLevel | '';
 }
 
 /**
