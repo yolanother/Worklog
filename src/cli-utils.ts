@@ -41,21 +41,46 @@ export function createOutputHelpers(program: Command) {
 
 /**
  * Check if worklog is initialized and exit if not
+ * Outputs proper error messages based on JSON mode
  */
-export function requireInitialized(): void {
-  if (!isInitialized()) {
-    console.error('Worklog has not been initialized. Run "worklog init" first.');
-    process.exit(1);
-  }
+export function createRequireInitialized(program: Command) {
+  return (): void => {
+    if (!isInitialized()) {
+      const isJsonMode = program.opts().json;
+      if (isJsonMode) {
+        console.log(JSON.stringify({
+          success: false,
+          initialized: false,
+          error: 'Worklog system is not initialized. Run "worklog init" first.'
+        }, null, 2));
+      } else {
+        console.error('Error: Worklog system is not initialized.');
+        console.error('Run "worklog init" to initialize the system.');
+      }
+      process.exit(1);
+    }
+  };
 }
 
 /**
  * Get database instance with optional prefix override
  */
-export function getDatabase(prefix?: string): WorklogDatabase {
+export function getDatabase(prefix?: string, program?: Command): WorklogDatabase {
   const config = loadConfig();
   const effectivePrefix = prefix || config?.prefix || getDefaultPrefix();
-  return new WorklogDatabase(getDefaultDataPath(), effectivePrefix);
+  const dataPath = getDefaultDataPath();
+  
+  // WorklogDatabase constructor signature: (prefix, dbPath?, jsonlPath?, autoExport?, silent?, autoSync?, syncProvider?)
+  // Get auto-export and auto-sync settings from config
+  const autoExport = config?.autoExport !== false; // Default to true
+  const autoSync = config?.autoSync === true; // Default to false
+  
+  // Determine silent mode: suppress output unless verbose OR not in JSON mode
+  const isJsonMode = program?.opts?.()?.json || false;
+  const isVerbose = program?.opts?.()?.verbose || false;
+  const silent = isJsonMode || !isVerbose;
+  
+  return new WorklogDatabase(effectivePrefix, undefined, dataPath, autoExport, silent, autoSync);
 }
 
 /**
@@ -78,8 +103,8 @@ export function createPluginContext(program: Command): PluginContext {
     dataPath: getDefaultDataPath(),
     output: createOutputHelpers(program),
     utils: {
-      requireInitialized,
-      getDatabase,
+      requireInitialized: createRequireInitialized(program),
+      getDatabase: (prefix?: string) => getDatabase(prefix, program),
       getConfig: loadConfig,
       getPrefix,
       isJsonMode: () => program.opts().json
