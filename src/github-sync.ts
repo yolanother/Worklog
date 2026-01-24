@@ -426,7 +426,7 @@ export function importIssuesToWorkItems(
     }
   }
 
-  const remoteItems: WorkItem[] = [];
+  const remoteItemsById = new Map<string, WorkItem>();
   const issueMetaById = new Map<string, { number: number; id: number; updatedAt: string }>();
   const parentHints = new Map<string, string>();
   const childHints = new Map<string, string[]>();
@@ -434,6 +434,24 @@ export function importIssuesToWorkItems(
   const childIssueHints = new Map<string, number[]>();
   const seenIssueNumbers = new Set<number>();
   let markersFound = 0;
+
+  const shouldReplaceRemote = (existingUpdatedAt: string | null | undefined, nextUpdatedAt: string): boolean => {
+    if (!existingUpdatedAt) {
+      return true;
+    }
+    const existingTime = new Date(existingUpdatedAt).getTime();
+    const nextTime = new Date(nextUpdatedAt).getTime();
+    if (Number.isNaN(existingTime) && Number.isNaN(nextTime)) {
+      return true;
+    }
+    if (Number.isNaN(existingTime)) {
+      return true;
+    }
+    if (Number.isNaN(nextTime)) {
+      return false;
+    }
+    return nextTime >= existingTime;
+  };
 
   let processed = 0;
   for (const issue of issues) {
@@ -512,23 +530,34 @@ export function importIssuesToWorkItems(
       ?? extractParentIssueNumber(issue.body);
     const childIssueNumbers = hierarchy?.childIssueNumbers ?? extractChildIssueNumbers(issue.body);
 
-    remoteItems.push(remoteItem);
-    issueMetaById.set(remoteItem.id, {
-      number: issue.number,
-      id: issue.id,
-      updatedAt: issue.updatedAt,
-    });
-    if (parentId) {
-      parentHints.set(remoteItem.id, parentId);
-    }
-    if (childIds.length > 0) {
-      childHints.set(remoteItem.id, childIds);
-    }
-    if (parentIssueNumber) {
-      parentIssueHints.set(remoteItem.id, parentIssueNumber);
-    }
-    if (childIssueNumbers.length > 0) {
-      childIssueHints.set(remoteItem.id, childIssueNumbers);
+    const existingMeta = issueMetaById.get(remoteItem.id);
+    if (!existingMeta || shouldReplaceRemote(existingMeta.updatedAt, issue.updatedAt)) {
+      remoteItemsById.set(remoteItem.id, remoteItem);
+      issueMetaById.set(remoteItem.id, {
+        number: issue.number,
+        id: issue.id,
+        updatedAt: issue.updatedAt,
+      });
+      if (parentId) {
+        parentHints.set(remoteItem.id, parentId);
+      } else {
+        parentHints.delete(remoteItem.id);
+      }
+      if (childIds.length > 0) {
+        childHints.set(remoteItem.id, childIds);
+      } else {
+        childHints.delete(remoteItem.id);
+      }
+      if (parentIssueNumber) {
+        parentIssueHints.set(remoteItem.id, parentIssueNumber);
+      } else {
+        parentIssueHints.delete(remoteItem.id);
+      }
+      if (childIssueNumbers.length > 0) {
+        childIssueHints.set(remoteItem.id, childIssueNumbers);
+      } else {
+        childIssueHints.delete(remoteItem.id);
+      }
     }
     seenIssueNumbers.add(issue.number);
     processed += 1;
@@ -572,17 +601,17 @@ export function importIssuesToWorkItems(
       const tags = labelFields.tags.length > 0
         ? Array.from(new Set([...item.tags, ...labelFields.tags]))
         : item.tags;
-      remoteItems.push({
-        ...item,
-        title: issue.title || item.title,
-        description: issue.body ? stripWorklogMarkers(issue.body) : item.description,
-        status: 'completed',
-        priority: labelFields.priority || item.priority,
-        tags,
-        risk: (labelFields.risk || item.risk) as WorkItemRiskLevel | '',
-        effort: (labelFields.effort || item.effort) as WorkItemEffortLevel | '',
-        updatedAt: issue.updatedAt,
-      });
+        remoteItemsById.set(item.id, {
+          ...item,
+          title: issue.title || item.title,
+          description: issue.body ? stripWorklogMarkers(issue.body) : item.description,
+          status: 'completed',
+          priority: labelFields.priority || item.priority,
+          tags,
+          risk: (labelFields.risk || item.risk) as WorkItemRiskLevel | '',
+          effort: (labelFields.effort || item.effort) as WorkItemEffortLevel | '',
+          updatedAt: issue.updatedAt,
+        });
       if (parentId) {
         parentHints.set(item.id, parentId);
       }
@@ -607,6 +636,7 @@ export function importIssuesToWorkItems(
     }
   }
 
+  const remoteItems = Array.from(remoteItemsById.values());
   const mergeResult = mergeWorkItems(items, remoteItems, {
     defaultValueFields: ['status'],
     sameTimestampStrategy: 'local',
