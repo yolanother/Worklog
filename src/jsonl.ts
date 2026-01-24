@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { WorkItem, Comment } from './types.js';
+import { stripWorklogMarkers } from './github.js';
 
 function normalizeForStableJson(value: any): any {
   if (value === null || value === undefined) return value;
@@ -121,9 +122,15 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if ((item as any).githubIssueId !== undefined && (item as any).githubIssueId !== null) {
           (item as any).githubIssueId = Number((item as any).githubIssueId);
         }
+        if (item.description) {
+          item.description = stripWorklogMarkers(item.description);
+        }
         items.push(item);
       } else if (parsed.type === 'comment' && parsed.data) {
         const comment = parsed.data as Comment;
+        if (comment.comment) {
+          comment.comment = stripWorklogMarkers(comment.comment);
+        }
         comments.push(comment);
       } else {
         // Handle old format (no type field) - assume it's a work item
@@ -161,6 +168,9 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         }
         if ((item as any).githubIssueId !== undefined && (item as any).githubIssueId !== null) {
           (item as any).githubIssueId = Number((item as any).githubIssueId);
+        }
+        if (item.description) {
+          item.description = stripWorklogMarkers(item.description);
         }
         items.push(item);
       }

@@ -17,8 +17,17 @@ export interface GithubIssueRecord {
   subIssuesSummary?: { total: number; completed: number };
 }
 
+export interface GithubIssueComment {
+  id: number;
+  body: string | null;
+  updatedAt: string;
+  author?: string;
+}
+
 const WORKLOG_MARKER_PREFIX = '<!-- worklog:id=';
 const WORKLOG_MARKER_SUFFIX = ' -->';
+const WORKLOG_COMMENT_MARKER_PREFIX = '<!-- worklog:comment=';
+const WORKLOG_COMMENT_MARKER_SUFFIX = ' -->';
 
 function runGh(command: string, input?: string): string {
   return execSync(command, {
@@ -175,6 +184,28 @@ export function buildWorklogMarker(workItemId: string): string {
   return `${WORKLOG_MARKER_PREFIX}${workItemId}${WORKLOG_MARKER_SUFFIX}`;
 }
 
+export function buildWorklogCommentMarker(commentId: string): string {
+  return `${WORKLOG_COMMENT_MARKER_PREFIX}${commentId}${WORKLOG_COMMENT_MARKER_SUFFIX}`;
+}
+
+export function stripWorklogMarkers(body?: string | null): string {
+  if (!body) {
+    return '';
+  }
+  const lines = body.split('\n');
+  const filtered = lines.filter(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith(WORKLOG_MARKER_PREFIX)) {
+      return false;
+    }
+    if (trimmed.startsWith(WORKLOG_COMMENT_MARKER_PREFIX)) {
+      return false;
+    }
+    return true;
+  });
+  return filtered.join('\n').trim();
+}
+
 export function extractWorklogId(body?: string | null): string | null {
   if (!body) return null;
   const start = body.indexOf(WORKLOG_MARKER_PREFIX);
@@ -182,6 +213,16 @@ export function extractWorklogId(body?: string | null): string | null {
   const end = body.indexOf(WORKLOG_MARKER_SUFFIX, start + WORKLOG_MARKER_PREFIX.length);
   if (end === -1) return null;
   const id = body.slice(start + WORKLOG_MARKER_PREFIX.length, end).trim();
+  return id || null;
+}
+
+export function extractWorklogCommentId(body?: string | null): string | null {
+  if (!body) return null;
+  const start = body.indexOf(WORKLOG_COMMENT_MARKER_PREFIX);
+  if (start === -1) return null;
+  const end = body.indexOf(WORKLOG_COMMENT_MARKER_SUFFIX, start + WORKLOG_COMMENT_MARKER_PREFIX.length);
+  if (end === -1) return null;
+  const id = body.slice(start + WORKLOG_COMMENT_MARKER_PREFIX.length, end).trim();
   return id || null;
 }
 
@@ -402,14 +443,9 @@ export function workItemToIssuePayload(
   }
   summaryLines.push('');
   if (item.description) {
-    summaryLines.push(item.description);
+    summaryLines.push(stripWorklogMarkers(item.description));
   }
-  if (comments.length > 0) {
-    summaryLines.push('', '---', '', '## Comments', '');
-    for (const comment of comments) {
-      summaryLines.push(`- ${comment.author}: ${comment.comment}`);
-    }
-  }
+  void comments;
 
   const labels = new Set<string>();
   labels.add(`${labelPrefix}status:${item.status}`);
@@ -431,6 +467,40 @@ export function workItemToIssuePayload(
     labels: Array.from(labels),
     state,
   };
+}
+
+function normalizeGithubIssueComment(comment: any): GithubIssueComment {
+  return {
+    id: comment.id,
+    body: comment.body ?? null,
+    updatedAt: comment.updated_at || comment.updatedAt || new Date().toISOString(),
+    author: comment.user?.login || comment.author?.login,
+  };
+}
+
+export function listGithubIssueComments(config: GithubConfig, issueNumber: number): GithubIssueComment[] {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api repos/${owner}/${name}/issues/${issueNumber}/comments --paginate`;
+  const data = runGhSafeJson(command);
+  if (!data) {
+    return [];
+  }
+  const raw = Array.isArray(data) ? data : [];
+  return raw.map(comment => normalizeGithubIssueComment(comment));
+}
+
+export function createGithubIssueComment(config: GithubConfig, issueNumber: number, body: string): GithubIssueComment {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api -X POST repos/${owner}/${name}/issues/${issueNumber}/comments -f body=${JSON.stringify(body)}`;
+  const data = runGhJson(command);
+  return normalizeGithubIssueComment(data);
+}
+
+export function updateGithubIssueComment(config: GithubConfig, commentId: number, body: string): GithubIssueComment {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api -X PATCH repos/${owner}/${name}/issues/comments/${commentId} -f body=${JSON.stringify(body)}`;
+  const data = runGhJson(command);
+  return normalizeGithubIssueComment(data);
 }
 
 export function issueToWorkItemFields(

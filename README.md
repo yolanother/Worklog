@@ -283,6 +283,8 @@ worklog github import --repo owner/name --since 2024-01-01T00:00:00Z
 # Create new Worklog items from GitHub Issues and push markers back
 worklog github import --repo owner/name --create-new
 
+Note: GitHub syncs can be slow when there are many changes. For best performance, run imports and pushes regularly (some teams set up a cron job) to keep each sync small.
+
 # Enable auto-sync via config defaults
 # .worklog/config.defaults.yaml
 # autoSync: true

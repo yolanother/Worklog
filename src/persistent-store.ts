@@ -297,12 +297,6 @@ export class SqlitePersistentStore {
    * Save a comment
    */
   saveComment(comment: Comment): void {
-    // Debug: log when saving a comment to help trace missing comments
-    if (this.verbose) {
-      // Send debug output to stderr to avoid contaminating JSON on stdout
-      console.error(`SqlitePersistentStore.saveComment: saving comment ${comment.id} for ${comment.workItemId} by ${comment.author}`);
-    }
-
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO comments 
       (id, workItemId, author, comment, createdAt, refs)
@@ -317,12 +311,6 @@ export class SqlitePersistentStore {
       comment.createdAt,
       JSON.stringify(comment.references)
     );
-    if (this.verbose) {
-      try {
-        const count = this.getAllComments().length;
-        console.error(`SqlitePersistentStore.saveComment: now total comments = ${count}`);
-      } catch (_) {}
-    }
   }
 
   /**
@@ -345,11 +333,7 @@ export class SqlitePersistentStore {
   getAllComments(): Comment[] {
     const stmt = this.db.prepare('SELECT * FROM comments');
     const rows = stmt.all() as any[];
-    const comments = rows.map(row => this.rowToComment(row));
-    if (this.verbose) {
-      console.error(`SqlitePersistentStore.getAllComments: returning ${comments.length} comments`);
-    }
-    return comments;
+    return rows.map(row => this.rowToComment(row));
   }
 
   /**
@@ -374,9 +358,6 @@ export class SqlitePersistentStore {
    * Clear all comments
    */
   clearComments(): void {
-    if (this.verbose) {
-      console.error('SqlitePersistentStore.clearComments: clearing all comments');
-    }
     this.db.prepare('DELETE FROM comments').run();
   }
 

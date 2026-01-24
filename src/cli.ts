@@ -1581,6 +1581,10 @@ githubCommand
         console.log(`  Created: ${result.created}`);
         console.log(`  Updated: ${result.updated}`);
         console.log(`  Skipped: ${result.skipped}`);
+        if ((result.commentsCreated || 0) > 0 || (result.commentsUpdated || 0) > 0) {
+          console.log(`  Comments created: ${result.commentsCreated || 0}`);
+          console.log(`  Comments updated: ${result.commentsUpdated || 0}`);
+        }
         if (result.errors.length > 0) {
           console.log(`  Errors: ${result.errors.length}`);
           console.log('  Hint: re-run with --json to view error details');
@@ -1589,6 +1593,8 @@ githubCommand
           console.log('  Timing breakdown:');
           console.log(`    Total: ${(timing.totalMs / 1000).toFixed(2)}s`);
           console.log(`    Issue upserts: ${(timing.upsertMs / 1000).toFixed(2)}s`);
+          console.log(`    Comment list: ${(timing.commentListMs / 1000).toFixed(2)}s`);
+          console.log(`    Comment upserts: ${(timing.commentUpsertMs / 1000).toFixed(2)}s`);
           console.log(`    Hierarchy check: ${(timing.hierarchyCheckMs / 1000).toFixed(2)}s`);
           console.log(`    Hierarchy link: ${(timing.hierarchyLinkMs / 1000).toFixed(2)}s`);
           console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);

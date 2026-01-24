@@ -2,7 +2,10 @@ import { WorkItem, Comment } from './types.js';
 import {
   GithubConfig,
   GithubIssueRecord,
+  GithubIssueComment,
+  stripWorklogMarkers,
   extractWorklogId,
+  extractWorklogCommentId,
   extractParentId,
   extractParentIssueNumber,
   extractChildIds,
@@ -10,11 +13,15 @@ import {
   getIssueHierarchy,
   addSubIssueLink,
   addSubIssueLinkResult,
+  buildWorklogCommentMarker,
   workItemToIssuePayload,
   createGithubIssue,
   updateGithubIssue,
   listGithubIssues,
   getGithubIssue,
+  listGithubIssueComments,
+  createGithubIssueComment,
+  updateGithubIssueComment,
   normalizeGithubLabelPrefix,
   issueToWorkItemFields,
 } from './github.js';
@@ -25,11 +32,15 @@ export interface GithubSyncResult {
   created: number;
   skipped: number;
   errors: string[];
+  commentsCreated?: number;
+  commentsUpdated?: number;
 }
 
 export interface GithubSyncTiming {
   totalMs: number;
   upsertMs: number;
+  commentListMs: number;
+  commentUpsertMs: number;
   hierarchyCheckMs: number;
   hierarchyLinkMs: number;
   hierarchyVerifyMs: number;
@@ -56,6 +67,8 @@ export function upsertIssuesFromWorkItems(
   const timing = {
     totalMs: 0,
     upsertMs: 0,
+    commentListMs: 0,
+    commentUpsertMs: 0,
     hierarchyCheckMs: 0,
     hierarchyLinkMs: 0,
     hierarchyVerifyMs: 0,
@@ -73,43 +86,184 @@ export function upsertIssuesFromWorkItems(
   let processed = 0;
   let skippedUpdates = 0;
 
-  for (const item of issueItems) {
-      if (onProgress) {
-        onProgress({ phase: 'push', current: processed + 1, total: issueItems.length });
+  const sortCommentsByCreatedAt = (left: Comment, right: Comment) => {
+    const leftTime = new Date(left.createdAt).getTime();
+    const rightTime = new Date(right.createdAt).getTime();
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return 0;
+    }
+    if (Number.isNaN(leftTime)) {
+      return -1;
+    }
+    if (Number.isNaN(rightTime)) {
+      return 1;
+    }
+    return leftTime - rightTime;
+  };
+
+  const buildGithubCommentBody = (comment: Comment) => {
+    const marker = buildWorklogCommentMarker(comment.id);
+    const authorLabel = comment.author ? `**${comment.author}**` : '**worklog**';
+    const body = stripWorklogMarkers(comment.comment);
+    return `${marker}\n\n${authorLabel}\n\n${body}`.trim();
+  };
+
+  const maxIsoTimestamp = (left?: string | null, right?: string | null): string | null => {
+    if (!left && !right) {
+      return null;
+    }
+    if (!left) {
+      return right || null;
+    }
+    if (!right) {
+      return left || null;
+    }
+    const leftTime = new Date(left).getTime();
+    const rightTime = new Date(right).getTime();
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return left;
+    }
+    if (Number.isNaN(leftTime)) {
+      return right;
+    }
+    if (Number.isNaN(rightTime)) {
+      return left;
+    }
+    return leftTime >= rightTime ? left : right;
+  };
+
+  const latestCommentTimestamp = (itemComments: Comment[]): string | null => {
+    let latest: string | null = null;
+    for (const comment of itemComments) {
+      latest = maxIsoTimestamp(latest, comment.createdAt);
+    }
+    return latest;
+  };
+
+  const commentNeedsSync = (item: WorkItem, itemComments: Comment[]): boolean => {
+    if (itemComments.length === 0) {
+      return false;
+    }
+    if (!item.githubIssueUpdatedAt) {
+      return true;
+    }
+    const latest = latestCommentTimestamp(itemComments);
+    if (!latest) {
+      return true;
+    }
+    const issueUpdatedAt = new Date(item.githubIssueUpdatedAt).getTime();
+    if (Number.isNaN(issueUpdatedAt)) {
+      return true;
+    }
+    const latestCommentTime = new Date(latest).getTime();
+    if (Number.isNaN(latestCommentTime)) {
+      return true;
+    }
+    return latestCommentTime > issueUpdatedAt;
+  };
+
+  const upsertGithubIssueComments = (
+    issueConfig: GithubConfig,
+    issueNumber: number,
+    itemComments: Comment[],
+    existingComments: GithubIssueComment[]
+  ): { created: number; updated: number; latestUpdatedAt: string | null } => {
+    const byWorklogId = new Map<string, GithubIssueComment>();
+    for (const ghComment of existingComments) {
+      const markerId = extractWorklogCommentId(ghComment.body || undefined);
+      if (!markerId) {
+        continue;
       }
+      if (!byWorklogId.has(markerId)) {
+        byWorklogId.set(markerId, ghComment);
+      }
+    }
+
+    let created = 0;
+    let updated = 0;
+    let latestUpdatedAt: string | null = null;
+    const sorted = [...itemComments].sort(sortCommentsByCreatedAt);
+    for (const comment of sorted) {
+      const body = buildGithubCommentBody(comment);
+      const existing = byWorklogId.get(comment.id);
+      if (existing) {
+        const bodyMatch = (existing.body || '').trim() === body.trim();
+        if (!bodyMatch) {
+          const updatedComment = updateGithubIssueComment(issueConfig, existing.id, body);
+          updated += 1;
+          latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, updatedComment.updatedAt);
+        }
+        continue;
+      }
+      const createdComment = createGithubIssueComment(issueConfig, issueNumber, body);
+      created += 1;
+      latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, createdComment.updatedAt);
+    }
+
+    return { created, updated, latestUpdatedAt };
+  };
+
+  for (const item of issueItems) {
+    if (onProgress) {
+      onProgress({ phase: 'push', current: processed + 1, total: issueItems.length });
+    }
+    const itemComments = byItemId.get(item.id) || [];
+    const shouldSyncComments = commentNeedsSync(item, itemComments);
     if (
       item.githubIssueNumber &&
       item.githubIssueUpdatedAt &&
-      new Date(item.updatedAt).getTime() <= new Date(item.githubIssueUpdatedAt).getTime()
+      new Date(item.updatedAt).getTime() <= new Date(item.githubIssueUpdatedAt).getTime() &&
+      !shouldSyncComments
     ) {
       skippedUpdates += 1;
       processed += 1;
       continue;
     }
-    const itemComments = byItemId.get(item.id) || [];
     const payload = workItemToIssuePayload(item, itemComments, labelPrefix, items);
 
     try {
-      let issue: GithubIssueRecord;
-      const upsertStart = Date.now();
-      if (item.githubIssueNumber) {
-        issue = updateGithubIssue(config, item.githubIssueNumber, payload);
-        result.updated += 1;
-      } else {
-        issue = createGithubIssue(config, {
-          title: payload.title,
-          body: payload.body,
-          labels: payload.labels,
-        });
-        result.created += 1;
+      let issue: GithubIssueRecord | null = null;
+      let issueNumber = item.githubIssueNumber;
+      let issueUpdatedAt = item.githubIssueUpdatedAt || null;
+      const shouldUpdateIssue = !item.githubIssueNumber
+        || !item.githubIssueUpdatedAt
+        || new Date(item.updatedAt).getTime() > new Date(item.githubIssueUpdatedAt).getTime();
+      if (shouldUpdateIssue) {
+        const upsertStart = Date.now();
+        if (item.githubIssueNumber) {
+          issue = updateGithubIssue(config, item.githubIssueNumber, payload);
+          result.updated += 1;
+        } else {
+          issue = createGithubIssue(config, {
+            title: payload.title,
+            body: payload.body,
+            labels: payload.labels,
+          });
+          result.created += 1;
+        }
+        timing.upsertMs += Date.now() - upsertStart;
+        issueNumber = issue.number;
+        issueUpdatedAt = issue.updatedAt;
       }
-      timing.upsertMs += Date.now() - upsertStart;
+
+      const shouldSyncCommentsNow = itemComments.length > 0 && (shouldSyncComments || shouldUpdateIssue);
+      if (shouldSyncCommentsNow && issueNumber) {
+        const commentListStart = Date.now();
+        const existingComments = listGithubIssueComments(config, issueNumber);
+        timing.commentListMs += Date.now() - commentListStart;
+        const commentUpsertStart = Date.now();
+        const commentSummary = upsertGithubIssueComments(config, issueNumber, itemComments, existingComments);
+        timing.commentUpsertMs += Date.now() - commentUpsertStart;
+        result.commentsCreated = (result.commentsCreated || 0) + commentSummary.created;
+        result.commentsUpdated = (result.commentsUpdated || 0) + commentSummary.updated;
+        issueUpdatedAt = maxIsoTimestamp(issueUpdatedAt, commentSummary.latestUpdatedAt);
+      }
 
       updatedById.set(item.id, {
         ...item,
-        githubIssueNumber: issue.number,
-        githubIssueId: issue.id,
-        githubIssueUpdatedAt: issue.updatedAt,
+        githubIssueNumber: issueNumber ?? item.githubIssueNumber,
+        githubIssueId: issue?.id ?? item.githubIssueId,
+        githubIssueUpdatedAt: issueUpdatedAt ?? item.githubIssueUpdatedAt,
       });
     } catch (error) {
       result.errors.push(`${item.id}: ${(error as Error).message}`);
@@ -300,7 +454,7 @@ export function importIssuesToWorkItems(
     const remoteItem: WorkItem = {
       ...base,
       title: issue.title || base.title,
-      description: issue.body || base.description,
+      description: issue.body ? stripWorklogMarkers(issue.body) : base.description,
       status: isClosed ? 'completed' : (labelFields.status || base.status),
       priority: labelFields.priority || base.priority,
       tags,
@@ -376,7 +530,7 @@ export function importIssuesToWorkItems(
       remoteItems.push({
         ...item,
         title: issue.title || item.title,
-        description: issue.body || item.description,
+        description: issue.body ? stripWorklogMarkers(issue.body) : item.description,
         status: 'completed',
         priority: labelFields.priority || item.priority,
         tags,
