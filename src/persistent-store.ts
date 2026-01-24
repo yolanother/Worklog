@@ -18,9 +18,11 @@ const SCHEMA_VERSION = 2;
 export class SqlitePersistentStore {
   private db: Database.Database;
   private dbPath: string;
+  private verbose: boolean;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, verbose: boolean = false) {
     this.dbPath = dbPath;
+    this.verbose = verbose;
     
     // Ensure directory exists
     const dir = path.dirname(dbPath);
@@ -175,12 +177,33 @@ export class SqlitePersistentStore {
    * Save a work item
    */
   saveWorkItem(item: WorkItem): void {
+    if (this.verbose) {
+      // Route debug diagnostics to stderr so stdout remains JSON-clean for --json mode
+      console.error(`SqlitePersistentStore.saveWorkItem: saving workitem ${item.id} (status=${item.status})`);
+    }
+
+    // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO workitems 
+      INSERT INTO workitems
       (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title = excluded.title,
+        description = excluded.description,
+        status = excluded.status,
+        priority = excluded.priority,
+        parentId = excluded.parentId,
+        createdAt = excluded.createdAt,
+        updatedAt = excluded.updatedAt,
+        tags = excluded.tags,
+        assignee = excluded.assignee,
+        stage = excluded.stage,
+        issueType = excluded.issueType,
+        createdBy = excluded.createdBy,
+        deletedBy = excluded.deletedBy,
+        deleteReason = excluded.deleteReason
     `);
-    
+
     stmt.run(
       item.id,
       item.title,
@@ -252,6 +275,12 @@ export class SqlitePersistentStore {
    * Save a comment
    */
   saveComment(comment: Comment): void {
+    // Debug: log when saving a comment to help trace missing comments
+    if (this.verbose) {
+      // Send debug output to stderr to avoid contaminating JSON on stdout
+      console.error(`SqlitePersistentStore.saveComment: saving comment ${comment.id} for ${comment.workItemId} by ${comment.author}`);
+    }
+
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO comments 
       (id, workItemId, author, comment, createdAt, refs)
@@ -266,6 +295,12 @@ export class SqlitePersistentStore {
       comment.createdAt,
       JSON.stringify(comment.references)
     );
+    if (this.verbose) {
+      try {
+        const count = this.getAllComments().length;
+        console.error(`SqlitePersistentStore.saveComment: now total comments = ${count}`);
+      } catch (_) {}
+    }
   }
 
   /**
@@ -288,7 +323,11 @@ export class SqlitePersistentStore {
   getAllComments(): Comment[] {
     const stmt = this.db.prepare('SELECT * FROM comments');
     const rows = stmt.all() as any[];
-    return rows.map(row => this.rowToComment(row));
+    const comments = rows.map(row => this.rowToComment(row));
+    if (this.verbose) {
+      console.error(`SqlitePersistentStore.getAllComments: returning ${comments.length} comments`);
+    }
+    return comments;
   }
 
   /**
@@ -313,6 +352,9 @@ export class SqlitePersistentStore {
    * Clear all comments
    */
   clearComments(): void {
+    if (this.verbose) {
+      console.error('SqlitePersistentStore.clearComments: clearing all comments');
+    }
     this.db.prepare('DELETE FROM comments').run();
   }
 

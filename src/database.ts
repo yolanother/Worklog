@@ -32,7 +32,7 @@ export class WorklogDatabase {
     const defaultDbPath = path.join(path.dirname(this.jsonlPath), 'worklog.db');
     const actualDbPath = dbPath || defaultDbPath;
     
-    this.store = new SqlitePersistentStore(actualDbPath);
+    this.store = new SqlitePersistentStore(actualDbPath, !silent);
     
     // Refresh from JSONL if needed
     this.refreshFromJsonlIfNewer();
@@ -58,7 +58,8 @@ export class WorklogDatabase {
 
     if (shouldRefresh) {
       if (!this.silent) {
-        console.log(`Refreshing database from ${this.jsonlPath}...`);
+        // Debug: send to stderr so JSON stdout is preserved for --json mode
+        console.error(`Refreshing database from ${this.jsonlPath}...`);
       }
       const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
       this.store.importData(jsonlItems, jsonlComments);
@@ -68,7 +69,7 @@ export class WorklogDatabase {
       this.store.setMetadata('lastJsonlImportAt', new Date().toISOString());
       
       if (!this.silent) {
-        console.log(`Loaded ${jsonlItems.length} work items and ${jsonlComments.length} comments from JSONL`);
+        console.error(`Loaded ${jsonlItems.length} work items and ${jsonlComments.length} comments from JSONL`);
       }
     }
   }
@@ -83,6 +84,10 @@ export class WorklogDatabase {
     
     const items = this.store.getAllWorkItems();
     const comments = this.store.getAllComments();
+    if (!this.silent) {
+      // Debug: use stderr for diagnostic logs
+      console.error(`WorklogDatabase.exportToJsonl: exporting ${items.length} items and ${comments.length} comments to ${this.jsonlPath}`);
+    }
     exportToJsonl(items, comments, this.jsonlPath);
   }
 
@@ -535,6 +540,12 @@ export class WorklogDatabase {
       createdAt: now,
       references: input.references || [],
     };
+
+    // Debug: log creation intent before saving (only when not silent)
+    if (!this.silent) {
+      // Send to stderr so JSON output on stdout is not contaminated
+      console.error(`WorklogDatabase.createComment: creating comment for ${input.workItemId} by ${input.author}`);
+    }
 
     this.store.saveComment(comment);
     this.exportToJsonl();
