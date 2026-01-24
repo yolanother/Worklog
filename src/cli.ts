@@ -866,6 +866,7 @@ program
 program
   .command('list')
   .description('List work items')
+  .argument('[search]', 'Search term (matches title and description)')
   .option('-s, --status <status>', 'Filter by status')
   .option('-p, --priority <priority>', 'Filter by priority')
   .option('-P, --parent <parentId>', 'Filter by parent ID (use "null" for root items)')
@@ -873,9 +874,9 @@ program
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((search, options) => {
     requireInitialized();
-    const db = getDatabase(options.prefix);
+    const db = getDatabase(options?.prefix);
     
     const query: WorkItemQuery = {};
     if (options.status) query.status = options.status as WorkItemStatus;
@@ -889,9 +890,20 @@ program
     if (options.assignee) query.assignee = options.assignee;
     if (options.stage) query.stage = options.stage;
     
-    const items = db.list(query);
+    let items = db.list(query);
+
+    // If a free-form search term was provided as an argument, filter title and description
+    if (search) {
+      const lower = String(search).toLowerCase();
+      items = items.filter(item => {
+        const titleMatch = item.title && item.title.toLowerCase().includes(lower);
+        const descMatch = item.description && item.description.toLowerCase().includes(lower);
+        return Boolean(titleMatch || descMatch);
+      });
+    }
     
     const isJsonMode = program.opts().json;
+    // If JSON mode, allow db.list to accept a search term via query.search for API parity
     if (isJsonMode) {
       outputJson({ success: true, count: items.length, workItems: items });
     } else {
