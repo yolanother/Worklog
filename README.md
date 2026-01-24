@@ -7,6 +7,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Persistent Database**: SQLite-backed storage that persists across CLI/API executions
 - **API**: REST API built with Express
 - **CLI**: Command-line interface for quick operations
+- **Pluggable Commands**: Extend the CLI with custom commands via plugins (see [Plugin Guide](PLUGIN_GUIDE.md))
 - **Git-Friendly**: Data stored in JSONL format for easy Git syncing and collaboration
 - **Auto-Refresh**: Database automatically refreshes from JSONL when file is updated (e.g., after git pull)
 - **Hierarchical Work Items**: Support for parent-child relationships
@@ -399,6 +400,42 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 - **comment**: Comment text in markdown format
 - **createdAt**: ISO timestamp of creation
 - **references**: Array of references (work item IDs, relative file paths, or URLs)
+
+## Plugins
+
+Worklog supports a pluggable command architecture that allows you to extend the CLI with custom commands without modifying the Worklog codebase. 
+
+### Quick Example
+
+Create `.worklog/plugins/hello.mjs`:
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('hello')
+    .description('Say hello')
+    .option('-n, --name <name>', 'Name to greet', 'World')
+    .action((options) => {
+      console.log(`Hello, ${options.name}!`);
+    });
+}
+```
+
+Then use it:
+
+```bash
+worklog hello --name Alice
+# Output: Hello, Alice!
+```
+
+For complete plugin development documentation, see the [Plugin Development Guide](PLUGIN_GUIDE.md).
+
+### List Installed Plugins
+
+```bash
+worklog plugins          # List discovered plugins
+worklog plugins --json   # JSON output with details
+```
 
 ## Development
 
