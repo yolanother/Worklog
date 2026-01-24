@@ -56,7 +56,8 @@ export function upsertIssuesFromWorkItems(
   items: WorkItem[],
   comments: Comment[],
   config: GithubConfig,
-  onProgress?: (progress: GithubProgress) => void
+  onProgress?: (progress: GithubProgress) => void,
+  onVerboseLog?: (message: string) => void
 ): { updatedItems: WorkItem[]; result: GithubSyncResult; timing: GithubSyncTiming } {
   const startTime = Date.now();
   const labelPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
@@ -215,6 +216,9 @@ export function upsertIssuesFromWorkItems(
       new Date(item.updatedAt).getTime() <= new Date(item.githubIssueUpdatedAt).getTime() &&
       !shouldSyncComments
     ) {
+      if (onVerboseLog) {
+        onVerboseLog(`[upsert] skip ${item.id} (no issue or comment changes)`);
+      }
       skippedUpdates += 1;
       processed += 1;
       continue;
@@ -230,6 +234,9 @@ export function upsertIssuesFromWorkItems(
         || new Date(item.updatedAt).getTime() > new Date(item.githubIssueUpdatedAt).getTime();
       if (shouldUpdateIssue) {
         const upsertStart = Date.now();
+        if (onVerboseLog) {
+          onVerboseLog(`[upsert] ${item.githubIssueNumber ? 'update' : 'create'} ${item.id}`);
+        }
         if (item.githubIssueNumber) {
           issue = updateGithubIssue(config, item.githubIssueNumber, payload);
           result.updated += 1;
@@ -242,8 +249,13 @@ export function upsertIssuesFromWorkItems(
           result.created += 1;
         }
         timing.upsertMs += Date.now() - upsertStart;
+        if (onVerboseLog) {
+          onVerboseLog(`[upsert] ${item.id} completed in ${Date.now() - upsertStart}ms`);
+        }
         issueNumber = issue.number;
         issueUpdatedAt = issue.updatedAt;
+      } else if (onVerboseLog) {
+        onVerboseLog(`[upsert] issue unchanged for ${item.id}`);
       }
 
       const shouldSyncCommentsNow = itemComments.length > 0 && (shouldSyncComments || shouldUpdateIssue);
@@ -257,6 +269,8 @@ export function upsertIssuesFromWorkItems(
         result.commentsCreated = (result.commentsCreated || 0) + commentSummary.created;
         result.commentsUpdated = (result.commentsUpdated || 0) + commentSummary.updated;
         issueUpdatedAt = maxIsoTimestamp(issueUpdatedAt, commentSummary.latestUpdatedAt);
+      } else if (onVerboseLog && itemComments.length > 0) {
+        onVerboseLog(`[upsert] comments unchanged for ${item.id}`);
       }
 
       updatedById.set(item.id, {
@@ -297,6 +311,9 @@ export function upsertIssuesFromWorkItems(
   }
 
   const pairs = Array.from(linkedPairs.values());
+  if (onVerboseLog) {
+    onVerboseLog(`[hierarchy] ${pairs.length} parent-child pair(s) to verify`);
+  }
   for (let idx = 0; idx < pairs.length; idx += 1) {
     if (onProgress) {
       onProgress({ phase: 'hierarchy', current: idx + 1, total: pairs.length || 1 });
@@ -305,16 +322,34 @@ export function upsertIssuesFromWorkItems(
     const parentNumber = Number(parentNumberRaw);
     const childNumber = Number(childNumberRaw);
     try {
+      if (onVerboseLog) {
+        onVerboseLog(`[hierarchy] ${idx + 1}/${pairs.length} checking ${parentNumber} -> ${childNumber}`);
+      }
       const checkStart = Date.now();
       const hierarchy = getIssueHierarchy(config, parentNumber);
       timing.hierarchyCheckMs += Date.now() - checkStart;
+      if (onVerboseLog) {
+        onVerboseLog(
+          `[hierarchy] fetched ${parentNumber} in ${Date.now() - checkStart}ms (children: ${hierarchy.childIssueNumbers.length})`
+        );
+      }
       if (hierarchy.childIssueNumbers.includes(childNumber)) {
         linkedCount += 1;
+        if (onVerboseLog) {
+          onVerboseLog(`[hierarchy] already linked ${parentNumber} -> ${childNumber}`);
+        }
         continue;
       }
       const linkStart = Date.now();
       const linkResult = addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
       timing.hierarchyLinkMs += Date.now() - linkStart;
+      if (onVerboseLog) {
+        onVerboseLog(
+          `[hierarchy] link ${parentNumber} -> ${childNumber} ${linkResult.ok ? 'ok' : 'failed'} in ${
+            Date.now() - linkStart
+          }ms`
+        );
+      }
       if (!linkResult.ok) {
         result.errors.push(`link ${parentNumber}->${childNumber}: ${linkResult.error || 'sub-issue link not created'}`);
         continue;
@@ -322,8 +357,14 @@ export function upsertIssuesFromWorkItems(
       const verifyStart = Date.now();
       const updatedHierarchy = getIssueHierarchy(config, parentNumber);
       timing.hierarchyVerifyMs += Date.now() - verifyStart;
+      if (onVerboseLog) {
+        onVerboseLog(`[hierarchy] verify ${parentNumber} in ${Date.now() - verifyStart}ms`);
+      }
       if (updatedHierarchy.childIssueNumbers.includes(childNumber)) {
         linkedCount += 1;
+        if (onVerboseLog) {
+          onVerboseLog(`[hierarchy] verified ${parentNumber} -> ${childNumber}`);
+        }
         continue;
       }
       result.errors.push(`link ${parentNumber}->${childNumber}: sub-issue link not created`);

@@ -79,7 +79,16 @@ export default function register(ctx: PluginContext): void {
         const items = db.getAll();
         const comments = db.getAllComments();
 
-        const { updatedItems, result, timing } = upsertIssuesFromWorkItems(items, comments, githubConfig, renderProgress);
+        const verboseLog = isVerbose && !isJsonMode
+          ? (message: string) => console.log(message)
+          : undefined;
+        const { updatedItems, result, timing } = upsertIssuesFromWorkItems(
+          items,
+          comments,
+          githubConfig,
+          renderProgress,
+          verboseLog
+        );
         if (updatedItems.length > 0) {
           db.import(updatedItems);
         }
