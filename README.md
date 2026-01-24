@@ -171,6 +171,33 @@ worklog list
 worklog --json list
 ```
 
+#### Human Display Formats (new)
+
+Worklog supports a global human display `--format` (short: `-F`) to control how work items and comments are rendered for humans. Valid values: `concise`, `normal`, `full`, `raw`.
+
+- `concise` — compact, one-line title + gray ID (good for lists)
+- `normal`  — multi-line human-friendly view with key fields
+- `full`    — `normal` plus tags/stage and inlined comments (if available)
+- `raw`     — JSON stringified work item/comment (useful for copy/paste)
+
+Format precedence: CLI `--format` > per-command provided format (if implemented) > `config.humanDisplay` > default `concise`.
+
+Examples:
+
+```bash
+# Show next item in concise form (default)
+wl next
+
+# Force normal output
+wl next --format normal
+
+# Show full details (includes comments when available)
+wl show WI-0J8L1JQ3H8ZQ2K6D --format full
+
+# Output raw JSON for scripting or copy/paste
+wl --format raw show WI-0J8L1JQ3H8ZQ2K6D
+```
+
 **Note:** For development, you can also use `npm run cli -- <command>` if you haven't installed the CLI globally.
 
 #### Examples

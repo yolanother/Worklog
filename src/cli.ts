@@ -14,6 +14,9 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 
+// Generic CLI options bag (explicit any to avoid implicit-any diagnostics while keeping flexible)
+type CLIOptions = { [key: string]: any };
+
 const WORKLOG_VERSION = '0.0.1';
 
 const program = new Command();
@@ -100,7 +103,7 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
   // Show ID in gray immediately after the title, separated by a hyphen
-  console.log(`${prefix}${chalk.greenBright(item.title)} - ${chalk.gray(item.id)}`);
+  console.log(formatTitleAndId(item, prefix));
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
@@ -120,6 +123,103 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
   }
 }
 
+// Format title and id with consistent coloring used in tree/list outputs
+function formatTitleAndId(item: WorkItem, prefix: string = ''): string {
+  // Removed hyphen to keep title/id visually clean
+  // Include a hyphen between title and id for clearer machine-human readability
+  return `${prefix}${chalk.greenBright(item.title)} ${chalk.gray('-')} ${chalk.gray(item.id)}`;
+}
+
+// Format only the title (consistent color)
+function formatTitleOnly(item: WorkItem): string {
+  return chalk.greenBright(item.title);
+}
+
+// Standard human formatter: supports 'concise' | 'normal' | 'full' | 'raw'
+function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, format: string | undefined): string {
+  const fmt = (format || loadConfig()?.humanDisplay || 'concise').toLowerCase();
+
+  // Helper for common fields
+  const lines: string[] = [];
+  const titleLine = `Title: ${formatTitleOnly(item)}`;
+  const idLine = `ID:    ${chalk.gray(item.id)}`;
+
+  if (fmt === 'raw') {
+    return JSON.stringify(item, null, 2);
+  }
+
+  if (fmt === 'concise') {
+    return `${formatTitleOnly(item)} ${chalk.gray(item.id)}`;
+  }
+
+  // normal or full
+  lines.push(idLine);
+  lines.push(titleLine);
+  lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+  if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
+  if (item.parentId) lines.push(`Parent: ${item.parentId}`);
+  if (item.description) lines.push(`Description: ${item.description}`);
+
+  if (fmt === 'full') {
+    // include tags, stage, and comments
+    if (item.tags && item.tags.length > 0) lines.push(`Tags: ${item.tags.join(', ')}`);
+    if (item.stage) lines.push(`Stage: ${item.stage}`);
+    // append comments if db is provided
+    if (db) {
+      const comments = db.getCommentsForWorkItem(item.id);
+      if (comments.length > 0) {
+        lines.push('Comments:');
+        for (const c of comments) {
+          lines.push(`  [${c.id}] ${c.author} at ${c.createdAt}`);
+          lines.push(`    ${c.comment}`);
+        }
+      }
+    }
+    // include any other fields present on the item not covered above
+    const extra: any = {};
+    for (const k of Object.keys(item) as Array<keyof WorkItem>) {
+      if (!['id','title','description','status','priority','parentId','tags','assignee','stage','createdAt','updatedAt','issueType','createdBy','deletedBy','deleteReason'].includes(k as string)) {
+        extra[k] = (item as any)[k];
+      }
+    }
+    if (Object.keys(extra).length > 0) lines.push(`Other: ${JSON.stringify(extra)}`);
+  }
+
+  return lines.join('\n');
+}
+
+// Resolve final format choice: CLI override > provided > config > default
+function resolveFormat(provided?: string): string {
+  const cliFormat = program.opts().format;
+  if (cliFormat && typeof cliFormat === 'string' && cliFormat.trim() !== '') return cliFormat;
+  if (provided && provided.trim() !== '') return provided;
+  return loadConfig()?.humanDisplay || 'concise';
+}
+
+// Human formatter for comments
+function humanFormatComment(comment: Comment, format?: string): string {
+  const fmt = (format || loadConfig()?.humanDisplay || 'concise').toLowerCase();
+  if (fmt === 'raw') return JSON.stringify(comment, null, 2);
+  if (fmt === 'concise') {
+    const excerpt = comment.comment.split('\n')[0];
+    return `${chalk.gray('[' + comment.id + ']')} ${comment.author} - ${excerpt}`;
+  }
+
+  // normal or full
+  const lines: string[] = [];
+  lines.push(`ID:      ${chalk.gray(comment.id)}`);
+  lines.push(`Author:  ${comment.author}`);
+  lines.push(`Created: ${comment.createdAt}`);
+  lines.push('');
+  lines.push(comment.comment);
+  if (comment.references && comment.references.length > 0) {
+    lines.push('');
+    lines.push(`References: ${comment.references.join(', ')}`);
+  }
+  // For 'full' we show verbose fields above; reserve raw JSON for the explicit 'raw' format
+  return lines.join('\n');
+}
+
 // Display detailed conflict information with color coding
 function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): void {
   if (result.conflictDetails.length === 0) {
@@ -136,7 +236,7 @@ function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): vo
   result.conflictDetails.forEach((conflict, index) => {
     // Find the work item in the merged items to get the title
     const workItem = itemsById.get(conflict.itemId);
-    const displayText = workItem ? `${workItem.title} (${conflict.itemId})` : conflict.itemId;
+    const displayText = workItem ? `${formatTitleOnly(workItem)} (${conflict.itemId})` : conflict.itemId;
     console.log(chalk.bold(`\n${index + 1}. Work Item: ${displayText}`));
     
     if (conflict.conflictType === 'same-timestamp') {
@@ -566,13 +666,32 @@ program
   .description('CLI for Worklog - an issue tracker for agents')
   .version(WORKLOG_VERSION)
   .option('--json', 'Output in JSON format (machine-readable)')
-  .option('--verbose', 'Show verbose output including debug messages');
+  .option('--verbose', 'Show verbose output including debug messages')
+  .option('-F, --format <format>', 'Human display format (choices: concise|normal|full|raw)');
+
+// Allowed formats for validation
+const ALLOWED_FORMATS = new Set(['concise', 'normal', 'full', 'raw']);
+
+function isValidFormat(fmt: any): boolean {
+  if (!fmt || typeof fmt !== 'string') return false;
+  return ALLOWED_FORMATS.has(fmt.toLowerCase());
+}
+
+// Validate CLI-provided format early before any command action runs
+program.hook('preAction', () => {
+  const cliFormat = program.opts().format;
+  if (cliFormat && !isValidFormat(cliFormat)) {
+    console.error(`Invalid --format value: ${cliFormat}`);
+    console.error(`Valid formats: ${Array.from(ALLOWED_FORMATS).join(', ')}`);
+    process.exit(1);
+  }
+});
 
 // Initialize configuration
 program
   .command('init')
   .description('Initialize worklog configuration')
-  .action(async () => {
+  .action(async (_options: CLIOptions) => {
     const isJsonMode = program.opts().json;
     
     if (configExists()) {
@@ -761,7 +880,7 @@ program
   .command('status')
   .description('Show Worklog system status and database summary')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CLIOptions) => {
     const isJsonMode = program.opts().json;
     
     // Check if initialized
@@ -870,8 +989,8 @@ program
     if (isJsonMode) {
       outputJson({ success: true, workItem: item });
     } else {
-      console.log('Created work item:');
-      console.log(JSON.stringify(item, null, 2));
+      const format = resolveFormat();
+      console.log(humanFormatWorkItem(item, db, format));
     }
   });
 
@@ -887,7 +1006,7 @@ program
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((search, options) => {
+  .action((search: string | undefined, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options?.prefix);
     
@@ -939,7 +1058,7 @@ program
   .description('Show details of a work item')
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id, options) => {
+  .action((id: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -959,14 +1078,12 @@ program
         result.children = children;
       }
       outputJson(result);
-    } else {
-      // Display in tree format
-      const itemsToDisplay = [item];
-      if (options.children) {
-        const descendants = db.getDescendants(id);
-        itemsToDisplay.push(...descendants);
-      }
-      
+      return;
+    }
+
+    // If user asked for children, keep the tree rendering behavior unchanged
+    if (options.children) {
+      const itemsToDisplay = [item, ...db.getDescendants(id)];
       console.log(''); // Add blank line before tree
       displayItemTree(itemsToDisplay);
       console.log(''); // Add blank line after tree
@@ -976,11 +1093,24 @@ program
       if (comments.length > 0) {
         console.log('Comments:');
         comments.forEach(c => {
-          console.log(`[${c.id}] by ${c.author} at ${c.createdAt}`);
-          console.log(`  ${c.comment}`);
-          if (c.references.length > 0) {
-            console.log(`  References: ${c.references.join(', ')}`);
-          }
+          console.log(humanFormatComment(c, resolveFormat()));
+          console.log('');
+        });
+      }
+      return;
+    }
+
+    // No children requested — keep a compact tree rendering for consistency with `list`
+    const chosenFormat = resolveFormat();
+    console.log('');
+    displayItemTree([item]);
+    // Show comments for non-full formats (full already inlines comments)
+    if (chosenFormat !== 'full') {
+      const comments = db.getCommentsForWorkItem(id);
+      if (comments.length > 0) {
+        console.log('\nComments:');
+        comments.forEach(c => {
+          console.log(humanFormatComment(c, chosenFormat));
           console.log('');
         });
       }
@@ -1004,7 +1134,7 @@ program
   .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
   .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id, options) => {
+  .action((id: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1032,8 +1162,9 @@ program
     if (isJsonMode) {
       outputJson({ success: true, workItem: item });
     } else {
+      const format = resolveFormat();
       console.log('Updated work item:');
-      console.log(JSON.stringify(item, null, 2));
+      console.log(humanFormatWorkItem(item, db, format));
     }
   });
 
@@ -1042,7 +1173,7 @@ program
   .command('delete <id>')
   .description('Delete a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id, options) => {
+  .action((id: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1066,7 +1197,7 @@ program
   .description('Export work items and comments to JSONL file')
   .option('-f, --file <filepath>', 'Output file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const items = db.getAll();
@@ -1093,7 +1224,7 @@ program
   .description('Import work items and comments from JSONL file')
   .option('-f, --file <filepath>', 'Input file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const { items, comments } = importFromJsonl(options.file);
@@ -1120,51 +1251,79 @@ program
   .description('Find the next work item to work on based on priority and status')
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('-s, --search <term>', 'Search term for fuzzy matching against title, description, and comments')
+  .option('-n, --number <n>', 'Number of items to return (default: 1)', '1')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action(async (options) => {
+  .action(async (options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
-    
-    const result = db.findNextWorkItem(options.assignee, options.search);
-    
+    const numRequested = parseInt(options.number || '1', 10);
+    const count = Number.isNaN(numRequested) || numRequested < 1 ? 1 : numRequested;
+
+    // Attempt to use optimized multi-item selection; fall back to single-item API
+    const results = (db as any).findNextWorkItems ? db.findNextWorkItems(count, options.assignee, options.search) : [db.findNextWorkItem(options.assignee, options.search)];
+
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
-      if (result.workItem) {
-        outputJson({ success: true, workItem: result.workItem, reason: result.reason });
-      } else {
-        outputJson({ success: true, workItem: null, reason: result.reason });
-      }
-    } else {
-      if (!result.workItem) {
-        console.log('No work items found to work on.');
-        if (result.reason) {
-          console.log(`Reason: ${result.reason}`);
-        }
+      // If only one result was requested/returned, expose a simple top-level shape
+      if (results.length === 1) {
+        const single = results[0];
+        outputJson({ success: true, workItem: single.workItem, reason: single.reason });
         return;
       }
-      
+
+      // Multiple results - return array for consumers
+      outputJson({ success: true, count: results.length, results });
+      return;
+    }
+
+    if (!results || results.length === 0) {
+      console.log('No work items found to work on.');
+      return;
+    }
+
+    const chosenFormat = resolveFormat();
+    if (results.length === 1) {
+      const result = results[0];
+      if (!result.workItem) {
+        console.log('No work items found to work on.');
+        if (result.reason) console.log(`Reason: ${result.reason}`);
+        return;
+      }
+
       console.log('\nNext work item to work on:');
       console.log('==========================\n');
-      console.log(`ID:          ${result.workItem.id}`);
-      console.log(`Title:       ${result.workItem.title}`);
-      console.log(`Status:      ${result.workItem.status}`);
-      console.log(`Priority:    ${result.workItem.priority}`);
-      if (result.workItem.assignee) console.log(`Assignee:    ${result.workItem.assignee}`);
-      if (result.workItem.parentId) console.log(`Parent:      ${result.workItem.parentId}`);
-      if (result.workItem.description) {
-        console.log(`Description: ${result.workItem.description}`);
-      }
+      // Use human formatter for consistent output
+      console.log(humanFormatWorkItem(result.workItem, db, chosenFormat));
       console.log(`\nReason:      ${chalk.cyan(result.reason)}`);
-      
-      // Offer to copy ID to clipboard
       console.log('\n');
-      
-      // Simple clipboard prompt (no actual clipboard functionality yet)
-      // Note: For actual clipboard support, we would need a package like 'clipboardy'
-      // For now, we just display the ID prominently
       console.log(`Work item ID: ${chalk.green.bold(result.workItem.id)}`);
       console.log(`(Copy the ID above to use it in other commands)`);
+      return;
     }
+
+    // Multiple results - display a concise list or expanded based on format
+    console.log(`\nNext ${results.length} work item(s) to work on:`);
+    console.log('===============================\n');
+    results.forEach((res: any, idx: number) => {
+      if (!res.workItem) {
+        console.log(`${idx + 1}. (no item) - ${res.reason}`);
+        return;
+      }
+      if (chosenFormat === 'concise') {
+        console.log(`${idx + 1}. ${formatTitleAndId(res.workItem)}`);
+        console.log(`   Status: ${res.workItem.status} | Priority: ${res.workItem.priority}`);
+        if (res.workItem.assignee) console.log(`   Assignee: ${res.workItem.assignee}`);
+        if (res.workItem.parentId) console.log(`   Parent: ${res.workItem.parentId}`);
+        if (res.workItem.description) console.log(`   ${res.workItem.description}`);
+        console.log(`   Reason: ${chalk.cyan(res.reason)}`);
+        console.log('');
+      } else {
+        console.log(`${idx + 1}.`);
+        console.log(humanFormatWorkItem(res.workItem, db, chosenFormat));
+        console.log(`Reason: ${chalk.cyan(res.reason)}`);
+        console.log('');
+      }
+    });
   });
 
 // List in-progress work items
@@ -1173,7 +1332,7 @@ program
   .description('List all in-progress work items in a tree layout showing dependencies')
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1209,7 +1368,7 @@ program
   .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', DEFAULT_GIT_BRANCH)
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
-  .action(async (options) => {
+  .action(async (options: CLIOptions) => {
     requireInitialized();
     const isJsonMode = program.opts().json;
     
@@ -1247,7 +1406,7 @@ commentCommand
   .requiredOption('-c, --comment <comment>', 'Comment text (markdown supported)')
   .option('-r, --references <references>', 'Comma-separated list of references (work item IDs, file paths, or URLs)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((workItemId, options) => {
+  .action((workItemId: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1267,8 +1426,9 @@ commentCommand
     if (isJsonMode) {
       outputJson({ success: true, comment });
     } else {
+      const format = resolveFormat();
       console.log('Created comment:');
-      console.log(JSON.stringify(comment, null, 2));
+      console.log(humanFormatComment(comment, format));
     }
   });
 
@@ -1280,7 +1440,7 @@ program
   .option('-r, --reason <reason>', 'Reason for closing (stored as a comment)', '')
   .option('-a, --author <author>', 'Author name for the close comment', 'worklog')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((ids: string[], options) => {
+  .action((ids: string[], options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const isJsonMode = program.opts().json;
@@ -1348,7 +1508,7 @@ commentCommand
   .command('list <workItemId>')
   .description('List all comments for a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((workItemId, options) => {
+  .action((workItemId: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1386,7 +1546,7 @@ commentCommand
   .command('show <commentId>')
   .description('Show details of a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId, options) => {
+  .action((commentId: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1400,7 +1560,8 @@ commentCommand
     if (isJsonMode) {
       outputJson({ success: true, comment });
     } else {
-      console.log(JSON.stringify(comment, null, 2));
+      const format = resolveFormat();
+      console.log(humanFormatComment(comment, format));
     }
   });
 
@@ -1412,7 +1573,7 @@ commentCommand
   .option('-c, --comment <comment>', 'New comment text')
   .option('-r, --references <references>', 'New references (comma-separated)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId, options) => {
+  .action((commentId: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1431,8 +1592,9 @@ commentCommand
     if (isJsonMode) {
       outputJson({ success: true, comment });
     } else {
+      const format = resolveFormat();
       console.log('Updated comment:');
-      console.log(JSON.stringify(comment, null, 2));
+      console.log(humanFormatComment(comment, format));
     }
   });
 
@@ -1441,7 +1603,7 @@ commentCommand
   .command('delete <commentId>')
   .description('Delete a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId, options) => {
+  .action((commentId: string, options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1466,7 +1628,7 @@ program
   .option('-n, --number <n>', 'Number of recent items to show', '3')
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CLIOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
 

@@ -397,6 +397,97 @@ export class WorklogDatabase {
   }
 
   /**
+   * Find multiple next work items (up to `count`) using the same selection logic
+   * as `findNextWorkItem`, but excluding already-selected items between iterations.
+   */
+  findNextWorkItems(count: number, assignee?: string, searchTerm?: string): NextWorkItemResult[] {
+    const results: NextWorkItemResult[] = [];
+    const excluded = new Set<string>();
+
+    for (let i = 0; i < count; i += 1) {
+      // Start from all items and exclude deleted and previously selected items
+      let items = this.store.getAllWorkItems().filter(item => item.status !== 'deleted' && !excluded.has(item.id));
+
+      // Apply filters
+      items = this.applyFilters(items, assignee, searchTerm);
+
+      // Find in-progress and blocked items
+      const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
+
+      let result: NextWorkItemResult | null = null;
+
+      if (inProgressItems.length === 0) {
+        const openItems = items.filter(item => item.status !== 'completed');
+        if (openItems.length === 0) {
+          result = { workItem: null, reason: 'No work items available' };
+        } else {
+          const selected = this.selectHighestPriorityOldest(openItems);
+          result = {
+            workItem: selected,
+            reason: `Highest priority (${selected?.priority}) and oldest open item`
+          };
+        }
+      } else {
+        const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
+        if (!selectedInProgress) {
+          result = { workItem: null, reason: 'No work items available' };
+        } else if (selectedInProgress.status === 'blocked') {
+          const blockingIssues = this.extractBlockingIssues(selectedInProgress);
+          if (blockingIssues.length > 0) {
+            const blockingItems = blockingIssues
+              .map(id => this.get(id))
+              .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+
+            if (blockingItems.length > 0) {
+              const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+              if (filteredBlockingItems.length > 0) {
+                const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
+                result = {
+                  workItem: selected,
+                  reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+                };
+              }
+            }
+          }
+
+          if (!result) {
+            result = {
+              workItem: selectedInProgress,
+              reason: `Blocked item with no identifiable blocking issues`
+            };
+          }
+        } else {
+          const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
+          const filteredLeaves = this.applyFilters(leafDescendants, assignee, searchTerm).filter(
+            item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
+          );
+
+          if (filteredLeaves.length === 0) {
+            result = {
+              workItem: selectedInProgress,
+              reason: `In-progress item with no open descendants`
+            };
+          } else {
+            const selected = this.selectHighestPriorityOldest(filteredLeaves);
+            result = {
+              workItem: selected,
+              reason: `Highest priority (${selected?.priority}) leaf descendant of in-progress item ${selectedInProgress.id}`
+            };
+          }
+        }
+      }
+
+      results.push(result);
+      if (result.workItem) excluded.add(result.workItem.id);
+
+      // If no work item was found, stop early
+      if (!result.workItem) break;
+    }
+
+    return results;
+  }
+
+  /**
    * Extract blocking issue IDs from description and comments
    * Looks for work item ID patterns (e.g., "PREFIX-ABC123DEF")
    */
