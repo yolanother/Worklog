@@ -18,6 +18,74 @@ const WORKLOG_VERSION = '0.0.1';
 
 const program = new Command();
 
+// Customize help output to group commands for readability
+program.configureHelp({
+  // Use any types to avoid tight coupling to commander Help types
+  formatHelp: (cmd: any, helper: any) => {
+    const usage = helper.commandUsage(cmd);
+    const description = cmd.description() || '';
+
+    // Build groups and mapping of command name -> group
+    const groupsDef: { name: string; names: string[] }[] = [
+      { name: 'Project', names: ['init', 'status'] },
+      { name: 'Work items', names: ['create', 'list', 'show', 'update', 'delete', 'recent', 'next', 'in-progress'] },
+      { name: 'Data', names: ['export', 'import', 'sync'] },
+      { name: 'Comments', names: ['comment'] },
+    ];
+
+    const visible = helper.visibleCommands(cmd) as any[];
+
+    const groups: Map<string, any[]> = new Map();
+    for (const g of groupsDef) groups.set(g.name, []);
+    groups.set('Other', []);
+
+    for (const c of visible) {
+      const name = c.name();
+      const matched = groupsDef.find(g => g.names.includes(name));
+      if (matched) {
+        groups.get(matched.name)!.push(c);
+      } else {
+        groups.get('Other')!.push(c);
+      }
+    }
+
+    // Compose help text
+    let out = '';
+    out += `Usage: ${usage}\n\n`;
+    if (description) out += `${description}\n\n`;
+
+    for (const [groupName, cmds] of groups) {
+      if (!cmds || cmds.length === 0) continue;
+      out += `${groupName}:\n`;
+      // Determine padding width
+      const terms = cmds.map((c: any) => helper.subcommandTerm(c));
+      const pad = Math.max(...terms.map((t: string) => t.length)) + 2;
+      for (const c of cmds) {
+        const term = helper.subcommandTerm(c);
+        const desc = c.description();
+        out += `  ${term.padEnd(pad)} ${desc}\n`;
+      }
+      out += '\n';
+    }
+
+    // Global options
+    const options = helper.visibleOptions ? helper.visibleOptions(cmd) : [];
+    if (options && options.length > 0) {
+      out += 'Options:\n';
+      const terms = options.map((o: any) => (helper.optionTerm ? helper.optionTerm(o) : o.flags));
+      const padOptions = Math.max(...terms.map((t: string) => t.length)) + 2;
+      for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        const term = terms[i];
+        const desc = o.description || '';
+        out += `  ${term.padEnd(padOptions)} ${desc}\n`;
+      }
+      out += '\n';
+    }
+    return out;
+  }
+});
+
 // Output formatting helpers
 function outputJson(data: any) {
   console.log(JSON.stringify(data, null, 2));

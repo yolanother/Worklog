@@ -42,4 +42,8 @@
     "typescript": "^5.3.3",
     "vitest": "^4.0.18"
   }
+  ,
+  "devDependencies": {
+    "execa": "^7.1.1"
+  }
 }
