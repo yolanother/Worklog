@@ -52,13 +52,16 @@ export default function register(ctx: PluginContext): void {
           return;
         }
 
-        console.log('\nNext work item to work on:');
-        console.log('==========================\n');
+        console.log('');
+        const reasonText = result.reason.replace(/\b[A-Z]+-[A-Z0-9]+\b/g, (match: string) => {
+          const referenced = db.get(match);
+          return referenced ? `"${referenced.title}" (${match})` : match;
+        });
         console.log(humanFormatWorkItem(result.workItem, db, chosenFormat));
-        console.log(`\nReason:      ${chalk.cyan(result.reason)}`);
-        console.log('\n');
-        console.log(`Work item ID: ${chalk.green.bold(result.workItem.id)}`);
-        console.log(`(Copy the ID above to use it in other commands)`);
+        console.log(`\n${chalk.gray('## Reason for Selection')}`);
+        console.log(chalk.gray(reasonText));
+        console.log('');
+        console.log(`${chalk.gray('ID')}: ${chalk.gray(result.workItem.id)}`);
         return;
       }
 

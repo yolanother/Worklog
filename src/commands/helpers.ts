@@ -104,34 +104,57 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     return `${formatTitleOnly(item)} ${chalk.gray(item.id)}`;
   }
 
-  // normal or full
-  lines.push(idLine);
-  lines.push(titleLine);
-  lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
-  if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
-  if (item.parentId) lines.push(`Parent: ${item.parentId}`);
-  if (item.description) lines.push(`Description: ${item.description}`);
+  // normal output
+  if (fmt === 'normal') {
+    lines.push(idLine);
+    lines.push(titleLine);
+    lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
+    if (item.parentId) lines.push(`Parent: ${item.parentId}`);
+    if (item.description) lines.push(`Description: ${item.description}`);
+    return lines.join('\n');
+  }
 
-  if (fmt === 'full') {
-    if (item.tags && item.tags.length > 0) lines.push(`Tags: ${item.tags.join(', ')}`);
-    if (item.stage) lines.push(`Stage: ${item.stage}`);
-    if (db) {
-      const comments = db.getCommentsForWorkItem(item.id);
-      if (comments.length > 0) {
-        lines.push('Comments:');
-        for (const c of comments) {
-          lines.push(`  [${c.id}] ${c.author} at ${c.createdAt}`);
-          lines.push(`    ${c.comment}`);
-        }
+  // full output
+  lines.push(chalk.greenBright(`# ${item.title}`));
+  lines.push('');
+  const frontmatter: Array<[string, string]> = [
+    ['ID', chalk.gray(item.id)],
+    ['Status', `${item.status} | Priority: ${item.priority}`]
+  ];
+  if (item.assignee) frontmatter.push(['Assignee', item.assignee]);
+  if (item.parentId) frontmatter.push(['Parent', item.parentId]);
+  if (item.tags && item.tags.length > 0) frontmatter.push(['Tags', item.tags.join(', ')]);
+  const labelWidth = frontmatter.reduce((max, [label]) => Math.max(max, label.length), 0);
+  frontmatter.forEach(([label, value]) => {
+    lines.push(`${label.padEnd(labelWidth)}: ${value}`);
+  });
+
+  if (item.description) {
+    lines.push('');
+    lines.push('## Description');
+    lines.push('');
+    lines.push(item.description);
+  }
+
+  if (item.stage) {
+    lines.push('');
+    lines.push('## Stage');
+    lines.push('');
+    lines.push(item.stage);
+  }
+
+  if (db) {
+    const comments = db.getCommentsForWorkItem(item.id);
+    if (comments.length > 0) {
+      lines.push('');
+      lines.push('## Comments');
+      lines.push('');
+      for (const c of comments) {
+        lines.push(`  [${c.id}] ${c.author} at ${c.createdAt}`);
+        lines.push(`    ${c.comment}`);
       }
     }
-    const extra: any = {};
-    for (const k of Object.keys(item) as Array<keyof WorkItem>) {
-      if (!['id','title','description','status','priority','parentId','tags','assignee','stage','createdAt','updatedAt','issueType','createdBy','deletedBy','deleteReason'].includes(k as string)) {
-        extra[k] = (item as any)[k];
-      }
-    }
-    if (Object.keys(extra).length > 0) lines.push(`Other: ${JSON.stringify(extra)}`);
   }
 
   return lines.join('\n');
