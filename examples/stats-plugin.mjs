@@ -40,13 +40,13 @@ export default function register(ctx) {
         
         // Count by status
         items.forEach(item => {
-          const status = item.status;
+          const status = item.status || 'unknown';
           stats.byStatus[status] = (stats.byStatus[status] || 0) + 1;
         });
         
         // Count by priority
         items.forEach(item => {
-          const priority = item.priority;
+          const priority = item.priority || 'none';
           stats.byPriority[priority] = (stats.byPriority[priority] || 0) + 1;
         });
         
@@ -75,42 +75,97 @@ export default function register(ctx) {
           };
 
           console.log('\n📊 Work Item Statistics\n');
-          console.log(`Total Items: ${stats.total}`);
-          console.log(`Items with Parents: ${stats.withParent}`);
-          console.log(`Items with Tags: ${stats.withTags}`);
-          console.log(`Items with Comments: ${stats.withComments}`);
+          const summaryRows = [
+            ['Total Items', stats.total],
+            ['Items with Parents', stats.withParent],
+            ['Items with Tags', stats.withTags],
+            ['Items with Comments', stats.withComments]
+          ];
+          const summaryLabelWidth = summaryRows.reduce((max, [label]) => Math.max(max, label.length), 0);
+          const summaryValueWidth = summaryRows.reduce((max, [, value]) => Math.max(max, value.toString().length), 0);
+          summaryRows.forEach(([label, value]) => {
+            const paddedLabel = label.padEnd(summaryLabelWidth);
+            const paddedValue = value.toString().padStart(summaryValueWidth);
+            console.log(`${paddedLabel}  ${paddedValue}`);
+          });
           
-          console.log('\nBy Status:');
           const statusEntries = Object.entries(stats.byStatus).sort((a, b) => b[1] - a[1]);
+          const statusOrder = statusEntries.map(([status]) => status);
+          const priorityBaseline = ['critical', 'high', 'medium', 'low'];
+          const otherPriorities = Object.keys(stats.byPriority)
+            .filter(priority => !priorityBaseline.includes(priority))
+            .sort((a, b) => a.localeCompare(b));
+          const priorityOrder = [...priorityBaseline, ...otherPriorities];
+          const statusLabelWidth = statusOrder.reduce((max, label) => Math.max(max, label.length), 0);
+          const priorityLabelWidth = priorityOrder.reduce((max, label) => Math.max(max, label.length), 0);
+          const barWidth = 6;
+          const labelWidth = Math.max(statusLabelWidth, priorityLabelWidth, 'Priority'.length);
+          const columnWidth = Math.max(
+            5,
+            statusOrder.reduce((max, label) => Math.max(max, label.length), 0),
+            barWidth + 3
+          );
+          const countsByPriority = {};
+          items.forEach(item => {
+            const priority = item.priority || 'none';
+            const status = item.status || 'unknown';
+            countsByPriority[priority] = countsByPriority[priority] || {};
+            countsByPriority[priority][status] = (countsByPriority[priority][status] || 0) + 1;
+          });
+          const statusMaxByColumn = {};
+          statusOrder.forEach(status => {
+            const columnMax = priorityOrder.reduce((max, priority) => {
+              const count = (countsByPriority[priority]?.[status]) || 0;
+              return Math.max(max, count);
+            }, 0);
+            statusMaxByColumn[status] = columnMax;
+          });
+
+          console.log('\n\x1b[94mStatus by Priority\x1b[0m');
+          const header = [''.padEnd(labelWidth), ...statusOrder.map(status => status.padStart(columnWidth))].join('  ');
+          console.log(`  ${header}`);
+          priorityOrder.forEach(priority => {
+            if (!countsByPriority[priority]) return;
+            const cells = statusOrder.map(status => {
+              const count = countsByPriority[priority]?.[status] || 0;
+              const max = statusMaxByColumn[status] || 0;
+              const bar = max > 0 ? '█'.repeat(Math.round((count / max) * barWidth)).padEnd(barWidth, ' ') : ' '.repeat(barWidth);
+              const label = `${count}`.padStart(2, ' ');
+              return `${label} ${bar}`.padEnd(columnWidth);
+            });
+            const row = [priority.padEnd(labelWidth), ...cells].join('  ');
+            console.log(`  ${row}`);
+          });
+
+          console.log('\n\x1b[94mBy Status\x1b[0m');
           const statusMax = statusEntries.reduce((max, entry) => Math.max(max, entry[1]), 0);
-          const statusLabelWidth = statusEntries.reduce((max, entry) => Math.max(max, entry[0].length), 0);
+          const statusLabelWidthForTotals = statusEntries.reduce((max, entry) => Math.max(max, entry[0].length), 0);
           const statusCountWidth = Math.max(3, statusEntries.reduce((max, entry) => Math.max(max, entry[1].toString().length), 0));
           const percentWidth = 5;
-          const priorityOrder = ['critical', 'high', 'medium', 'low'];
-          const priorityLabelWidth = priorityOrder.reduce((max, label) => Math.max(max, label.length), 0);
+          const priorityLabelWidthForTotals = priorityOrder.reduce((max, label) => Math.max(max, label.length), 0);
           const priorityCountWidth = Math.max(
             3,
             priorityOrder.reduce((max, label) => Math.max(max, (stats.byPriority[label] || 0).toString().length), 0)
           );
-          const labelWidth = Math.max(statusLabelWidth, priorityLabelWidth);
-          const countWidth = Math.max(statusCountWidth, priorityCountWidth);
+          const totalsLabelWidth = Math.max(statusLabelWidthForTotals, priorityLabelWidthForTotals);
+          const totalsCountWidth = Math.max(statusCountWidth, priorityCountWidth);
           statusEntries
             .map(([status, count]) => formatLine(status, count, stats.total, statusMax))
             .forEach(({ label, count, percentage, bar }) => {
-              const paddedLabel = label.padEnd(labelWidth);
-              const paddedCount = count.toString().padStart(countWidth);
+              const paddedLabel = label.padEnd(totalsLabelWidth);
+              const paddedCount = count.toString().padStart(totalsCountWidth);
               const paddedPercent = percentage.toString().padStart(percentWidth);
               console.log(`  ${paddedLabel} ${paddedCount} (${paddedPercent}%) ${bar}`);
             });
-          
-          console.log('\nBy Priority:');
+
+          console.log('\n\x1b[94mBy Priority\x1b[0m');
           const priorityMax = Object.values(stats.byPriority).reduce((max, value) => Math.max(max, value), 0);
           priorityOrder.forEach(priority => {
             const count = stats.byPriority[priority] || 0;
             if (count > 0) {
               const { percentage, bar } = formatLine(priority, count, stats.total, priorityMax);
-              const paddedLabel = priority.padEnd(labelWidth);
-              const paddedCount = count.toString().padStart(countWidth);
+              const paddedLabel = priority.padEnd(totalsLabelWidth);
+              const paddedCount = count.toString().padStart(totalsCountWidth);
               const paddedPercent = percentage.toString().padStart(percentWidth);
               console.log(`  ${paddedLabel} ${paddedCount} (${paddedPercent}%) ${bar}`);
             }
