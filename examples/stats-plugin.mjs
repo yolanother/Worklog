@@ -62,6 +62,18 @@ export default function register(ctx) {
         if (ctx.utils.isJsonMode()) {
           ctx.output.json({ success: true, stats });
         } else {
+          const renderBar = (count, max, width = 20) => {
+            if (max <= 0) return '';
+            const barLength = Math.round((count / max) * width);
+            return '█'.repeat(barLength).padEnd(width, ' ');
+          };
+
+          const formatLine = (label, count, total, max) => {
+            const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+            const bar = renderBar(count, max);
+            return { label, count, percentage, bar };
+          };
+
           console.log('\n📊 Work Item Statistics\n');
           console.log(`Total Items: ${stats.total}`);
           console.log(`Items with Parents: ${stats.withParent}`);
@@ -69,20 +81,38 @@ export default function register(ctx) {
           console.log(`Items with Comments: ${stats.withComments}`);
           
           console.log('\nBy Status:');
-          Object.entries(stats.byStatus)
-            .sort((a, b) => b[1] - a[1])
-            .forEach(([status, count]) => {
-              const percentage = stats.total > 0 ? ((count / stats.total) * 100).toFixed(1) : 0;
-              console.log(`  ${status.padEnd(15)} ${count.toString().padStart(3)} (${percentage}%)`);
+          const statusEntries = Object.entries(stats.byStatus).sort((a, b) => b[1] - a[1]);
+          const statusMax = statusEntries.reduce((max, entry) => Math.max(max, entry[1]), 0);
+          const statusLabelWidth = statusEntries.reduce((max, entry) => Math.max(max, entry[0].length), 0);
+          const statusCountWidth = Math.max(3, statusEntries.reduce((max, entry) => Math.max(max, entry[1].toString().length), 0));
+          const percentWidth = 5;
+          const priorityOrder = ['critical', 'high', 'medium', 'low'];
+          const priorityLabelWidth = priorityOrder.reduce((max, label) => Math.max(max, label.length), 0);
+          const priorityCountWidth = Math.max(
+            3,
+            priorityOrder.reduce((max, label) => Math.max(max, (stats.byPriority[label] || 0).toString().length), 0)
+          );
+          const labelWidth = Math.max(statusLabelWidth, priorityLabelWidth);
+          const countWidth = Math.max(statusCountWidth, priorityCountWidth);
+          statusEntries
+            .map(([status, count]) => formatLine(status, count, stats.total, statusMax))
+            .forEach(({ label, count, percentage, bar }) => {
+              const paddedLabel = label.padEnd(labelWidth);
+              const paddedCount = count.toString().padStart(countWidth);
+              const paddedPercent = percentage.toString().padStart(percentWidth);
+              console.log(`  ${paddedLabel} ${paddedCount} (${paddedPercent}%) ${bar}`);
             });
           
           console.log('\nBy Priority:');
-          const priorityOrder = ['critical', 'high', 'medium', 'low'];
+          const priorityMax = Object.values(stats.byPriority).reduce((max, value) => Math.max(max, value), 0);
           priorityOrder.forEach(priority => {
             const count = stats.byPriority[priority] || 0;
             if (count > 0) {
-              const percentage = stats.total > 0 ? ((count / stats.total) * 100).toFixed(1) : 0;
-              console.log(`  ${priority.padEnd(15)} ${count.toString().padStart(3)} (${percentage}%)`);
+              const { percentage, bar } = formatLine(priority, count, stats.total, priorityMax);
+              const paddedLabel = priority.padEnd(labelWidth);
+              const paddedCount = count.toString().padStart(countWidth);
+              const paddedPercent = percentage.toString().padStart(percentWidth);
+              console.log(`  ${paddedLabel} ${paddedCount} (${paddedPercent}%) ${bar}`);
             }
           });
           
