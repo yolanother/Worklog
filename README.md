@@ -428,23 +428,7 @@ worklog hello --name Alice
 # Output: Hello, Alice!
 ```
 
-### Features
-
-- **Drop-in Installation**: Place compiled ESM plugins (.js/.mjs) in `.worklog/plugins/` directory
-- **No Rebuild Required**: New commands appear on next CLI invocation
-- **Full Database Access**: Plugins can read and modify work items
-- **TypeScript Support**: Write plugins in TypeScript and compile to JavaScript
-- **Command Groups**: Create subcommand hierarchies
-- **Built-in Helpers**: Access to output formatters, config, and utilities
-
-### Documentation
-
-See the complete [Plugin Development Guide](PLUGIN_GUIDE.md) for:
-- Plugin API reference
-- Development workflow
-- Example plugins (statistics, bulk operations, custom exports)
-- Troubleshooting guide
-- Security considerations
+For complete plugin development documentation, see the [Plugin Development Guide](PLUGIN_GUIDE.md).
 
 ### List Installed Plugins
 

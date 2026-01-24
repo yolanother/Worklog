@@ -19,6 +19,9 @@ mkdir -p .worklog/plugins
 Create a file `.worklog/plugins/hello.mjs`:
 
 ```javascript
+// Type imports are optional for JavaScript plugins, but recommended for IDE autocomplete
+// import type { PluginContext } from 'worklog/src/plugin-types';
+
 export default function register(ctx) {
   ctx.program
     .command('hello')
@@ -54,7 +57,9 @@ worklog hello --json
 
 ### Plugin Module Structure
 
-Every plugin must be an ESM module with a default export that is a registration function:
+Every plugin must be an ESM module with a default export that is a registration function.
+
+**For TypeScript plugins:**
 
 ```typescript
 import type { PluginContext } from 'worklog/src/plugin-types';
@@ -63,6 +68,20 @@ export default function register(ctx: PluginContext): void {
   // Register your commands here
 }
 ```
+
+**For JavaScript plugins:**
+
+The type import is optional (only needed if you're developing in TypeScript or want IDE autocomplete). JavaScript plugins work without any imports:
+
+```javascript
+export default function register(ctx) {
+  // Register your commands here
+}
+```
+
+**Note:** If developing plugins in a separate repository without Worklog source, you can:
+- Copy `src/plugin-types.ts` from Worklog for type definitions, or
+- Skip type imports entirely for plain JavaScript plugins (types are for development-time only)
 
 ### Plugin Context
 
@@ -153,9 +172,11 @@ export default function register(ctx) {
 
 ### Development Workflow
 
+**Note:** This section shows how to develop a plugin in a separate project/repository. You can organize your plugin project however you prefer - `my-plugin/` is just an example structure.
+
 1. **Write Your Plugin in TypeScript (Optional)**
 
-   Create `my-plugin/src/index.ts`:
+   Create your plugin source (e.g., `my-plugin/src/index.ts`):
    ```typescript
    import type { PluginContext } from 'worklog/src/plugin-types';
    
@@ -167,6 +188,17 @@ export default function register(ctx) {
          console.log('Hello from my plugin!');
        });
    }
+   ```
+   
+   **Folder structure suggestion:**
+   ```
+   my-plugin/
+   ├── src/
+   │   └── index.ts      # Your plugin source
+   ├── dist/             # Compiled output (generated)
+   │   └── index.js
+   ├── package.json
+   └── tsconfig.json
    ```
 
 2. **Set Up TypeScript Compilation**
@@ -216,10 +248,14 @@ export default function register(ctx) {
    worklog --help    # Should show your command
    worklog my-cmd    # Run your command
    ```
+   
+   **Note on command grouping:** Plugin commands appear in the "Other" group in `--help` output by default. Only built-in commands are organized into specific groups (Issue Management, Status, Team).
 
 ### Plugin Best Practices
 
 #### 1. Always Check Initialization
+
+**Note:** The `requireInitialized()` check ensures Worklog is properly configured before your command runs. While you could check initialization in the CLI bootstrap, doing it in each command action provides better error messages and is the recommended pattern for plugin consistency.
 
 ```javascript
 ctx.program
@@ -268,6 +304,32 @@ try {
   // ...
 });
 ```
+
+#### 5. Use Verbose Logging for Debugging
+
+When your plugin performs complex operations, add verbose logging to help users debug issues. Check the global `--verbose` flag through the program options:
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('my-cmd')
+    .action((options) => {
+      const isVerbose = ctx.program.opts().verbose;
+      
+      if (isVerbose) {
+        console.log('Starting operation...');
+      }
+      
+      // Your command logic
+      
+      if (isVerbose) {
+        console.log('Operation completed successfully');
+      }
+    });
+}
+```
+
+Users can then run `worklog --verbose my-cmd` to see detailed output for troubleshooting.
 
 ## Configuration
 
@@ -367,121 +429,18 @@ worklog --verbose --help
 
 ## Example Plugins
 
-### Custom Statistics
+The `examples/` directory contains complete, working plugin examples:
 
-```javascript
-export default function register(ctx) {
-  ctx.program
-    .command('stats')
-    .description('Show work item statistics')
-    .action(() => {
-      ctx.utils.requireInitialized();
-      const db = ctx.utils.getDatabase();
-      const items = db.getAll();
-      
-      const stats = {
-        total: items.length,
-        byStatus: {},
-        byPriority: {}
-      };
-      
-      items.forEach(item => {
-        stats.byStatus[item.status] = (stats.byStatus[item.status] || 0) + 1;
-        stats.byPriority[item.priority] = (stats.byPriority[item.priority] || 0) + 1;
-      });
-      
-      if (ctx.utils.isJsonMode()) {
-        ctx.output.json({ success: true, stats });
-      } else {
-        console.log('Work Item Statistics:');
-        console.log(`Total: ${stats.total}`);
-        console.log('\nBy Status:');
-        Object.entries(stats.byStatus).forEach(([status, count]) => {
-          console.log(`  ${status}: ${count}`);
-        });
-        console.log('\nBy Priority:');
-        Object.entries(stats.byPriority).forEach(([priority, count]) => {
-          console.log(`  ${priority}: ${count}`);
-        });
-      }
-    });
-}
-```
+### [stats-plugin.mjs](examples/stats-plugin.mjs)
+Shows custom work item statistics with database access, JSON mode support, and formatted output.
 
-### Bulk Operations
+### [bulk-tag-plugin.mjs](examples/bulk-tag-plugin.mjs)
+Demonstrates bulk operations - adding tags to multiple work items filtered by status.
 
-```javascript
-export default function register(ctx) {
-  ctx.program
-    .command('bulk-tag')
-    .description('Add a tag to multiple work items')
-    .requiredOption('-t, --tag <tag>', 'Tag to add')
-    .requiredOption('-s, --status <status>', 'Status to filter by')
-    .option('--prefix <prefix>', 'Override prefix')
-    .action((options) => {
-      ctx.utils.requireInitialized();
-      const db = ctx.utils.getDatabase(options.prefix);
-      
-      const items = db.getAll().filter(i => i.status === options.status);
-      let updated = 0;
-      
-      items.forEach(item => {
-        if (!item.tags.includes(options.tag)) {
-          const tags = [...item.tags, options.tag];
-          db.update(item.id, { tags });
-          updated++;
-        }
-      });
-      
-      ctx.output.success(
-        `Tagged ${updated} items with "${options.tag}"`,
-        { success: true, updated, total: items.length }
-      );
-    });
-}
-```
+### [export-csv-plugin.mjs](examples/export-csv-plugin.mjs)
+Exports work items to CSV format with proper escaping and file system operations.
 
-### Export to Different Format
-
-```javascript
-import * as fs from 'fs';
-
-export default function register(ctx) {
-  ctx.program
-    .command('export-csv')
-    .description('Export work items to CSV')
-    .option('-f, --file <file>', 'Output file', 'workitems.csv')
-    .option('--prefix <prefix>', 'Override prefix')
-    .action((options) => {
-      ctx.utils.requireInitialized();
-      const db = ctx.utils.getDatabase(options.prefix);
-      const items = db.getAll();
-      
-      // Generate CSV
-      const headers = ['ID', 'Title', 'Status', 'Priority', 'Created', 'Updated'];
-      const rows = items.map(item => [
-        item.id,
-        `"${item.title.replace(/"/g, '""')}"`,
-        item.status,
-        item.priority,
-        item.createdAt,
-        item.updatedAt
-      ]);
-      
-      const csv = [
-        headers.join(','),
-        ...rows.map(row => row.join(','))
-      ].join('\n');
-      
-      fs.writeFileSync(options.file, csv);
-      
-      ctx.output.success(
-        `Exported ${items.length} items to ${options.file}`,
-        { success: true, count: items.length, file: options.file }
-      );
-    });
-}
-```
+For more details and installation instructions, see [examples/README.md](examples/README.md).
 
 ## Security Considerations
 
@@ -629,11 +588,3 @@ You can also use Node.js debugging:
 ```bash
 node --inspect-brk $(which worklog) my-command
 ```
-
-## Contributing
-
-Found a bug or have a feature request for the plugin system? Please open an issue on the [Worklog GitHub repository](https://github.com/rgardler-msft/Worklog).
-
-## License
-
-The Worklog plugin system is part of Worklog and released under the same MIT license.
