@@ -1637,7 +1637,7 @@ githubCommand
       const githubConfig = resolveGithubConfig({ repo: options.repo, labelPrefix: options.labelPrefix });
       const items = db.getAll();
       const createNew = resolveGithubImportCreateNew({ createNew: options.createNew });
-      const { updatedItems, createdItems, issues, updatedIds, mergedItems, conflictDetails } = importIssuesToWorkItems(items, githubConfig, {
+      const { updatedItems, createdItems, issues, updatedIds, mergedItems, conflictDetails, markersFound } = importIssuesToWorkItems(items, githubConfig, {
         since: options.since,
         createNew,
         generateId: () => db.generateWorkItemId(),
@@ -1673,7 +1673,7 @@ githubCommand
         console.log(`  Work items added: ${createdItems.length}`);
         console.log(`  Work items updated: ${updatedItems.length}`);
         console.log(`  Work items unchanged: ${unchanged}`);
-        console.log(`  Issues scanned: ${issues.length} (open: ${openIssues}, closed: ${closedIssues})`);
+        console.log(`  Issues scanned: ${issues.length} (open: ${openIssues}, closed: ${closedIssues}, worklog: ${markersFound})`);
         console.log(`  Create new: ${createNew ? 'enabled' : 'disabled'}`);
         console.log(`  Total work items: ${totalItems}`);
         displayConflictDetails(

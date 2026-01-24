@@ -169,6 +169,7 @@ export function importIssuesToWorkItems(
   updatedIds: Set<string>;
   mergedItems: WorkItem[];
   conflictDetails: { conflicts: string[]; conflictDetails: import('./types.js').ConflictDetail[] };
+  markersFound: number;
 } {
   const since = options?.since;
   const createNew = options?.createNew === true;
@@ -212,6 +213,7 @@ export function importIssuesToWorkItems(
   const parentIssueHints = new Map<string, number>();
   const childIssueHints = new Map<string, number[]>();
   const seenIssueNumbers = new Set<number>();
+  let markersFound = 0;
 
   let processed = 0;
   for (const issue of issues) {
@@ -219,6 +221,9 @@ export function importIssuesToWorkItems(
       onProgress({ phase: 'import', current: processed + 1, total: issues.length });
     }
     const markerId = extractWorklogId(issue.body);
+    if (markerId) {
+      markersFound += 1;
+    }
     const parentId = extractParentId(issue.body);
     const childIds = extractChildIds(issue.body);
     const existingByMarker = markerId ? byId.get(markerId) : undefined;
@@ -470,6 +475,7 @@ export function importIssuesToWorkItems(
       conflicts: mergeResult.conflicts,
       conflictDetails: mergeResult.conflictDetails,
     },
+    markersFound,
   };
 }
 
