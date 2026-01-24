@@ -99,7 +99,8 @@ function displayItemTree(items: WorkItem[]): void {
 function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
-  console.log(`${prefix}${chalk.greenBright(item.title)} ${chalk.gray(`- ${item.id}`)}`);
+  // Show ID in gray immediately after the title (no hyphen separator)
+  console.log(`${prefix}${chalk.greenBright(item.title)} ${chalk.gray(item.id)}`);
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
