@@ -62,10 +62,18 @@ export interface SyncResult {
   conflictDetails: ConflictDetail[]; // Detailed conflict information
 }
 
+export interface MergeOptions {
+  defaultValueFields?: Array<keyof WorkItem>;
+  sameTimestampStrategy?: 'lexicographic' | 'local' | 'remote';
+}
+
 /**
  * Check if a value appears to be a default/empty value
  */
-function isDefaultValue(value: any, field: string): boolean {
+function isDefaultValue(value: any, field: string, options?: MergeOptions): boolean {
+  if (options?.defaultValueFields?.includes(field as keyof WorkItem)) {
+    return false;
+  }
   if (value === null || value === undefined || value === '') {
     return true;
   }
@@ -120,7 +128,8 @@ function mergeTags(a: string[] | undefined, b: string[] | undefined): string[] {
  */
 export function mergeWorkItems(
   localItems: WorkItem[],
-  remoteItems: WorkItem[]
+  remoteItems: WorkItem[],
+  options?: MergeOptions
 ): { merged: WorkItem[], conflicts: string[], conflictDetails: ConflictDetail[] } {
   const conflicts: string[] = [];
   const conflictDetails: ConflictDetail[] = [];
@@ -149,6 +158,10 @@ export function mergeWorkItems(
       }
       
       if (localUpdated === remoteUpdated) {
+        const sameTimestampStrategy = options?.sameTimestampStrategy ?? 'lexicographic';
+        const sameTimestampLabel = sameTimestampStrategy === 'lexicographic'
+          ? 'merged deterministically'
+          : `merged using ${sameTimestampStrategy} preference`;
         // Same timestamp but different content - merge deterministically and bump updatedAt.
         // This avoids "permanent divergence" across instances where the record differs but
         // timestamps prevent a clear winner.
@@ -178,8 +191,8 @@ export function mergeWorkItems(
             continue;
           }
 
-          const localIsDefault = isDefaultValue(localValue, field);
-          const remoteIsDefault = isDefaultValue(remoteValue, field);
+           const localIsDefault = isDefaultValue(localValue, field, options);
+           const remoteIsDefault = isDefaultValue(remoteValue, field, options);
 
           if (localIsDefault && !remoteIsDefault) {
             (merged as any)[field] = remoteValue;
@@ -202,11 +215,18 @@ export function mergeWorkItems(
               chosenSource: 'local',
               reason: 'local has value, remote is default'
             });
-          } else {
-            // Deterministic tie-breaker: choose lexicographically by serialized value.
+            } else {
             const localKey = stableValueKey(localValue);
             const remoteKey = stableValueKey(remoteValue);
-            if (remoteKey > localKey) {
+            const chooseRemote = sameTimestampStrategy === 'remote'
+              ? true
+              : sameTimestampStrategy === 'local'
+                ? false
+                : remoteKey > localKey;
+            const reason = sameTimestampStrategy === 'lexicographic'
+              ? 'deterministic tie-breaker (lexicographic)'
+              : `same-timestamp preference (${sameTimestampStrategy})`;
+            if (chooseRemote) {
               (merged as any)[field] = remoteValue;
               mergedFields.push(`${field} (tie-break: remote)`);
               fieldDetails.push({
@@ -215,7 +235,7 @@ export function mergeWorkItems(
                 remoteValue,
                 chosenValue: remoteValue,
                 chosenSource: 'remote',
-                reason: 'deterministic tie-breaker (lexicographic)'
+                reason
               });
             } else {
               mergedFields.push(`${field} (tie-break: local)`);
@@ -225,7 +245,7 @@ export function mergeWorkItems(
                 remoteValue,
                 chosenValue: localValue,
                 chosenSource: 'local',
-                reason: 'deterministic tie-breaker (lexicographic)'
+                reason
               });
             }
           }
@@ -236,7 +256,7 @@ export function mergeWorkItems(
         merged.createdAt = localItem.createdAt;
         mergedMap.set(remoteItem.id, merged);
 
-        conflicts.push(`${remoteItem.id}: Same updatedAt but different content - merged deterministically and bumped updatedAt`);
+        conflicts.push(`${remoteItem.id}: Same updatedAt but different content - ${sameTimestampLabel} and bumped updatedAt`);
         if (mergedFields.length > 0) {
           conflicts.push(`${remoteItem.id}: Merged fields [${mergedFields.join(', ')}]`);
         }
@@ -274,8 +294,8 @@ export function mergeWorkItems(
           
           if (!valuesEqual) {
             // Values differ - decide which to use
-            const localIsDefault = isDefaultValue(localValue, field);
-            const remoteIsDefault = isDefaultValue(remoteValue, field);
+            const localIsDefault = isDefaultValue(localValue, field, options);
+            const remoteIsDefault = isDefaultValue(remoteValue, field, options);
 
             if (field === 'tags' && Array.isArray(localValue) && Array.isArray(remoteValue)) {
               const mergedTags = mergeTags(localValue, remoteValue);

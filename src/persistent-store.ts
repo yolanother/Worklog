@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -79,7 +79,10 @@ export class SqlitePersistentStore {
         issueType TEXT NOT NULL,
         createdBy TEXT NOT NULL,
         deletedBy TEXT NOT NULL,
-        deleteReason TEXT NOT NULL
+        deleteReason TEXT NOT NULL,
+        githubIssueNumber INTEGER,
+        githubIssueId INTEGER,
+        githubIssueUpdatedAt TEXT
       )
     `);
 
@@ -99,6 +102,24 @@ export class SqlitePersistentStore {
       maybeAdd('createdBy');
       maybeAdd('deletedBy');
       maybeAdd('deleteReason');
+    }
+
+    if (existingVersion < 3) {
+      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
+      const existingCols = new Set(cols.map(c => String(c.name)));
+      const maybeAddNullable = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT`);
+        }
+      };
+      const maybeAddNullableInt = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} INTEGER`);
+        }
+      };
+      maybeAddNullableInt('githubIssueNumber');
+      maybeAddNullableInt('githubIssueId');
+      maybeAddNullable('githubIssueUpdatedAt');
     }
 
     // Create comments table
@@ -177,16 +198,11 @@ export class SqlitePersistentStore {
    * Save a work item
    */
   saveWorkItem(item: WorkItem): void {
-    if (this.verbose) {
-      // Route debug diagnostics to stderr so stdout remains JSON-clean for --json mode
-      console.error(`SqlitePersistentStore.saveWorkItem: saving workitem ${item.id} (status=${item.status})`);
-    }
-
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
-      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
@@ -201,7 +217,10 @@ export class SqlitePersistentStore {
         issueType = excluded.issueType,
         createdBy = excluded.createdBy,
         deletedBy = excluded.deletedBy,
-        deleteReason = excluded.deleteReason
+        deleteReason = excluded.deleteReason,
+        githubIssueNumber = excluded.githubIssueNumber,
+        githubIssueId = excluded.githubIssueId,
+        githubIssueUpdatedAt = excluded.githubIssueUpdatedAt
     `);
 
     stmt.run(
@@ -219,7 +238,10 @@ export class SqlitePersistentStore {
       item.issueType,
       item.createdBy,
       item.deletedBy,
-      item.deleteReason
+      item.deleteReason,
+      item.githubIssueNumber ?? null,
+      item.githubIssueId ?? null,
+      item.githubIssueUpdatedAt || null
     );
   }
 
@@ -275,12 +297,6 @@ export class SqlitePersistentStore {
    * Save a comment
    */
   saveComment(comment: Comment): void {
-    // Debug: log when saving a comment to help trace missing comments
-    if (this.verbose) {
-      // Send debug output to stderr to avoid contaminating JSON on stdout
-      console.error(`SqlitePersistentStore.saveComment: saving comment ${comment.id} for ${comment.workItemId} by ${comment.author}`);
-    }
-
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO comments 
       (id, workItemId, author, comment, createdAt, refs)
@@ -295,12 +311,6 @@ export class SqlitePersistentStore {
       comment.createdAt,
       JSON.stringify(comment.references)
     );
-    if (this.verbose) {
-      try {
-        const count = this.getAllComments().length;
-        console.error(`SqlitePersistentStore.saveComment: now total comments = ${count}`);
-      } catch (_) {}
-    }
   }
 
   /**
@@ -323,11 +333,7 @@ export class SqlitePersistentStore {
   getAllComments(): Comment[] {
     const stmt = this.db.prepare('SELECT * FROM comments');
     const rows = stmt.all() as any[];
-    const comments = rows.map(row => this.rowToComment(row));
-    if (this.verbose) {
-      console.error(`SqlitePersistentStore.getAllComments: returning ${comments.length} comments`);
-    }
-    return comments;
+    return rows.map(row => this.rowToComment(row));
   }
 
   /**
@@ -352,9 +358,6 @@ export class SqlitePersistentStore {
    * Clear all comments
    */
   clearComments(): void {
-    if (this.verbose) {
-      console.error('SqlitePersistentStore.clearComments: clearing all comments');
-    }
     this.db.prepare('DELETE FROM comments').run();
   }
 
@@ -408,6 +411,9 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        githubIssueNumber: row.githubIssueNumber ?? undefined,
+        githubIssueId: row.githubIssueId ?? undefined,
+        githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
       };
     } catch (error) {
       console.error(`Error parsing work item ${row.id}:`, error);
@@ -429,6 +435,9 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        githubIssueNumber: row.githubIssueNumber ?? undefined,
+        githubIssueId: row.githubIssueId ?? undefined,
+        githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
       };
     }
   }

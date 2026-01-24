@@ -15,6 +15,9 @@ import type {
 } from './cli-types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists, isInitialized, readInitSemaphore, writeInitSemaphore } from './config.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
+import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from './sync-defaults.js';
+import { getRepoFromGitRemote, normalizeGithubLabelPrefix } from './github.js';
+import { upsertIssuesFromWorkItems, importIssuesToWorkItems, GithubProgress } from './github-sync.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -251,7 +254,7 @@ function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): vo
       console.log(`   Remote updated: ${conflict.remoteUpdatedAt || 'unknown'}`);
     }
     
-    console.log(chalk.gray('   ─'.repeat(40)));
+    console.log();
     
     conflict.fields.forEach(field => {
       console.log(chalk.bold(`   Field: ${field.field}`));
@@ -289,9 +292,6 @@ function getPrefix(overridePrefix?: string): string {
 }
 
 // Default sync configuration
-const DEFAULT_GIT_REMOTE = 'origin';
-const DEFAULT_GIT_BRANCH = 'refs/worklog/data';
-
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
 const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
 
@@ -305,6 +305,29 @@ const WORKLOG_GITIGNORE_ENTRIES: string[] = [
   '.worklog/worklog-data.jsonl',
   '.worklog/tmp-worktree-*',
 ];
+
+function resolveGithubConfig(options: { repo?: string; labelPrefix?: string }) {
+  const config = loadConfig();
+  const repo = options.repo || config?.githubRepo || getRepoFromGitRemote();
+  if (!repo) {
+    throw new Error('GitHub repo not configured. Set githubRepo in config or use --repo.');
+  }
+  const labelPrefix = normalizeGithubLabelPrefix(options.labelPrefix || config?.githubLabelPrefix);
+  return { repo, labelPrefix };
+}
+
+function resolveGithubImportCreateNew(options: { createNew?: boolean }): boolean {
+  if (typeof options.createNew === 'boolean') {
+    return options.createNew;
+  }
+  const config = loadConfig();
+  return config?.githubImportCreateNew !== false;
+}
+
+const AUTO_SYNC_DEBOUNCE_MS = 500;
+let autoSyncTimer: NodeJS.Timeout | null = null;
+let autoSyncInFlight = false;
+let autoSyncPending = false;
 
 function fileHasLine(content: string, line: string): boolean {
   const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -452,6 +475,55 @@ function installPrePushHook(options: { silent: boolean }): { installed: boolean;
 const dataPath = getDefaultDataPath();
 let db: WorklogDatabase | null = null;
 
+function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
+  return {
+    gitRemote: config?.syncRemote || DEFAULT_GIT_REMOTE,
+    gitBranch: config?.syncBranch || DEFAULT_GIT_BRANCH,
+  };
+}
+
+function scheduleAutoSync(prefix?: string): void {
+  if (autoSyncTimer) {
+    clearTimeout(autoSyncTimer);
+  }
+  autoSyncTimer = setTimeout(() => {
+    autoSyncTimer = null;
+    void runAutoSync(prefix);
+  }, AUTO_SYNC_DEBOUNCE_MS);
+}
+
+async function runAutoSync(prefix?: string): Promise<void> {
+  if (autoSyncInFlight) {
+    autoSyncPending = true;
+    return;
+  }
+
+  autoSyncInFlight = true;
+  const config = loadConfig();
+  const defaults = getSyncDefaults(config);
+
+  try {
+    await performSync({
+      file: dataPath,
+      prefix,
+      gitRemote: defaults.gitRemote,
+      gitBranch: defaults.gitBranch,
+      push: true,
+      dryRun: false,
+      silent: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Auto-sync failed: ${message}`);
+  } finally {
+    autoSyncInFlight = false;
+    if (autoSyncPending) {
+      autoSyncPending = false;
+      scheduleAutoSync(prefix);
+    }
+  }
+}
+
 // Check if system is initialized and exit if not
 function requireInitialized(): void {
   if (!isInitialized()) {
@@ -482,6 +554,7 @@ function getDatabase(prefix?: string): WorklogDatabase {
   // Load config to get autoExport setting
   const config = loadConfig();
   const autoExport = config?.autoExport !== false; // Default to true for backwards compatibility
+  const autoSync = config?.autoSync === true;
   
   // Create new database instance with the prefix
   // The database will automatically:
@@ -492,7 +565,18 @@ function getDatabase(prefix?: string): WorklogDatabase {
   const isJsonMode = program.opts().json;
   const isVerbose = program.opts().verbose;
   const silent = isJsonMode || !isVerbose;
-  db = new WorklogDatabase(actualPrefix, undefined, undefined, autoExport, silent);
+  db = new WorklogDatabase(
+    actualPrefix,
+    undefined,
+    undefined,
+    autoExport,
+    silent,
+    autoSync,
+    () => {
+      scheduleAutoSync(actualPrefix);
+      return Promise.resolve();
+    }
+  );
   return db;
 }
 
@@ -535,7 +619,7 @@ async function performSync(options: {
   let remoteItems: WorkItem[] = [];
   let remoteComments: Comment[] = [];
 
-  const remoteContent = options.dryRun ? null : await getRemoteDataFileContent(options.file, gitTarget);
+  const remoteContent = await getRemoteDataFileContent(options.file, gitTarget);
   if (remoteContent) {
     const remoteData = importFromJsonlContent(remoteContent);
     remoteItems = remoteData.items;
@@ -623,8 +707,19 @@ async function performSync(options: {
   // Note: import() clears and replaces, which is correct here because
   // itemMergeResult.merged already contains the complete merged dataset
   // (all local items + all remote items, with conflicts resolved)
+  const config = loadConfig();
+  const autoSyncEnabled = config?.autoSync === true;
+  if (autoSyncEnabled) {
+    db.setAutoSync(false);
+  }
   db.import(itemMergeResult.merged);
   db.importComments(commentMergeResult.merged);
+  if (autoSyncEnabled) {
+    db.setAutoSync(true, () => {
+      scheduleAutoSync(options.prefix);
+      return Promise.resolve();
+    });
+  }
   
   if (!isJsonMode && !isSilent) {
     console.log('\nMerged data saved locally');
@@ -738,11 +833,12 @@ program
           console.log('Syncing database...');
           
           try {
+            const updatedDefaults = getSyncDefaults(updatedConfig);
             await performSync({
               file: dataPath,
               prefix: updatedConfig?.prefix,
-              gitRemote: DEFAULT_GIT_REMOTE,
-              gitBranch: DEFAULT_GIT_BRANCH,
+              gitRemote: updatedDefaults.gitRemote,
+              gitBranch: updatedDefaults.gitBranch,
               push: true,
               dryRun: false,
               silent: false
@@ -817,11 +913,12 @@ program
       }
       
       try {
+        const initDefaults = getSyncDefaults(config || undefined);
         await performSync({
           file: dataPath,
           prefix: config?.prefix,
-          gitRemote: DEFAULT_GIT_REMOTE,
-          gitBranch: DEFAULT_GIT_BRANCH,
+          gitRemote: initDefaults.gitRemote,
+          gitBranch: initDefaults.gitBranch,
           push: true,
           dryRun: false,
           silent: isJsonMode  // Silent in JSON mode to maintain clean JSON output
@@ -924,7 +1021,14 @@ program
         initializedAt: initInfo?.initializedAt || 'unknown',
         config: {
           projectName: config?.projectName,
-          prefix: config?.prefix
+          prefix: config?.prefix,
+          autoExport: config?.autoExport !== false,
+          autoSync: config?.autoSync === true,
+          syncRemote: config?.syncRemote,
+          syncBranch: config?.syncBranch,
+          githubRepo: config?.githubRepo,
+          githubLabelPrefix: config?.githubLabelPrefix,
+          githubImportCreateNew: config?.githubImportCreateNew !== false
         },
       database: {
           workItems: workItems.length,
@@ -944,6 +1048,15 @@ program
       console.log('Configuration:');
       console.log(`  Project: ${config?.projectName || 'unknown'}`);
       console.log(`  Prefix: ${config?.prefix || 'unknown'}`);
+      console.log(`  Auto-export: ${config?.autoExport !== false ? 'enabled' : 'disabled'}`);
+      console.log(`  Auto-sync: ${config?.autoSync ? 'enabled' : 'disabled'}`);
+      console.log(`  Sync remote: ${config?.syncRemote || DEFAULT_GIT_REMOTE}`);
+      console.log(`  Sync branch: ${config?.syncBranch || DEFAULT_GIT_BRANCH}`);
+      if (config?.githubRepo || config?.githubLabelPrefix) {
+        console.log(`  GitHub repo: ${config?.githubRepo || '(not set)'}`);
+        console.log(`  GitHub label prefix: ${config?.githubLabelPrefix || 'wl:'}`);
+        console.log(`  GitHub import create: ${config?.githubImportCreateNew !== false ? 'enabled' : 'disabled'}`);
+      }
       console.log();
       console.log('Database Summary:');
       console.log(`  Work Items: ${workItems.length}`);
@@ -1376,13 +1489,18 @@ program
   .action(async (options: SyncOptions) => {
     requireInitialized();
     const isJsonMode = program.opts().json;
+
+    const config = loadConfig();
+    const defaults = getSyncDefaults(config || undefined);
+    const gitRemote = options.gitRemote || defaults.gitRemote;
+    const gitBranch = options.gitBranch || defaults.gitBranch;
     
     try {
       await performSync({
         file: options.file || dataPath,
         prefix: options.prefix,
-        gitRemote: options.gitRemote || DEFAULT_GIT_REMOTE,
-        gitBranch: options.gitBranch || DEFAULT_GIT_BRANCH,
+        gitRemote,
+        gitBranch,
         push: options.push ?? true,  // Default to true if not specified
         dryRun: options.dryRun ?? false,
         silent: false
@@ -1399,6 +1517,199 @@ program
       process.exit(1);
     }
   });
+
+// GitHub Issue mirroring
+const githubCommand = program
+  .command('github')
+  .alias('gh')
+  .description('GitHub Issue sync commands');
+
+githubCommand
+  .command('push')
+  .description('Mirror work items to GitHub Issues')
+  .option('--repo <owner/name>', 'GitHub repo (owner/name)')
+  .option('--label-prefix <prefix>', 'Label prefix for Worklog labels (default: wl:)')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+    const isJsonMode = program.opts().json;
+    const isVerbose = program.opts().verbose;
+    let lastProgress = '';
+    let lastProgressLength = 0;
+
+    const renderProgress = (progress: GithubProgress) => {
+      if (isJsonMode || process.stdout.isTTY !== true) {
+        return;
+      }
+      const label = progress.phase === 'push'
+        ? 'Push'
+        : progress.phase === 'import'
+          ? 'Import'
+          : progress.phase === 'hierarchy'
+            ? 'Hierarchy'
+            : 'Close check';
+      const message = `${label}: ${progress.current}/${progress.total}`;
+      if (message === lastProgress) {
+        return;
+      }
+      lastProgress = message;
+      const padded = `${message} `.padEnd(lastProgressLength, ' ');
+      lastProgressLength = padded.length;
+      process.stdout.write(`\r${padded}`);
+      if (progress.current === progress.total) {
+        process.stdout.write('\n');
+        lastProgress = '';
+        lastProgressLength = 0;
+      }
+    };
+
+    try {
+      const githubConfig = resolveGithubConfig({ repo: options.repo, labelPrefix: options.labelPrefix });
+      const items = db.getAll();
+      const comments = db.getAllComments();
+
+      const { updatedItems, result, timing } = upsertIssuesFromWorkItems(items, comments, githubConfig, renderProgress);
+      if (updatedItems.length > 0) {
+        db.import(updatedItems);
+      }
+
+      if (isJsonMode) {
+        outputJson({ success: true, ...result, repo: githubConfig.repo });
+      } else {
+        console.log(`GitHub sync complete (${githubConfig.repo})`);
+        console.log(`  Created: ${result.created}`);
+        console.log(`  Updated: ${result.updated}`);
+        console.log(`  Skipped: ${result.skipped}`);
+        if ((result.commentsCreated || 0) > 0 || (result.commentsUpdated || 0) > 0) {
+          console.log(`  Comments created: ${result.commentsCreated || 0}`);
+          console.log(`  Comments updated: ${result.commentsUpdated || 0}`);
+        }
+        if (result.errors.length > 0) {
+          console.log(`  Errors: ${result.errors.length}`);
+          console.log('  Hint: re-run with --json to view error details');
+        }
+        if (isVerbose) {
+          console.log('  Timing breakdown:');
+          console.log(`    Total: ${(timing.totalMs / 1000).toFixed(2)}s`);
+          console.log(`    Issue upserts: ${(timing.upsertMs / 1000).toFixed(2)}s`);
+          console.log(`    Comment list: ${(timing.commentListMs / 1000).toFixed(2)}s`);
+          console.log(`    Comment upserts: ${(timing.commentUpsertMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy check: ${(timing.hierarchyCheckMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy link: ${(timing.hierarchyLinkMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);
+        }
+      }
+    } catch (error) {
+      outputError(`GitHub sync failed: ${(error as Error).message}`, { success: false, error: (error as Error).message });
+      process.exit(1);
+    }
+  });
+
+// GitHub Issue import
+githubCommand
+  .command('import')
+  .description('Import updates from GitHub Issues')
+  .option('--repo <owner/name>', 'GitHub repo (owner/name)')
+  .option('--label-prefix <prefix>', 'Label prefix for Worklog labels (default: wl:)')
+  .option('--since <iso>', 'Only import issues updated since ISO timestamp')
+  .option('--create-new', 'Create new work items for issues without markers')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+    const isJsonMode = program.opts().json;
+    let lastProgress = '';
+    let lastProgressLength = 0;
+
+    const renderProgress = (progress: GithubProgress) => {
+      if (isJsonMode || process.stdout.isTTY !== true) {
+        return;
+      }
+      const label = progress.phase === 'push'
+        ? 'Push'
+        : progress.phase === 'import'
+          ? 'Import'
+          : progress.phase === 'hierarchy'
+            ? 'Hierarchy'
+            : 'Close check';
+      const message = `${label}: ${progress.current}/${progress.total}`;
+      if (message === lastProgress) {
+        return;
+      }
+      lastProgress = message;
+      const padded = `${message} `.padEnd(lastProgressLength, ' ');
+      lastProgressLength = padded.length;
+      process.stdout.write(`\r${padded}`);
+      if (progress.current === progress.total) {
+        process.stdout.write('\n');
+        lastProgress = '';
+        lastProgressLength = 0;
+      }
+    };
+
+    try {
+      const githubConfig = resolveGithubConfig({ repo: options.repo, labelPrefix: options.labelPrefix });
+      const items = db.getAll();
+      const createNew = resolveGithubImportCreateNew({ createNew: options.createNew });
+      const { updatedItems, createdItems, issues, updatedIds, mergedItems, conflictDetails, markersFound } = importIssuesToWorkItems(items, githubConfig, {
+        since: options.since,
+        createNew,
+        generateId: () => db.generateWorkItemId(),
+        onProgress: renderProgress,
+      });
+
+      if (mergedItems.length > 0) {
+        db.import(mergedItems);
+      }
+
+      if (createNew && createdItems.length > 0) {
+        const { updatedItems: markedItems } = upsertIssuesFromWorkItems(mergedItems, db.getAllComments(), githubConfig, renderProgress);
+        if (markedItems.length > 0) {
+          db.import(markedItems);
+        }
+      }
+
+      if (isJsonMode) {
+        outputJson({
+          success: true,
+          repo: githubConfig.repo,
+          updated: updatedItems.length,
+          created: createdItems.length,
+          totalIssues: issues.length,
+          createNew,
+        });
+      } else {
+        const unchanged = Math.max(items.length - updatedIds.size, 0);
+        const totalItems = unchanged + updatedIds.size + createdItems.length;
+        const openIssues = issues.filter(issue => issue.state === 'open').length;
+        const closedIssues = issues.length - openIssues;
+        console.log(`GitHub import complete (${githubConfig.repo})`);
+        console.log(`  Work items added: ${createdItems.length}`);
+        console.log(`  Work items updated: ${updatedItems.length}`);
+        console.log(`  Work items unchanged: ${unchanged}`);
+        console.log(`  Issues scanned: ${issues.length} (open: ${openIssues}, closed: ${closedIssues}, worklog: ${markersFound})`);
+        console.log(`  Create new: ${createNew ? 'enabled' : 'disabled'}`);
+        console.log(`  Total work items: ${totalItems}`);
+        displayConflictDetails(
+          {
+            itemsAdded: createdItems.length,
+            itemsUpdated: updatedItems.length,
+            itemsUnchanged: unchanged,
+            commentsAdded: 0,
+            commentsUnchanged: 0,
+            conflicts: conflictDetails.conflicts,
+            conflictDetails: conflictDetails.conflictDetails,
+          },
+          mergedItems
+        );
+      }
+    } catch (error) {
+      outputError(`GitHub import failed: ${(error as Error).message}`, { success: false, error: (error as Error).message });
+      process.exit(1);
+    }
+  });
+
 
 // Comment commands
 const commentCommand = program.command('comment').description('Manage comments on work items');

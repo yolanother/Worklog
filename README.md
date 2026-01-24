@@ -12,6 +12,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Hierarchical Work Items**: Support for parent-child relationships
 - **Comments**: Add comments to work items with markdown support and references
 - **Multi-Project Support**: Configure custom prefixes for issue IDs per project
+- **Data Syncing**: Git-backed syncing and optional GitHub Issue mirroring
 
 ## Installation
 
@@ -60,6 +61,14 @@ wl init
 This will prompt you for:
 - **Project name**: A descriptive name for your project
 - **Issue ID prefix**: A short prefix for your issue IDs (e.g., WI, PROJ, TASK)
+- **Auto-sync**: Enable automatic git sync after changes (optional)
+
+Optional GitHub settings (edit `.worklog/config.yaml` manually):
+- `githubRepo`: `owner/name` for GitHub Issue mirroring
+- `githubLabelPrefix`: label prefix (default `wl:`)
+- `githubImportCreateNew`: create work items from unmarked issues (default `true`)
+
+See `DATA_SYNCING.md` for full sync workflow details (git-backed + GitHub Issues).
 
 The configuration is saved to `.worklog/config.yaml` as your local configuration.
 
@@ -115,13 +124,13 @@ Worklog uses a **dual-storage model** to combine the benefits of persistent data
 **On Write Operations** (create/update/delete):
 - Changes saved to database immediately
 - Database automatically exports current state to JSONL
-- JSONL file stays in sync with database
+- If auto-sync is enabled, Worklog pushes updates to the git data ref automatically
 
 ### Source of Truth Model
 
 - **Database**: Runtime source of truth for CLI and API operations
 - **JSONL**: Import/export boundary for Git workflows
-- Both stay synchronized automatically
+- If auto-sync is enabled, the git JSONL ref acts as the team-wide canonical source
 
 ### Git Workflow
 
@@ -261,6 +270,24 @@ worklog sync
 worklog sync --dry-run        # Preview changes without applying
 worklog sync --no-push        # Pull and merge but don't push
 worklog sync -f custom.jsonl  # Sync a different file
+
+# Mirror work items to GitHub Issues
+worklog github push --repo owner/name
+
+# Shorthand
+worklog gh push --repo owner/name
+
+# Import updates from GitHub Issues (only items with worklog markers)
+worklog github import --repo owner/name --since 2024-01-01T00:00:00Z
+
+# Create new Worklog items from GitHub Issues and push markers back
+worklog github import --repo owner/name --create-new
+
+Note: GitHub syncs can be slow when there are many changes. For best performance, run imports and pushes regularly (some teams set up a cron job) to keep each sync small.
+
+# Enable auto-sync via config defaults
+# .worklog/config.defaults.yaml
+# autoSync: true
 
 # Using the short alias 'wl'
 wl list                       # Same as 'worklog list'

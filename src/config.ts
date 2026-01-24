@@ -204,7 +204,17 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
     printHeading('Current Configuration');
     console.log(`  Project: ${existingConfig.projectName}`);
     console.log(`  Prefix: ${existingConfig.prefix}`);
-    console.log(`  Auto-export: ${existingConfig.autoExport !== false ? 'enabled' : 'disabled'}\n`);
+    console.log(`  Auto-export: ${existingConfig.autoExport !== false ? 'enabled' : 'disabled'}`);
+    console.log(`  Auto-sync: ${existingConfig.autoSync ? 'enabled' : 'disabled'}\n`);
+    if (existingConfig.syncRemote || existingConfig.syncBranch) {
+      console.log(`  Sync remote: ${existingConfig.syncRemote || '(default)'}`);
+      console.log(`  Sync branch: ${existingConfig.syncBranch || '(default)'}\n`);
+    }
+    if (existingConfig.githubRepo || existingConfig.githubLabelPrefix || existingConfig.githubImportCreateNew !== undefined) {
+      console.log(`  GitHub repo: ${existingConfig.githubRepo || '(not set)'}`);
+      console.log(`  GitHub label prefix: ${existingConfig.githubLabelPrefix || '(default)'}`);
+      console.log(`  GitHub import create: ${existingConfig.githubImportCreateNew !== false ? 'enabled' : 'disabled'}\n`);
+    }
 
     const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
     
@@ -245,6 +255,18 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
     autoExport = autoExportInput.toLowerCase() !== 'n' && autoExportInput.toLowerCase() !== 'no';
   }
 
+  const currentAutoSync = existingConfig?.autoSync === true ? 'Y' : 'n';
+  const autoSyncPrompt = existingConfig
+    ? `Auto-sync data to git after changes? (y/N) [${currentAutoSync}]: `
+    : 'Auto-sync data to git after changes? (y/N) [n]: ';
+  const autoSyncInput = await prompt(autoSyncPrompt);
+  let autoSync = false;
+  if (autoSyncInput.trim() === '') {
+    autoSync = existingConfig?.autoSync === true;
+  } else {
+    autoSync = autoSyncInput.toLowerCase() === 'y' || autoSyncInput.toLowerCase() === 'yes';
+  }
+
   if (!projectName || !prefix) {
     throw new Error('Project name and prefix are required');
   }
@@ -257,8 +279,25 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   const config: WorklogConfig = {
     projectName,
     prefix: prefix.toUpperCase(),
-    autoExport
+    autoExport,
+    autoSync,
   };
+
+  if (existingConfig?.syncRemote) {
+    config.syncRemote = existingConfig.syncRemote;
+  }
+  if (existingConfig?.syncBranch) {
+    config.syncBranch = existingConfig.syncBranch;
+  }
+  if (existingConfig?.githubRepo) {
+    config.githubRepo = existingConfig.githubRepo;
+  }
+  if (existingConfig?.githubLabelPrefix) {
+    config.githubLabelPrefix = existingConfig.githubLabelPrefix;
+  }
+  if (existingConfig?.githubImportCreateNew !== undefined) {
+    config.githubImportCreateNew = existingConfig.githubImportCreateNew;
+  }
 
   saveConfig(config);
   printHeading('Saved Configuration');
@@ -266,6 +305,7 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   console.log(`Project:  ${config.projectName}`);
   console.log(`Prefix:   ${config.prefix}`);
   console.log(`Export:   ${config.autoExport ? 'enabled' : 'disabled'}`);
+  console.log(`Sync:     ${config.autoSync ? 'enabled' : 'disabled'}`);
 
   return config;
 }

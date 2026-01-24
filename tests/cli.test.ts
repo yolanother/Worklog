@@ -446,6 +446,11 @@ describe('CLI Integration Tests', () => {
       expect(result.config).toBeDefined();
       expect(result.config.projectName).toBe('Test Project');
       expect(result.config.prefix).toBe('TEST');
+      expect(result.config.autoExport).toBe(true);
+      expect(result.config.autoSync).toBe(false);
+      expect(result.config.githubRepo).toBeUndefined();
+      expect(result.config.githubLabelPrefix).toBeUndefined();
+      expect(result.config.githubImportCreateNew).toBe(true);
       expect(result.database).toBeDefined();
       expect(result.database.workItems).toBe(0);
       expect(result.database.comments).toBe(0);
