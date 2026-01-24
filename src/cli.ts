@@ -100,7 +100,7 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
   console.log(`${prefix}${chalk.greenBright(item.title)} ${chalk.bold(`(${item.id})`)}`);
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
-  console.log(`${detailIndent}Priority: ${item.priority}`);
+  console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
   if (item.assignee) console.log(`${detailIndent}Assignee: ${item.assignee}`);
   if (item.tags.length > 0) console.log(`${detailIndent}Tags: ${item.tags.join(', ')}`);
   
