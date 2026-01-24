@@ -197,13 +197,20 @@ export function humanFormatComment(comment: Comment, format?: string): string {
 }
 
 // Display detailed conflict information with color coding
-export function displayConflictDetails(result: SyncResult, mergedItems: WorkItem[]): void {
+export function displayConflictDetails(
+  result: SyncResult,
+  mergedItems: WorkItem[],
+  options?: { repoUrl?: string }
+): void {
   if (result.conflictDetails.length === 0) {
     console.log('\n' + chalk.green('✓ No conflicts detected'));
     return;
   }
 
   console.log('\n' + chalk.bold('Conflict Resolution Details:'));
+  if (options?.repoUrl) {
+    console.log(chalk.gray(options.repoUrl));
+  }
   console.log(chalk.gray('━'.repeat(80)));
   
   const itemsById = new Map(mergedItems.map(item => [item.id, item]));

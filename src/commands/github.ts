@@ -219,7 +219,8 @@ export default function register(ctx: PluginContext): void {
               conflicts: conflictDetails.conflicts,
               conflictDetails: conflictDetails.conflictDetails,
             },
-            mergedItems
+            mergedItems,
+            { repoUrl: `https://github.com/${githubConfig.repo}` }
           );
         }
       } catch (error) {
