@@ -433,6 +433,7 @@ The `examples/` directory contains complete, working plugin examples:
 
 ### [stats-plugin.mjs](examples/stats-plugin.mjs)
 Shows custom work item statistics with database access, JSON mode support, and formatted output.
+Note: running `wl init` will automatically install `examples/stats-plugin.mjs` into your project's `.worklog/plugins/` directory if it is not already present.
 
 ### [bulk-tag-plugin.mjs](examples/bulk-tag-plugin.mjs)
 Demonstrates bulk operations - adding tags to multiple work items filtered by status.
