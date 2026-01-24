@@ -36,7 +36,9 @@ export default function register(ctx: PluginContext): void {
           console.log(`Plugin directory: ${pluginDir}`);
           console.log('Status: Directory does not exist');
           console.log('\nNo plugins configured.');
-          console.log(`To add plugins, create ${pluginDir} and add .js or .mjs files.`);
+          console.log(
+            `\nTo add plugins, create ${pluginDir} and add .js or .mjs files. See https://github.com/rgardler-msft/Worklog/blob/main/PLUGIN_GUIDE.md for details.`
+          );
         }
         return;
       }

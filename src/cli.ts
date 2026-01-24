@@ -79,6 +79,26 @@ const builtInCommands = [
   pluginsCommand
 ];
 
+const builtInCommandNames = new Set([
+  'init',
+  'status',
+  'create',
+  'list',
+  'show',
+  'update',
+  'delete',
+  'export',
+  'import',
+  'next',
+  'in-progress',
+  'sync',
+  'github',
+  'comment',
+  'close',
+  'recent',
+  'plugins'
+]);
+
 // Register each built-in command
 for (const registerFn of builtInCommands) {
   try {
@@ -103,11 +123,12 @@ program.configureHelp({
     const description = cmd.description() || '';
 
     // Build groups and mapping of command name -> group
-    // Order: Issue Management, Status, Data, Other
+    // Order: Issue Management, Status, Team, Plugins, Other
     const groupsDef: { name: string; names: string[] }[] = [
       { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete'] },
       { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
       { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
+      { name: 'Plugins', names: [] },
     ];
 
     const visible = helper.visibleCommands(cmd) as any[];
@@ -116,14 +137,28 @@ program.configureHelp({
     for (const g of groupsDef) groups.set(g.name, []);
     groups.set('Other', []);
 
+    let helpCommand: any | null = null;
     for (const c of visible) {
       const name = c.name();
+      if (name === 'help') {
+        helpCommand = c;
+        continue;
+      }
+      if (name === 'plugins' || !builtInCommandNames.has(name)) {
+        groups.get('Plugins')!.push(c);
+        continue;
+      }
+
       const matched = groupsDef.find(g => g.names.includes(name));
       if (matched) {
         groups.get(matched.name)!.push(c);
       } else {
         groups.get('Other')!.push(c);
       }
+    }
+
+    if (helpCommand) {
+      groups.get('Other')!.push(helpCommand);
     }
 
     // Compose help text
