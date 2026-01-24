@@ -22,6 +22,7 @@ export default function register(ctx: PluginContext): void {
 
   commentCommand
     .command('create <workItemId>')
+    .alias('add')
     .description('Create a comment on a work item')
     .requiredOption('-a, --author <author>', 'Author of the comment')
     .requiredOption('-c, --comment <comment>', 'Comment text (markdown supported)')
