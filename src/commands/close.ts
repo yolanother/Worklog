@@ -34,7 +34,7 @@ export default function register(ctx: PluginContext): void {
             const comment = db.createComment({
               workItemId: id,
               author: options.author || 'worklog',
-              comment: options.reason,
+              comment: `Closed with reason: ${options.reason}`,
               references: []
             });
             if (!comment) {
