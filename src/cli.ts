@@ -899,18 +899,12 @@ program
         console.log('No work items found');
         return;
       }
-      
+
+      // Use the same tree display as `show` and `in-progress`
       console.log(`Found ${items.length} work item(s):\n`);
-      items.forEach(item => {
-        console.log(`[${item.id}] ${item.title}`);
-        console.log(`  Status: ${item.status} | Priority: ${item.priority}`);
-        if (item.parentId) console.log(`  Parent: ${item.parentId}`);
-        if (item.assignee) console.log(`  Assignee: ${item.assignee}`);
-        if (item.stage) console.log(`  Stage: ${item.stage}`);
-        if (item.tags.length > 0) console.log(`  Tags: ${item.tags.join(', ')}`);
-        if (item.description) console.log(`  ${item.description}`);
-        console.log();
-      });
+      console.log(''); // Add blank line before tree
+      displayItemTree(items);
+      console.log(''); // Add blank line after tree
     }
   });
 
