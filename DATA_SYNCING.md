@@ -80,6 +80,18 @@ Worklog can mirror items to GitHub Issues and import updates back. This GitHub s
 
 Worklog uses `wl:status:<status>` labels to represent status. Only one status label is kept on an issue at a time.
 
+### Field Label Mapping
+
+Worklog syncs work item fields to GitHub as labels with the configured prefix (default `wl:`):
+
+- **Status**: `wl:status:<status>` (e.g., `wl:status:open`, `wl:status:in-progress`)
+- **Priority**: `wl:priority:<priority>` (e.g., `wl:priority:high`, `wl:priority:medium`)
+- **Risk**: `wl:risk:<level>` (e.g., `wl:risk:high`, `wl:risk:medium`, `wl:risk:low`)
+- **Effort**: `wl:effort:<level>` (e.g., `wl:effort:high`, `wl:effort:medium`, `wl:effort:low`)
+- **Stage**: `wl:stage:<stage>` (if set)
+- **Issue Type**: `wl:type:<issueType>` (if set)
+- **Tags**: `wl:tag:<tag>` for each tag
+
 ### Hierarchy (Parent/Child)
 
 - Worklog uses GitHub's sub-issue relationships to keep parent/child structure in sync.

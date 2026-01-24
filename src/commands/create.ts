@@ -4,7 +4,7 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { CreateOptions } from '../cli-types.js';
-import type { WorkItemStatus, WorkItemPriority } from '../types.js';
+import type { WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
@@ -21,6 +21,8 @@ export default function register(ctx: PluginContext): void {
     .option('--tags <tags>', 'Comma-separated list of tags')
     .option('-a, --assignee <assignee>', 'Assignee of the work item')
     .option('--stage <stage>', 'Stage of the work item in the workflow')
+    .option('--risk <risk>', 'Risk level (low, medium, high)')
+    .option('--effort <effort>', 'Effort level (low, medium, high)')
     .option('--issue-type <issueType>', 'Issue type (interoperability field)')
     .option('--created-by <createdBy>', 'Created by (interoperability field)')
     .option('--deleted-by <deletedBy>', 'Deleted by (interoperability field)')
@@ -39,6 +41,8 @@ export default function register(ctx: PluginContext): void {
         tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
         assignee: options.assignee || '',
         stage: options.stage || '',
+        risk: (options.risk || '') as WorkItemRiskLevel | '',
+        effort: (options.effort || '') as WorkItemEffortLevel | '',
         issueType: options.issueType || '',
         createdBy: options.createdBy || '',
         deletedBy: options.deletedBy || '',

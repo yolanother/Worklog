@@ -4,7 +4,7 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { UpdateOptions } from '../cli-types.js';
-import type { UpdateWorkItemInput, WorkItemStatus, WorkItemPriority } from '../types.js';
+import type { UpdateWorkItemInput, WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
@@ -21,6 +21,8 @@ export default function register(ctx: PluginContext): void {
     .option('--tags <tags>', 'New tags (comma-separated)')
     .option('-a, --assignee <assignee>', 'New assignee')
     .option('--stage <stage>', 'New stage')
+    .option('--risk <risk>', 'New risk level (low, medium, high)')
+    .option('--effort <effort>', 'New effort level (low, medium, high)')
     .option('--issue-type <issueType>', 'New issue type (interoperability field)')
     .option('--created-by <createdBy>', 'New created by (interoperability field)')
     .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
@@ -39,6 +41,8 @@ export default function register(ctx: PluginContext): void {
       if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
       if (options.assignee !== undefined) updates.assignee = options.assignee;
       if (options.stage !== undefined) updates.stage = options.stage;
+      if (options.risk !== undefined) updates.risk = options.risk as WorkItemRiskLevel | '';
+      if (options.effort !== undefined) updates.effort = options.effort as WorkItemEffortLevel | '';
       if (options.issueType !== undefined) updates.issueType = options.issueType;
       if (options.createdBy !== undefined) updates.createdBy = options.createdBy;
       if (options.deletedBy !== undefined) updates.deletedBy = options.deletedBy;

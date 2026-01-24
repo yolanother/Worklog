@@ -74,6 +74,8 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
+  if (item.risk) console.log(`${detailIndent}Risk: ${item.risk}`);
+  if (item.effort) console.log(`${detailIndent}Effort: ${item.effort}`);
   if (item.assignee) console.log(`${detailIndent}Assignee: ${item.assignee}`);
   if (item.tags.length > 0) console.log(`${detailIndent}Tags: ${item.tags.join(', ')}`);
   
@@ -109,6 +111,8 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     lines.push(idLine);
     lines.push(titleLine);
     lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    if (item.risk) lines.push(`Risk: ${item.risk}`);
+    if (item.effort) lines.push(`Effort: ${item.effort}`);
     if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
     if (item.parentId) lines.push(`Parent: ${item.parentId}`);
     if (item.description) lines.push(`Description: ${item.description}`);
@@ -122,6 +126,8 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     ['ID', chalk.gray(item.id)],
     ['Status', `${item.status} | Priority: ${item.priority}`]
   ];
+  if (item.risk) frontmatter.push(['Risk', item.risk]);
+  if (item.effort) frontmatter.push(['Effort', item.effort]);
   if (item.assignee) frontmatter.push(['Assignee', item.assignee]);
   if (item.parentId) frontmatter.push(['Parent', item.parentId]);
   if (item.tags && item.tags.length > 0) frontmatter.push(['Tags', item.tags.join(', ')]);

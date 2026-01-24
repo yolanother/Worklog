@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -122,6 +122,18 @@ export class SqlitePersistentStore {
       maybeAddNullable('githubIssueUpdatedAt');
     }
 
+    if (existingVersion < 4) {
+      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
+      const existingCols = new Set(cols.map(c => String(c.name)));
+      const maybeAdd = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+        }
+      };
+      maybeAdd('risk');
+      maybeAdd('effort');
+    }
+
     // Create comments table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS comments (
@@ -201,8 +213,8 @@ export class SqlitePersistentStore {
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
-      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, risk, effort, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
@@ -218,6 +230,8 @@ export class SqlitePersistentStore {
         createdBy = excluded.createdBy,
         deletedBy = excluded.deletedBy,
         deleteReason = excluded.deleteReason,
+        risk = excluded.risk,
+        effort = excluded.effort,
         githubIssueNumber = excluded.githubIssueNumber,
         githubIssueId = excluded.githubIssueId,
         githubIssueUpdatedAt = excluded.githubIssueUpdatedAt
@@ -239,6 +253,8 @@ export class SqlitePersistentStore {
       item.createdBy,
       item.deletedBy,
       item.deleteReason,
+      item.risk,
+      item.effort,
       item.githubIssueNumber ?? null,
       item.githubIssueId ?? null,
       item.githubIssueUpdatedAt || null
@@ -411,6 +427,8 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        risk: row.risk || '',
+        effort: row.effort || '',
         githubIssueNumber: row.githubIssueNumber ?? undefined,
         githubIssueId: row.githubIssueId ?? undefined,
         githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
@@ -435,6 +453,8 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        risk: row.risk || '',
+        effort: row.effort || '',
         githubIssueNumber: row.githubIssueNumber ?? undefined,
         githubIssueId: row.githubIssueId ?? undefined,
         githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
