@@ -787,6 +787,10 @@ program
     const workItems = db.getAll();
     const comments = db.getAllComments();
     const config = loadConfig();
+    // Compute open vs closed counts
+    const closedCount = workItems.filter(i => i.status === 'completed').length;
+    const deletedCount = workItems.filter(i => i.status === 'deleted').length;
+    const openCount = workItems.length - closedCount - deletedCount;
     
     if (isJsonMode) {
       outputJson({
@@ -798,11 +802,14 @@ program
           projectName: config?.projectName,
           prefix: config?.prefix
         },
-        database: {
+      database: {
           workItems: workItems.length,
-          comments: comments.length
+          comments: comments.length,
+          open: openCount,
+          closed: closedCount,
+          deleted: deletedCount
         }
-      });
+    });
     } else {
       console.log('Worklog System Status');
       console.log('=====================\n');
@@ -816,7 +823,10 @@ program
       console.log();
       console.log('Database Summary:');
       console.log(`  Work Items: ${workItems.length}`);
-      console.log(`  Comments: ${comments.length}`);
+      console.log(`  Open:       ${openCount}`);
+      console.log(`  Closed:     ${closedCount}`);
+      if (deletedCount > 0) console.log(`  Deleted:    ${deletedCount}`);
+      console.log(`  Comments:   ${comments.length}`);
     }
   });
 
