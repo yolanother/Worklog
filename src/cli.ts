@@ -99,8 +99,8 @@ function displayItemTree(items: WorkItem[]): void {
 function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   // Display the current item
   const prefix = indent + (isLast ? '└── ' : '├── ');
-  // Show ID in gray immediately after the title (no hyphen separator)
-  console.log(`${prefix}${chalk.greenBright(item.title)} ${chalk.gray(item.id)}`);
+  // Show ID in gray immediately after the title, separated by a hyphen
+  console.log(`${prefix}${chalk.greenBright(item.title)} - ${chalk.gray(item.id)}`);
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
   console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
@@ -952,6 +952,8 @@ program
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
       const result: any = { success: true, workItem: item };
+      // Include comments for this work item in JSON output so close reasons are visible
+      result.comments = db.getCommentsForWorkItem(id);
       if (options.children) {
         const children = db.getChildren(id);
         result.children = children;
@@ -968,6 +970,20 @@ program
       console.log(''); // Add blank line before tree
       displayItemTree(itemsToDisplay);
       console.log(''); // Add blank line after tree
+
+      // Show comments for this work item so close reasons stored as comments are visible
+      const comments = db.getCommentsForWorkItem(id);
+      if (comments.length > 0) {
+        console.log('Comments:');
+        comments.forEach(c => {
+          console.log(`[${c.id}] by ${c.author} at ${c.createdAt}`);
+          console.log(`  ${c.comment}`);
+          if (c.references.length > 0) {
+            console.log(`  References: ${c.references.join(', ')}`);
+          }
+          console.log('');
+        });
+      }
     }
   });
 
@@ -1254,6 +1270,77 @@ commentCommand
       console.log('Created comment:');
       console.log(JSON.stringify(comment, null, 2));
     }
+  });
+
+// Close command - create a comment with the reason and mark item(s) completed
+program
+  .command('close')
+  .description('Close one or more work items and record a close reason as a comment')
+  .argument('<ids...>', 'Work item id(s) to close')
+  .option('-r, --reason <reason>', 'Reason for closing (stored as a comment)', '')
+  .option('-a, --author <author>', 'Author name for the close comment', 'worklog')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((ids: string[], options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+    const isJsonMode = program.opts().json;
+
+    const results: Array<{ id: string; success: boolean; error?: string }> = [];
+
+    for (const id of ids) {
+      const item = db.get(id);
+      if (!item) {
+        results.push({ id, success: false, error: 'Work item not found' });
+        continue;
+      }
+
+      // If a reason was provided, store it as an immutable comment
+      if (options.reason && options.reason.trim() !== '') {
+        try {
+          const comment = db.createComment({
+            workItemId: id,
+            author: options.author || 'worklog',
+            comment: options.reason,
+            references: []
+          });
+          if (!comment) {
+            // Shouldn't happen because we checked existence, but handle defensively
+            results.push({ id, success: false, error: 'Failed to create comment' });
+            continue;
+          }
+        } catch (err) {
+          results.push({ id, success: false, error: `Failed to create comment: ${(err as Error).message}` });
+          continue;
+        }
+      }
+
+      // Mark the item completed
+      try {
+        const updated = db.update(id, { status: 'completed' });
+        if (!updated) {
+          results.push({ id, success: false, error: 'Failed to update status' });
+          continue;
+        }
+        results.push({ id, success: true });
+      } catch (err) {
+        results.push({ id, success: false, error: (err as Error).message });
+      }
+    }
+
+    // Output results
+    if (isJsonMode) {
+      outputJson({ success: results.every(r => r.success), results });
+    } else {
+      for (const r of results) {
+        if (r.success) {
+          console.log(`Closed ${r.id}`);
+        } else {
+          console.error(`Failed to close ${r.id}: ${r.error}`);
+        }
+      }
+    }
+    // Exit non-zero if any failed
+    if (!results.every(r => r.success)) process.exit(1);
   });
 
 // List comments for a work item
