@@ -959,17 +959,17 @@ describe('CLI Integration Tests', () => {
       expect(result.workItems[0].assignee).toBe('alice');
     });
 
-    it('should show output in new format Title (ID)', async () => {
+    it('should show output in new format Title - ID', async () => {
       const { stdout: createStdout } = await execAsync(`tsx ${cliPath} --json create -t "Test Task" -s in-progress`);
       const created = JSON.parse(createStdout);
       const itemId = created.workItem.id;
       
       const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
       
-      // Should show "Test Task (ID)" format
+      // Should show "Test Task - ID" format (not "Test Task (ID)")
       expect(stdout).toContain('Test Task');
-      expect(stdout).toContain(`(${itemId})`);
-      expect(stdout).not.toMatch(new RegExp(`${itemId}\\s+Test Task`)); // Should not have "ID Title" format
+      expect(stdout).toContain(`- ${itemId}`);
+      expect(stdout).not.toContain(`(${itemId})`); // Should not have parentheses around ID
     });
   });
 });
