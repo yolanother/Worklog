@@ -1359,4 +1359,74 @@ commentCommand
     }
   });
 
+// Recent command - list most recently changed issues
+program
+  .command('recent')
+  .description('List most recently changed work items')
+  .option('-n, --number <n>', 'Number of recent items to show', '3')
+  .option('-c, --children', 'Also show children')
+  .option('--prefix <prefix>', 'Override the default prefix')
+  .action((options) => {
+    requireInitialized();
+    const db = getDatabase(options.prefix);
+
+    // Parse number
+    let count = 3;
+    const parsed = parseInt(options.number || '3', 10);
+    if (!Number.isNaN(parsed) && parsed > 0) count = parsed;
+
+    // Get all non-deleted items
+    const all = db.getAll().filter(i => i.status !== 'deleted');
+
+    // Sort by updatedAt descending (most recent first)
+    all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    const selected = all.slice(0, count);
+
+    const isJsonMode = program.opts().json;
+    if (isJsonMode) {
+      let itemsToOutput: any[] = selected.slice();
+      if (options.children) {
+        const seen = new Set(itemsToOutput.map(i => i.id));
+        for (const item of selected) {
+          const desc = db.getDescendants(item.id);
+          for (const d of desc) {
+            if (!seen.has(d.id)) {
+              seen.add(d.id);
+              itemsToOutput.push(d);
+            }
+          }
+        }
+      }
+      outputJson({ success: true, count: selected.length, workItems: itemsToOutput });
+      return;
+    }
+
+    if (selected.length === 0) {
+      console.log('No recent work items found');
+      return;
+    }
+
+    console.log(`\nFound ${selected.length} recent work item(s):\n`);
+
+    // Prepare items for tree display
+    let itemsToDisplay: WorkItem[] = selected.slice();
+    if (options.children) {
+      const seen = new Set(itemsToDisplay.map(i => i.id));
+      for (const item of selected) {
+        const desc = db.getDescendants(item.id);
+        for (const d of desc) {
+          if (!seen.has(d.id)) {
+            seen.add(d.id);
+            itemsToDisplay.push(d);
+          }
+        }
+      }
+    }
+
+    console.log('');
+    displayItemTree(itemsToDisplay);
+    console.log('');
+  });
+
 program.parse();
