@@ -939,17 +939,16 @@ program
       }
       outputJson(result);
     } else {
-      console.log(JSON.stringify(item, null, 2));
-      
+      // Display in tree format
+      const itemsToDisplay = [item];
       if (options.children) {
-        const children = db.getChildren(id);
-        if (children.length > 0) {
-          console.log('\nChildren:');
-          children.forEach(child => {
-            console.log(`  [${child.id}] ${child.title} (${child.status})`);
-          });
-        }
+        const descendants = db.getDescendants(id);
+        itemsToDisplay.push(...descendants);
       }
+      
+      console.log(''); // Add blank line before tree
+      displayItemTree(itemsToDisplay);
+      console.log(''); // Add blank line after tree
     }
   });
 

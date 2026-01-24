@@ -167,6 +167,37 @@ describe('CLI Integration Tests', () => {
         expect(result.success).toBe(false);
       }
     });
+
+    it('should display work item in tree format in non-JSON mode', async () => {
+      const { stdout } = await execAsync(`tsx ${cliPath} show ${workItemId}`);
+      
+      // Should show tree format with item title and ID
+      expect(stdout).toContain('Test task');
+      expect(stdout).toContain(workItemId);
+      // Should have tree structure characters
+      expect(stdout).toContain('└──');
+    });
+
+    it('should display work item with children in tree format in non-JSON mode', async () => {
+      // Create children
+      const { stdout: child1Stdout } = await execAsync(`tsx ${cliPath} --json create -t "Child 1" -P ${workItemId} -p high`);
+      const child1 = JSON.parse(child1Stdout);
+      await execAsync(`tsx ${cliPath} create -t "Child 2" -P ${workItemId} -p low`);
+      
+      // Create grandchild
+      await execAsync(`tsx ${cliPath} create -t "Grandchild" -P ${child1.workItem.id}`);
+      
+      const { stdout } = await execAsync(`tsx ${cliPath} show ${workItemId} --children`);
+      
+      // Should show parent and all descendants in tree format
+      expect(stdout).toContain('Test task');
+      expect(stdout).toContain('Child 1');
+      expect(stdout).toContain('Child 2');
+      expect(stdout).toContain('Grandchild');
+      // Should have tree structure with nested items
+      expect(stdout).toContain('├──');
+      expect(stdout).toContain('│');
+    });
   });
 
   describe('update command', () => {
