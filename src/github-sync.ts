@@ -1,4 +1,5 @@
 import { WorkItem, Comment, WorkItemRiskLevel, WorkItemEffortLevel } from './types.js';
+import chalk from 'chalk';
 import {
   GithubConfig,
   GithubIssueRecord,
@@ -531,7 +532,26 @@ export function importIssuesToWorkItems(
     const childIssueNumbers = hierarchy?.childIssueNumbers ?? extractChildIssueNumbers(issue.body);
 
     const existingMeta = issueMetaById.get(remoteItem.id);
-    if (!existingMeta || shouldReplaceRemote(existingMeta.updatedAt, issue.updatedAt)) {
+    const shouldReplace = existingMeta
+      ? shouldReplaceRemote(existingMeta.updatedAt, issue.updatedAt)
+      : true;
+    if (existingMeta) {
+      const removedIssueNumber = shouldReplace ? existingMeta.number : issue.number;
+      const removedIssueUrl = `https://github.com/${config.repo}/issues/${removedIssueNumber}`;
+      console.error(
+        chalk.red(
+          `Duplicate Worklog marker detected for ${remoteItem.id}. `
+          + `Duplicates should not occur. Ignoring ${removedIssueUrl} during sync. `
+          + 'Remove the duplicate from GitHub after confirming it has no additional content of value.'
+        )
+      );
+      if (!shouldReplace) {
+        seenIssueNumbers.add(issue.number);
+        processed += 1;
+        continue;
+      }
+    }
+    if (shouldReplace) {
       remoteItemsById.set(remoteItem.id, remoteItem);
       issueMetaById.set(remoteItem.id, {
         number: issue.number,
