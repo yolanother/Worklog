@@ -7,6 +7,12 @@ import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
+import type {
+  InitOptions, StatusOptions, CreateOptions, ListOptions, ShowOptions, UpdateOptions,
+  ExportOptions, ImportOptions, NextOptions, InProgressOptions, SyncOptions,
+  CommentCreateOptions, CommentListOptions, CommentShowOptions, CommentUpdateOptions, CommentDeleteOptions,
+  RecentOptions, CloseOptions, DeleteOptions
+} from './cli-types.js';
 import { initConfig, loadConfig, getDefaultPrefix, configExists, isInitialized, readInitSemaphore, writeInitSemaphore } from './config.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, SyncResult, GitTarget } from './sync.js';
 import * as fs from 'fs';
@@ -14,7 +20,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 
-// Generic CLI options bag (explicit any to avoid implicit-any diagnostics while keeping flexible)
+// NOTE: We keep a very small escape hatch for code that still expects any-shaped options
 type CLIOptions = { [key: string]: any };
 
 const WORKLOG_VERSION = '0.0.1';
@@ -691,7 +697,7 @@ program.hook('preAction', () => {
 program
   .command('init')
   .description('Initialize worklog configuration')
-  .action(async (_options: CLIOptions) => {
+  .action(async (_options: InitOptions) => {
     const isJsonMode = program.opts().json;
     
     if (configExists()) {
@@ -880,7 +886,7 @@ program
   .command('status')
   .description('Show Worklog system status and database summary')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options: CLIOptions) => {
+  .action((options: StatusOptions) => {
     const isJsonMode = program.opts().json;
     
     // Check if initialized
@@ -966,7 +972,7 @@ program
   .option('--deleted-by <deletedBy>', 'Deleted by (interoperability field)')
   .option('--delete-reason <deleteReason>', 'Delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options) => {
+  .action((options: CreateOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1006,7 +1012,7 @@ program
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--stage <stage>', 'Filter by stage')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((search: string | undefined, options: CLIOptions) => {
+  .action((search: string | undefined, options: ListOptions) => {
     requireInitialized();
     const db = getDatabase(options?.prefix);
     
@@ -1058,7 +1064,7 @@ program
   .description('Show details of a work item')
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id: string, options: CLIOptions) => {
+  .action((id: string, options: ShowOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1134,7 +1140,7 @@ program
   .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
   .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id: string, options: CLIOptions) => {
+  .action((id: string, options: UpdateOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1173,7 +1179,7 @@ program
   .command('delete <id>')
   .description('Delete a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((id: string, options: CLIOptions) => {
+  .action((id: string, options: DeleteOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1197,12 +1203,12 @@ program
   .description('Export work items and comments to JSONL file')
   .option('-f, --file <filepath>', 'Output file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options: CLIOptions) => {
+  .action((options: ExportOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const items = db.getAll();
     const comments = db.getAllComments();
-    exportToJsonl(items, comments, options.file);
+    exportToJsonl(items, comments, options.file || dataPath);
     
     const isJsonMode = program.opts().json;
     if (isJsonMode) {
@@ -1224,10 +1230,10 @@ program
   .description('Import work items and comments from JSONL file')
   .option('-f, --file <filepath>', 'Input file path', dataPath)
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options: CLIOptions) => {
+  .action((options: ImportOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
-    const { items, comments } = importFromJsonl(options.file);
+    const { items, comments } = importFromJsonl(options.file || dataPath);
     db.import(items);
     db.importComments(comments);
     
@@ -1253,7 +1259,7 @@ program
   .option('-s, --search <term>', 'Search term for fuzzy matching against title, description, and comments')
   .option('-n, --number <n>', 'Number of items to return (default: 1)', '1')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action(async (options: CLIOptions) => {
+  .action(async (options: NextOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const numRequested = parseInt(options.number || '1', 10);
@@ -1332,7 +1338,7 @@ program
   .description('List all in-progress work items in a tree layout showing dependencies')
   .option('-a, --assignee <assignee>', 'Filter by assignee')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options: CLIOptions) => {
+  .action((options: InProgressOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1368,16 +1374,16 @@ program
   .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', DEFAULT_GIT_BRANCH)
   .option('--no-push', 'Skip pushing changes back to git')
   .option('--dry-run', 'Show what would be synced without making changes')
-  .action(async (options: CLIOptions) => {
+  .action(async (options: SyncOptions) => {
     requireInitialized();
     const isJsonMode = program.opts().json;
     
     try {
       await performSync({
-        file: options.file,
+        file: options.file || dataPath,
         prefix: options.prefix,
-        gitRemote: options.gitRemote,
-        gitBranch: options.gitBranch,
+        gitRemote: options.gitRemote || DEFAULT_GIT_REMOTE,
+        gitBranch: options.gitBranch || DEFAULT_GIT_BRANCH,
         push: options.push ?? true,  // Default to true if not specified
         dryRun: options.dryRun ?? false,
         silent: false
@@ -1406,7 +1412,7 @@ commentCommand
   .requiredOption('-c, --comment <comment>', 'Comment text (markdown supported)')
   .option('-r, --references <references>', 'Comma-separated list of references (work item IDs, file paths, or URLs)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((workItemId: string, options: CLIOptions) => {
+  .action((workItemId: string, options: CommentCreateOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1440,7 +1446,7 @@ program
   .option('-r, --reason <reason>', 'Reason for closing (stored as a comment)', '')
   .option('-a, --author <author>', 'Author name for the close comment', 'worklog')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((ids: string[], options: CLIOptions) => {
+  .action((ids: string[], options: CloseOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     const isJsonMode = program.opts().json;
@@ -1508,7 +1514,7 @@ commentCommand
   .command('list <workItemId>')
   .description('List all comments for a work item')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((workItemId: string, options: CLIOptions) => {
+  .action((workItemId: string, options: CommentListOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1546,7 +1552,7 @@ commentCommand
   .command('show <commentId>')
   .description('Show details of a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId: string, options: CLIOptions) => {
+  .action((commentId: string, options: CommentShowOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1573,7 +1579,7 @@ commentCommand
   .option('-c, --comment <comment>', 'New comment text')
   .option('-r, --references <references>', 'New references (comma-separated)')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId: string, options: CLIOptions) => {
+  .action((commentId: string, options: CommentUpdateOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1603,7 +1609,7 @@ commentCommand
   .command('delete <commentId>')
   .description('Delete a comment')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((commentId: string, options: CLIOptions) => {
+   .action((commentId: string, options: CommentDeleteOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
     
@@ -1628,7 +1634,7 @@ program
   .option('-n, --number <n>', 'Number of recent items to show', '3')
   .option('-c, --children', 'Also show children')
   .option('--prefix <prefix>', 'Override the default prefix')
-  .action((options: CLIOptions) => {
+   .action((options: RecentOptions) => {
     requireInitialized();
     const db = getDatabase(options.prefix);
 

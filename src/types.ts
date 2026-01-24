@@ -90,6 +90,8 @@ export interface WorklogConfig {
   projectName: string;
   prefix: string;
   autoExport?: boolean;
+  // Human display format preference for CLI (concise | normal | full | raw)
+  humanDisplay?: 'concise' | 'normal' | 'full' | 'raw';
 }
 
 /**
