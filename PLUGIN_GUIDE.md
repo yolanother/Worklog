@@ -1,0 +1,639 @@
+# Worklog Plugin System
+
+## Overview
+
+Worklog supports a pluggable command architecture that allows you to extend the CLI with custom commands without modifying the Worklog codebase. Plugins are compiled ESM modules (.js or .mjs files) that register new commands at runtime.
+
+## Quick Start
+
+### 1. Create a Plugin Directory
+
+By default, Worklog looks for plugins in `.worklog/plugins/` relative to your current working directory:
+
+```bash
+mkdir -p .worklog/plugins
+```
+
+### 2. Write a Simple Plugin
+
+Create a file `.worklog/plugins/hello.mjs`:
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('hello')
+    .description('Say hello')
+    .option('-n, --name <name>', 'Name to greet', 'World')
+    .action((options) => {
+      if (ctx.utils.isJsonMode()) {
+        ctx.output.json({ 
+          success: true, 
+          message: `Hello, ${options.name}!` 
+        });
+      } else {
+        console.log(`Hello, ${options.name}!`);
+      }
+    });
+}
+```
+
+### 3. Use Your Plugin
+
+```bash
+worklog hello
+# Output: Hello, World!
+
+worklog hello --name Alice
+# Output: Hello, Alice!
+
+worklog hello --json
+# Output: {"success":true,"message":"Hello, World!"}
+```
+
+## Plugin API
+
+### Plugin Module Structure
+
+Every plugin must be an ESM module with a default export that is a registration function:
+
+```typescript
+import type { PluginContext } from 'worklog/src/plugin-types';
+
+export default function register(ctx: PluginContext): void {
+  // Register your commands here
+}
+```
+
+### Plugin Context
+
+The `PluginContext` object passed to your registration function contains:
+
+#### `ctx.program`
+The Commander.js `Command` instance. Use this to register your commands:
+
+```javascript
+ctx.program
+  .command('my-command')
+  .description('My custom command')
+  .option('-f, --flag', 'A flag')
+  .action((options) => {
+    // Command implementation
+  });
+```
+
+#### `ctx.output`
+Output helpers that respect the `--json` flag:
+
+```javascript
+// Output JSON (when --json is set) or plain text
+ctx.output.success('Operation completed', { data: 'value' });
+ctx.output.error('Operation failed', { error: 'details' });
+
+// Always output JSON
+ctx.output.json({ custom: 'data' });
+```
+
+#### `ctx.utils`
+Utility functions for common operations:
+
+```javascript
+// Check if Worklog is initialized (exits if not)
+ctx.utils.requireInitialized();
+
+// Get database instance
+const db = ctx.utils.getDatabase();
+const items = db.getAll();
+
+// Get configuration
+const config = ctx.utils.getConfig();
+
+// Get prefix (respects --prefix override)
+const prefix = ctx.utils.getPrefix(options.prefix);
+
+// Check if in JSON output mode
+if (ctx.utils.isJsonMode()) {
+  // Output JSON
+}
+```
+
+#### `ctx.version`
+Current Worklog version string.
+
+#### `ctx.dataPath`
+Default data file path.
+
+### Database Access
+
+Plugins can access the Worklog database to read or modify work items:
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('my-stats')
+    .description('Show custom statistics')
+    .action(() => {
+      ctx.utils.requireInitialized();
+      const db = ctx.utils.getDatabase();
+      
+      const items = db.getAll();
+      const openItems = items.filter(i => i.status === 'open');
+      const criticalItems = items.filter(i => i.priority === 'critical');
+      
+      ctx.output.json({
+        success: true,
+        total: items.length,
+        open: openItems.length,
+        critical: criticalItems.length
+      });
+    });
+}
+```
+
+## Plugin Development
+
+### Development Workflow
+
+1. **Write Your Plugin in TypeScript (Optional)**
+
+   Create `my-plugin/src/index.ts`:
+   ```typescript
+   import type { PluginContext } from 'worklog/src/plugin-types';
+   
+   export default function register(ctx: PluginContext): void {
+     ctx.program
+       .command('my-cmd')
+       .description('My command')
+       .action(() => {
+         console.log('Hello from my plugin!');
+       });
+   }
+   ```
+
+2. **Set Up TypeScript Compilation**
+
+   Create `my-plugin/package.json`:
+   ```json
+   {
+     "name": "my-worklog-plugin",
+     "version": "1.0.0",
+     "type": "module",
+     "scripts": {
+       "build": "tsc"
+     },
+     "devDependencies": {
+       "typescript": "^5.3.3"
+     }
+   }
+   ```
+
+   Create `my-plugin/tsconfig.json`:
+   ```json
+   {
+     "compilerOptions": {
+       "target": "ES2022",
+       "module": "ES2022",
+       "moduleResolution": "node",
+       "outDir": "./dist",
+       "esModuleInterop": true
+     }
+   }
+   ```
+
+3. **Compile and Install**
+
+   ```bash
+   cd my-plugin
+   npm install
+   npm run build
+   
+   # Copy compiled plugin to Worklog plugin directory
+   cp dist/index.js ~/.worklog/plugins/my-plugin.js
+   ```
+
+4. **Test Your Plugin**
+
+   ```bash
+   worklog --help    # Should show your command
+   worklog my-cmd    # Run your command
+   ```
+
+### Plugin Best Practices
+
+#### 1. Always Check Initialization
+
+```javascript
+ctx.program
+  .command('my-cmd')
+  .action((options) => {
+    // Fail early if Worklog not initialized
+    ctx.utils.requireInitialized();
+    
+    // Your command logic
+  });
+```
+
+#### 2. Support JSON Output Mode
+
+```javascript
+const result = performOperation();
+
+if (ctx.utils.isJsonMode()) {
+  ctx.output.json({ success: true, result });
+} else {
+  console.log(`Result: ${result}`);
+}
+```
+
+#### 3. Handle Errors Gracefully
+
+```javascript
+try {
+  const result = riskyOperation();
+  ctx.output.success('Operation completed', { result });
+} catch (error) {
+  ctx.output.error(`Operation failed: ${error.message}`, { 
+    success: false, 
+    error: error.message 
+  });
+  process.exit(1);
+}
+```
+
+#### 4. Respect Prefix Overrides
+
+```javascript
+.option('--prefix <prefix>', 'Override the default prefix')
+.action((options) => {
+  const db = ctx.utils.getDatabase(options.prefix);
+  // ...
+});
+```
+
+## Configuration
+
+### Plugin Directory
+
+Worklog looks for plugins in the following locations (in priority order):
+
+1. `$WORKLOG_PLUGIN_DIR` environment variable
+2. Command-line option (if supported by command)
+3. `.worklog/plugins/` in current directory (default)
+
+Set a custom plugin directory:
+
+```bash
+export WORKLOG_PLUGIN_DIR=/path/to/my/plugins
+worklog --help  # Loads from custom directory
+```
+
+### Supported File Extensions
+
+- `.js` - JavaScript ES modules
+- `.mjs` - JavaScript ES modules (explicit)
+
+**Not supported:**
+- `.d.ts` - TypeScript declaration files (ignored)
+- `.map` - Source maps (ignored)
+- `.cjs` - CommonJS modules (not supported)
+
+### Load Order
+
+Plugins are loaded in deterministic lexicographic order by filename:
+
+- `a-first.mjs` - loads first
+- `m-middle.js` - loads second
+- `z-last.mjs` - loads last
+
+## Troubleshooting
+
+### List Discovered Plugins
+
+```bash
+worklog plugins
+
+# With verbose output
+worklog plugins --verbose
+
+# JSON output
+worklog plugins --json
+```
+
+### Enable Verbose Logging
+
+```bash
+worklog --verbose --help
+# Shows plugin load diagnostics
+```
+
+### Common Issues
+
+#### Plugin Not Found
+
+**Problem:** `worklog --help` doesn't show your command.
+
+**Solutions:**
+- Verify plugin file exists in `.worklog/plugins/`
+- Check file extension is `.js` or `.mjs`
+- Run `worklog plugins` to see discovered plugins
+- Check `WORKLOG_PLUGIN_DIR` environment variable
+
+#### Module Resolution Errors
+
+**Problem:** `Cannot find module 'xyz'` error.
+
+**Solutions:**
+- Ensure all dependencies are bundled or available in Node.js
+- Use a bundler (esbuild, rollup) to create a single-file plugin
+- Check that you're exporting as ESM (`export default`)
+
+#### Syntax Errors
+
+**Problem:** `SyntaxError: Unexpected token` error.
+
+**Solutions:**
+- Verify your plugin is valid ES2022 JavaScript
+- Compile TypeScript to JavaScript before installing
+- Check for missing semicolons, braces, etc.
+
+#### Plugin Fails to Load
+
+**Problem:** Plugin loads but command doesn't work.
+
+**Solutions:**
+- Verify `default export` is a function
+- Ensure registration function calls `ctx.program.command()`
+- Check for runtime errors in your action handler
+- Run with `--verbose` to see error details
+
+## Example Plugins
+
+### Custom Statistics
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('stats')
+    .description('Show work item statistics')
+    .action(() => {
+      ctx.utils.requireInitialized();
+      const db = ctx.utils.getDatabase();
+      const items = db.getAll();
+      
+      const stats = {
+        total: items.length,
+        byStatus: {},
+        byPriority: {}
+      };
+      
+      items.forEach(item => {
+        stats.byStatus[item.status] = (stats.byStatus[item.status] || 0) + 1;
+        stats.byPriority[item.priority] = (stats.byPriority[item.priority] || 0) + 1;
+      });
+      
+      if (ctx.utils.isJsonMode()) {
+        ctx.output.json({ success: true, stats });
+      } else {
+        console.log('Work Item Statistics:');
+        console.log(`Total: ${stats.total}`);
+        console.log('\nBy Status:');
+        Object.entries(stats.byStatus).forEach(([status, count]) => {
+          console.log(`  ${status}: ${count}`);
+        });
+        console.log('\nBy Priority:');
+        Object.entries(stats.byPriority).forEach(([priority, count]) => {
+          console.log(`  ${priority}: ${count}`);
+        });
+      }
+    });
+}
+```
+
+### Bulk Operations
+
+```javascript
+export default function register(ctx) {
+  ctx.program
+    .command('bulk-tag')
+    .description('Add a tag to multiple work items')
+    .requiredOption('-t, --tag <tag>', 'Tag to add')
+    .requiredOption('-s, --status <status>', 'Status to filter by')
+    .option('--prefix <prefix>', 'Override prefix')
+    .action((options) => {
+      ctx.utils.requireInitialized();
+      const db = ctx.utils.getDatabase(options.prefix);
+      
+      const items = db.getAll().filter(i => i.status === options.status);
+      let updated = 0;
+      
+      items.forEach(item => {
+        if (!item.tags.includes(options.tag)) {
+          const tags = [...item.tags, options.tag];
+          db.update(item.id, { tags });
+          updated++;
+        }
+      });
+      
+      ctx.output.success(
+        `Tagged ${updated} items with "${options.tag}"`,
+        { success: true, updated, total: items.length }
+      );
+    });
+}
+```
+
+### Export to Different Format
+
+```javascript
+import * as fs from 'fs';
+
+export default function register(ctx) {
+  ctx.program
+    .command('export-csv')
+    .description('Export work items to CSV')
+    .option('-f, --file <file>', 'Output file', 'workitems.csv')
+    .option('--prefix <prefix>', 'Override prefix')
+    .action((options) => {
+      ctx.utils.requireInitialized();
+      const db = ctx.utils.getDatabase(options.prefix);
+      const items = db.getAll();
+      
+      // Generate CSV
+      const headers = ['ID', 'Title', 'Status', 'Priority', 'Created', 'Updated'];
+      const rows = items.map(item => [
+        item.id,
+        `"${item.title.replace(/"/g, '""')}"`,
+        item.status,
+        item.priority,
+        item.createdAt,
+        item.updatedAt
+      ]);
+      
+      const csv = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n');
+      
+      fs.writeFileSync(options.file, csv);
+      
+      ctx.output.success(
+        `Exported ${items.length} items to ${options.file}`,
+        { success: true, count: items.length, file: options.file }
+      );
+    });
+}
+```
+
+## Security Considerations
+
+### Important Security Notes
+
+⚠️ **Plugins execute arbitrary code with the same permissions as Worklog.**
+
+- Only install plugins from trusted sources
+- Review plugin code before installation
+- Plugins can read/write all work items in your database
+- Plugins can access your file system
+- Plugins can make network requests
+
+### Recommended Practices
+
+1. **Code Review:** Always review plugin source code before installing
+2. **Sandboxing:** Consider running Worklog in a container or VM when using third-party plugins
+3. **Minimal Permissions:** Run Worklog with minimal user permissions
+4. **Version Control:** Track installed plugins in your version control
+5. **Disable if Needed:** Remove plugin files from `.worklog/plugins/` to disable them
+
+### Disabling Plugin Loading
+
+If you want to disable plugin loading entirely:
+
+```bash
+# Set plugin directory to non-existent path
+export WORKLOG_PLUGIN_DIR=/dev/null
+
+# Or remove/rename the plugin directory
+mv .worklog/plugins .worklog/plugins.disabled
+```
+
+## Advanced Topics
+
+### Async Operations
+
+Plugins can use async/await:
+
+```javascript
+export default async function register(ctx) {
+  // Async setup if needed
+  
+  ctx.program
+    .command('fetch-external')
+    .description('Fetch data from external API')
+    .action(async () => {
+      ctx.utils.requireInitialized();
+      
+      try {
+        const response = await fetch('https://api.example.com/data');
+        const data = await response.json();
+        
+        ctx.output.json({ success: true, data });
+      } catch (error) {
+        ctx.output.error(`Failed: ${error.message}`);
+        process.exit(1);
+      }
+    });
+}
+```
+
+### Subcommand Groups
+
+Create command groups like the built-in `comment` command:
+
+```javascript
+export default function register(ctx) {
+  const reportGroup = ctx.program
+    .command('report')
+    .description('Generate reports');
+  
+  reportGroup
+    .command('daily')
+    .description('Generate daily report')
+    .action(() => {
+      // Daily report logic
+    });
+  
+  reportGroup
+    .command('weekly')
+    .description('Generate weekly report')
+    .action(() => {
+      // Weekly report logic
+    });
+}
+```
+
+### Access to Built-in Helpers
+
+If you need access to built-in formatters or utilities, you can import them directly:
+
+```javascript
+// Note: Requires worklog to be installed as a dependency
+import { humanFormatWorkItem } from 'worklog/dist/commands/helpers.js';
+
+export default function register(ctx) {
+  ctx.program
+    .command('pretty-list')
+    .description('List items with custom formatting')
+    .action(() => {
+      const db = ctx.utils.getDatabase();
+      const items = db.getAll();
+      
+      items.forEach(item => {
+        console.log(humanFormatWorkItem(item, db, 'normal'));
+      });
+    });
+}
+```
+
+## FAQ
+
+### Q: Can I use npm packages in my plugin?
+
+**A:** Yes, but you need to bundle them into your plugin file. Use a bundler like esbuild or rollup to create a single-file bundle with all dependencies included.
+
+### Q: Can plugins modify existing commands?
+
+**A:** No, plugins can only add new commands. They cannot modify or remove built-in commands. If a plugin tries to register a command name that already exists, it will fail to load.
+
+### Q: Do plugins persist across Worklog updates?
+
+**A:** Yes, plugins in `.worklog/plugins/` are not affected by Worklog updates. However, the plugin API may change between major versions, so test your plugins after upgrading.
+
+### Q: Can I distribute plugins via npm?
+
+**A:** Yes! Publish your compiled plugin as an npm package and users can install it:
+
+```bash
+npm install -g my-worklog-plugin
+cp $(npm root -g)/my-worklog-plugin/dist/plugin.js ~/.worklog/plugins/
+```
+
+### Q: How do I debug my plugin?
+
+**A:** Add `console.log()` statements and run with `--verbose`:
+
+```bash
+worklog --verbose my-command
+```
+
+You can also use Node.js debugging:
+
+```bash
+node --inspect-brk $(which worklog) my-command
+```
+
+## Contributing
+
+Found a bug or have a feature request for the plugin system? Please open an issue on the [Worklog GitHub repository](https://github.com/rgardler-msft/Worklog).
+
+## License
+
+The Worklog plugin system is part of Worklog and released under the same MIT license.
