@@ -323,6 +323,10 @@ Example:
 wl plugins
 ```
 
+Worklog comes bundled with an example stats plugin installed.
+
+- `stats` — Show custom work item statistics (example plugin provided in this repo).
+
 ---
 
 ## Other
