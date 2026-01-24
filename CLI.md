@@ -55,7 +55,7 @@ wl --json create -t "Investigate CI flakes" -d "Flaky tests seen" -p high
 
 ### `update` [options] <id>
 
-Update fields on an existing work item. Options mirror `create` for updatable fields, including `--risk` and `--effort`.
+Update fields on an existing work item. Options mirror `create` for updatable fields.
 
 Example:
 
