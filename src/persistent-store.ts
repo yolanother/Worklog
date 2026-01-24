@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -79,7 +79,10 @@ export class SqlitePersistentStore {
         issueType TEXT NOT NULL,
         createdBy TEXT NOT NULL,
         deletedBy TEXT NOT NULL,
-        deleteReason TEXT NOT NULL
+        deleteReason TEXT NOT NULL,
+        githubIssueNumber INTEGER,
+        githubIssueId INTEGER,
+        githubIssueUpdatedAt TEXT
       )
     `);
 
@@ -99,6 +102,24 @@ export class SqlitePersistentStore {
       maybeAdd('createdBy');
       maybeAdd('deletedBy');
       maybeAdd('deleteReason');
+    }
+
+    if (existingVersion < 3) {
+      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
+      const existingCols = new Set(cols.map(c => String(c.name)));
+      const maybeAddNullable = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT`);
+        }
+      };
+      const maybeAddNullableInt = (name: string) => {
+        if (!existingCols.has(name)) {
+          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} INTEGER`);
+        }
+      };
+      maybeAddNullableInt('githubIssueNumber');
+      maybeAddNullableInt('githubIssueId');
+      maybeAddNullable('githubIssueUpdatedAt');
     }
 
     // Create comments table
@@ -185,8 +206,8 @@ export class SqlitePersistentStore {
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
-      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
@@ -201,7 +222,10 @@ export class SqlitePersistentStore {
         issueType = excluded.issueType,
         createdBy = excluded.createdBy,
         deletedBy = excluded.deletedBy,
-        deleteReason = excluded.deleteReason
+        deleteReason = excluded.deleteReason,
+        githubIssueNumber = excluded.githubIssueNumber,
+        githubIssueId = excluded.githubIssueId,
+        githubIssueUpdatedAt = excluded.githubIssueUpdatedAt
     `);
 
     stmt.run(
@@ -219,7 +243,10 @@ export class SqlitePersistentStore {
       item.issueType,
       item.createdBy,
       item.deletedBy,
-      item.deleteReason
+      item.deleteReason,
+      item.githubIssueNumber ?? null,
+      item.githubIssueId ?? null,
+      item.githubIssueUpdatedAt || null
     );
   }
 
@@ -408,6 +435,9 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        githubIssueNumber: row.githubIssueNumber ?? undefined,
+        githubIssueId: row.githubIssueId ?? undefined,
+        githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
       };
     } catch (error) {
       console.error(`Error parsing work item ${row.id}:`, error);
@@ -429,6 +459,9 @@ export class SqlitePersistentStore {
         createdBy: row.createdBy || '',
         deletedBy: row.deletedBy || '',
         deleteReason: row.deleteReason || '',
+        githubIssueNumber: row.githubIssueNumber ?? undefined,
+        githubIssueId: row.githubIssueId ?? undefined,
+        githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
       };
     }
   }

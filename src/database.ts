@@ -21,12 +21,24 @@ export class WorklogDatabase {
   private jsonlPath: string;
   private autoExport: boolean;
   private silent: boolean;
+  private autoSync: boolean;
+  private syncProvider?: () => Promise<void>;
 
-  constructor(prefix: string = 'WI', dbPath?: string, jsonlPath?: string, autoExport: boolean = true, silent: boolean = false) {
+  constructor(
+    prefix: string = 'WI',
+    dbPath?: string,
+    jsonlPath?: string,
+    autoExport: boolean = true,
+    silent: boolean = false,
+    autoSync: boolean = false,
+    syncProvider?: () => Promise<void>
+  ) {
     this.prefix = prefix;
     this.jsonlPath = jsonlPath || getDefaultDataPath();
     this.autoExport = autoExport;
     this.silent = silent;
+    this.autoSync = autoSync;
+    this.syncProvider = syncProvider;
     
     // Use default DB path if not provided
     const defaultDbPath = path.join(path.dirname(this.jsonlPath), 'worklog.db');
@@ -36,6 +48,20 @@ export class WorklogDatabase {
     
     // Refresh from JSONL if needed
     this.refreshFromJsonlIfNewer();
+  }
+
+  setAutoSync(enabled: boolean, provider?: () => Promise<void>): void {
+    this.autoSync = enabled;
+    if (provider) {
+      this.syncProvider = provider;
+    }
+  }
+
+  triggerAutoSync(): void {
+    if (!this.autoSync || !this.syncProvider) {
+      return;
+    }
+    void this.syncProvider();
   }
 
   /**
@@ -118,6 +144,10 @@ export class WorklogDatabase {
     throw new Error('Unable to generate a unique work item ID');
   }
 
+  generateWorkItemId(): string {
+    return this.generateId();
+  }
+
   /**
    * Generate a unique ID for a comment
    */
@@ -174,10 +204,14 @@ export class WorklogDatabase {
       createdBy: input.createdBy || '',
       deletedBy: input.deletedBy || '',
       deleteReason: input.deleteReason || '',
+      githubIssueNumber: undefined,
+      githubIssueId: undefined,
+      githubIssueUpdatedAt: undefined,
     };
 
     this.store.saveWorkItem(item);
     this.exportToJsonl();
+    this.triggerAutoSync();
     return item;
   }
 
@@ -203,10 +237,14 @@ export class WorklogDatabase {
       id: item.id, // Prevent ID changes
       createdAt: item.createdAt, // Prevent createdAt changes
       updatedAt: new Date().toISOString(),
+      githubIssueNumber: item.githubIssueNumber,
+      githubIssueId: item.githubIssueId,
+      githubIssueUpdatedAt: item.githubIssueUpdatedAt,
     };
 
     this.store.saveWorkItem(updated);
     this.exportToJsonl();
+    this.triggerAutoSync();
     return updated;
   }
 
@@ -217,6 +255,7 @@ export class WorklogDatabase {
     const result = this.store.deleteWorkItem(id);
     if (result) {
       this.exportToJsonl();
+      this.triggerAutoSync();
     }
     return result;
   }
@@ -601,6 +640,7 @@ export class WorklogDatabase {
       this.store.saveWorkItem(item);
     }
     this.exportToJsonl();
+    this.triggerAutoSync();
   }
 
   /**
@@ -640,6 +680,7 @@ export class WorklogDatabase {
 
     this.store.saveComment(comment);
     this.exportToJsonl();
+    this.triggerAutoSync();
     return comment;
   }
 
@@ -669,6 +710,7 @@ export class WorklogDatabase {
 
     this.store.saveComment(updated);
     this.exportToJsonl();
+    this.triggerAutoSync();
     return updated;
   }
 
@@ -679,6 +721,7 @@ export class WorklogDatabase {
     const result = this.store.deleteComment(id);
     if (result) {
       this.exportToJsonl();
+      this.triggerAutoSync();
     }
     return result;
   }
@@ -706,5 +749,6 @@ export class WorklogDatabase {
       this.store.saveComment(comment);
     }
     this.exportToJsonl();
+    this.triggerAutoSync();
   }
 }

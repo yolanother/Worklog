@@ -26,6 +26,10 @@ export interface WorkItem {
   createdBy: string;
   deletedBy: string;
   deleteReason: string;
+
+  githubIssueNumber?: number;
+  githubIssueId?: number;
+  githubIssueUpdatedAt?: string;
 }
 
 /**
@@ -90,6 +94,12 @@ export interface WorklogConfig {
   projectName: string;
   prefix: string;
   autoExport?: boolean;
+  autoSync?: boolean;
+  syncRemote?: string;
+  syncBranch?: string;
+  githubRepo?: string;
+  githubLabelPrefix?: string;
+  githubImportCreateNew?: boolean;
   // Human display format preference for CLI (concise | normal | full | raw)
   humanDisplay?: 'concise' | 'normal' | 'full' | 'raw';
 }

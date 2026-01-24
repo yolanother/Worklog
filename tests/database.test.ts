@@ -44,6 +44,9 @@ describe('WorklogDatabase', () => {
       expect(item.createdBy).toBe('');
       expect(item.deletedBy).toBe('');
       expect(item.deleteReason).toBe('');
+      expect(item.githubIssueNumber).toBeUndefined();
+      expect(item.githubIssueId).toBeUndefined();
+      expect(item.githubIssueUpdatedAt).toBeUndefined();
       expect(item.createdAt).toBeDefined();
       expect(item.updatedAt).toBeDefined();
     });
