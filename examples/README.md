@@ -21,6 +21,8 @@ cp examples/stats-plugin.mjs .worklog/plugins/
 worklog stats
 ```
 
+Note: running `wl init` will automatically install `examples/stats-plugin.mjs` into your project's `.worklog/plugins/` directory if it is not already present.
+
 ### bulk-tag-plugin.mjs
 
 Demonstrates bulk operations - adding tags to multiple work items filtered by status.
@@ -61,6 +63,15 @@ worklog export-csv -f output.csv
    worklog stats
    worklog stats --json
    ```
+
+## Creating Your Own Plugins
+
+For complete documentation on creating custom plugins, see the [Plugin Development Guide](../PLUGIN_GUIDE.md), which includes:
+- Plugin API reference with TypeScript signatures
+- Development workflow (TypeScript → ESM compilation)
+- Best practices and patterns
+- Troubleshooting guide
+- Security considerations
 
 ## Creating Your Own Plugins
 
