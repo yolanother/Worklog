@@ -80,13 +80,9 @@ function isDefaultValue(value: any, field: string, options?: MergeOptions): bool
   if (Array.isArray(value) && value.length === 0) {
     return true;
   }
-  // For status and priority, 'open' and 'medium' are defaults
-  if (field === 'status' && value === 'open') {
-    return true;
-  }
-  if (field === 'priority' && value === 'medium') {
-    return true;
-  }
+  // Only treat truly empty/undefined values as defaults. Do NOT assume
+  // that common values like 'open' or 'medium' imply the user didn't set
+  // them intentionally — any defined value is considered a real value.
   // Treat empty strings as default for these metadata fields
   if ((field === 'issueType' || field === 'createdBy' || field === 'deletedBy' || field === 'deleteReason') && value === '') {
     return true;
