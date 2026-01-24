@@ -40,10 +40,7 @@
     "@vitest/ui": "^4.0.18",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
-    "vitest": "^4.0.18"
-  }
-  ,
-  "devDependencies": {
+    "vitest": "^4.0.18",
     "execa": "^7.1.1"
   }
 }
