@@ -2014,10 +2014,11 @@ program.configureHelp({
     const description = cmd.description() || '';
 
     // Build groups and mapping of command name -> group
-    // Order: Work Items, Data, Other (comments moved into Work Items; close moved into Work Items)
+    // Order: Issue Management, Status, Data, Other
     const groupsDef: { name: string; names: string[] }[] = [
-      { name: 'Work Items', names: ['create', 'list', 'show', 'update', 'delete', 'recent', 'next', 'in-progress', 'close', 'comment'] },
-      { name: 'Data', names: ['export', 'import', 'sync', 'github'] },
+      { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete'] },
+      { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
+      { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
     ];
 
     const visible = helper.visibleCommands(cmd) as any[];
