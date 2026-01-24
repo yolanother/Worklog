@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
 import { importFromJsonl, importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
-import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment } from './types.js';
+import { WorkItemStatus, WorkItemPriority, UpdateWorkItemInput, WorkItemQuery, UpdateCommentInput, WorkItem, Comment, NextWorkItemResult } from './types.js';
 import type {
   InitOptions, StatusOptions, CreateOptions, ListOptions, ShowOptions, UpdateOptions,
   ExportOptions, ImportOptions, NextOptions, InProgressOptions, SyncOptions,
@@ -20,8 +20,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 
-// NOTE: We keep a very small escape hatch for code that still expects any-shaped options
-type CLIOptions = { [key: string]: any };
+// (removed generic CLIOptions escape-hatch to enforce per-command option typing)
 
 const WORKLOG_VERSION = '0.0.1';
 

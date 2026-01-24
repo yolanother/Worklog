@@ -1,3 +1,4 @@
 projectName: TestProject
 prefix: TEST
 autoExport: true
+humanDisplay: concise
