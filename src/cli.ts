@@ -1703,11 +1703,10 @@ program.configureHelp({
     const description = cmd.description() || '';
 
     // Build groups and mapping of command name -> group
-    // Order: Work Items, Comments, Data, Other (per UX request)
+    // Order: Work Items, Data, Other (comments moved into Work Items; close moved into Work Items)
     const groupsDef: { name: string; names: string[] }[] = [
-      { name: 'Work Items', names: ['create', 'list', 'show', 'update', 'delete', 'recent', 'next', 'in-progress'] },
-      { name: 'Comments', names: ['comment'] },
-      { name: 'Data', names: ['export', 'import', 'sync'] },
+      { name: 'Work Items', names: ['create', 'list', 'show', 'update', 'delete', 'recent', 'next', 'in-progress', 'close', 'comment'] },
+      { name: 'Data', names: ['export', 'import', 'sync', 'github'] },
     ];
 
     const visible = helper.visibleCommands(cmd) as any[];
