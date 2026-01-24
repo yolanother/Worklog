@@ -1534,6 +1534,7 @@ githubCommand
     requireInitialized();
     const db = getDatabase(options.prefix);
     const isJsonMode = program.opts().json;
+    const isVerbose = program.opts().verbose;
     let lastProgress = '';
     let lastProgressLength = 0;
 
@@ -1568,7 +1569,7 @@ githubCommand
       const items = db.getAll();
       const comments = db.getAllComments();
 
-      const { updatedItems, result } = upsertIssuesFromWorkItems(items, comments, githubConfig, renderProgress);
+      const { updatedItems, result, timing } = upsertIssuesFromWorkItems(items, comments, githubConfig, renderProgress);
       if (updatedItems.length > 0) {
         db.import(updatedItems);
       }
@@ -1583,6 +1584,14 @@ githubCommand
         if (result.errors.length > 0) {
           console.log(`  Errors: ${result.errors.length}`);
           console.log('  Hint: re-run with --json to view error details');
+        }
+        if (isVerbose) {
+          console.log('  Timing breakdown:');
+          console.log(`    Total: ${(timing.totalMs / 1000).toFixed(2)}s`);
+          console.log(`    Issue upserts: ${(timing.upsertMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy check: ${(timing.hierarchyCheckMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy link: ${(timing.hierarchyLinkMs / 1000).toFixed(2)}s`);
+          console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);
         }
       }
     } catch (error) {

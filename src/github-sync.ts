@@ -27,6 +27,14 @@ export interface GithubSyncResult {
   errors: string[];
 }
 
+export interface GithubSyncTiming {
+  totalMs: number;
+  upsertMs: number;
+  hierarchyCheckMs: number;
+  hierarchyLinkMs: number;
+  hierarchyVerifyMs: number;
+}
+
 export interface GithubProgress {
   phase: 'push' | 'import' | 'close-check' | 'hierarchy';
   current: number;
@@ -38,12 +46,20 @@ export function upsertIssuesFromWorkItems(
   comments: Comment[],
   config: GithubConfig,
   onProgress?: (progress: GithubProgress) => void
-): { updatedItems: WorkItem[]; result: GithubSyncResult } {
+): { updatedItems: WorkItem[]; result: GithubSyncResult; timing: GithubSyncTiming } {
+  const startTime = Date.now();
   const labelPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
   const issueItems = items.filter(item => item.status !== 'deleted');
   const linkedPairs = new Set<string>();
   let linkedCount = 0;
   const nodeIdCache = new Map<number, string>();
+  const timing = {
+    totalMs: 0,
+    upsertMs: 0,
+    hierarchyCheckMs: 0,
+    hierarchyLinkMs: 0,
+    hierarchyVerifyMs: 0,
+  };
   const byItemId = new Map<string, Comment[]>();
   for (const comment of comments) {
     const list = byItemId.get(comment.workItemId) || [];
@@ -75,6 +91,7 @@ export function upsertIssuesFromWorkItems(
 
     try {
       let issue: GithubIssueRecord;
+      const upsertStart = Date.now();
       if (item.githubIssueNumber) {
         issue = updateGithubIssue(config, item.githubIssueNumber, payload);
         result.updated += 1;
@@ -86,6 +103,7 @@ export function upsertIssuesFromWorkItems(
         });
         result.created += 1;
       }
+      timing.upsertMs += Date.now() - upsertStart;
 
       updatedById.set(item.id, {
         ...item,
@@ -127,23 +145,29 @@ export function upsertIssuesFromWorkItems(
   const pairs = Array.from(linkedPairs.values());
   for (let idx = 0; idx < pairs.length; idx += 1) {
     if (onProgress) {
-      onProgress({ phase: 'push', current: issueItems.length + idx + 1, total: issueItems.length + pairs.length });
+      onProgress({ phase: 'hierarchy', current: idx + 1, total: pairs.length || 1 });
     }
     const [parentNumberRaw, childNumberRaw] = pairs[idx].split(':');
     const parentNumber = Number(parentNumberRaw);
     const childNumber = Number(childNumberRaw);
     try {
+      const checkStart = Date.now();
       const hierarchy = getIssueHierarchy(config, parentNumber);
+      timing.hierarchyCheckMs += Date.now() - checkStart;
       if (hierarchy.childIssueNumbers.includes(childNumber)) {
         linkedCount += 1;
         continue;
       }
+      const linkStart = Date.now();
       const linkResult = addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
+      timing.hierarchyLinkMs += Date.now() - linkStart;
       if (!linkResult.ok) {
         result.errors.push(`link ${parentNumber}->${childNumber}: ${linkResult.error || 'sub-issue link not created'}`);
         continue;
       }
+      const verifyStart = Date.now();
       const updatedHierarchy = getIssueHierarchy(config, parentNumber);
+      timing.hierarchyVerifyMs += Date.now() - verifyStart;
       if (updatedHierarchy.childIssueNumbers.includes(childNumber)) {
         linkedCount += 1;
         continue;
@@ -155,7 +179,8 @@ export function upsertIssuesFromWorkItems(
   }
 
   result.updated += linkedCount;
-  return { updatedItems, result };
+  timing.totalMs = Date.now() - startTime;
+  return { updatedItems, result, timing };
 }
 
 export function importIssuesToWorkItems(

@@ -198,11 +198,6 @@ export class SqlitePersistentStore {
    * Save a work item
    */
   saveWorkItem(item: WorkItem): void {
-    if (this.verbose) {
-      // Route debug diagnostics to stderr so stdout remains JSON-clean for --json mode
-      console.error(`SqlitePersistentStore.saveWorkItem: saving workitem ${item.id} (status=${item.status})`);
-    }
-
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
