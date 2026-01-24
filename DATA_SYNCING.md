@@ -86,8 +86,8 @@ Worklog syncs work item fields to GitHub as labels with the configured prefix (d
 
 - **Status**: `wl:status:<status>` (e.g., `wl:status:open`, `wl:status:in-progress`)
 - **Priority**: `wl:priority:<priority>` (e.g., `wl:priority:high`, `wl:priority:medium`)
-- **Risk**: `wl:risk:<level>` (e.g., `wl:risk:high`, `wl:risk:medium`, `wl:risk:low`)
-- **Effort**: `wl:effort:<level>` (e.g., `wl:effort:high`, `wl:effort:medium`, `wl:effort:low`)
+- **Risk**: `wl:risk:<level>` (e.g., `wl:risk:High`, `wl:risk:Medium`, `wl:risk:Low`, `wl:risk:Severe`)
+- **Effort**: `wl:effort:<level>` (e.g., `wl:effort:XS`, `wl:effort:S`, `wl:effort:M`, `wl:effort:L`, `wl:effort:XL`)
 - **Stage**: `wl:stage:<stage>` (if set)
 - **Issue Type**: `wl:type:<issueType>` (if set)
 - **Tags**: `wl:tag:<tag>` for each tag

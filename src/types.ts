@@ -4,8 +4,8 @@
 
 export type WorkItemStatus = 'open' | 'in-progress' | 'completed' | 'blocked' | 'deleted';
 export type WorkItemPriority = 'low' | 'medium' | 'high' | 'critical';
-export type WorkItemRiskLevel = 'low' | 'medium' | 'high';
-export type WorkItemEffortLevel = 'low' | 'medium' | 'high';
+export type WorkItemRiskLevel = 'Low' | 'Medium' | 'High' | 'Severe';
+export type WorkItemEffortLevel = 'XS' | 'S' | 'M' | 'L' | 'XL';
 
 /**
  * Represents a work item in the system

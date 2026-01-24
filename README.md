@@ -14,7 +14,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Comments**: Add comments to work items with markdown support and references
 - **Multi-Project Support**: Configure custom prefixes for issue IDs per project
 - **Data Syncing**: Git-backed syncing and optional GitHub Issue mirroring
-- **Risk and Effort Estimation**: Track risk and effort levels (low/medium/high) for each work item
+- **Risk and Effort Estimation**: Track risk (Low/Medium/High/Severe) and effort (XS/S/M/L/XL) for each work item
 
 ## Installation
 

@@ -543,14 +543,14 @@ export function issueToWorkItemFields(
       }
       if (value.startsWith('risk:')) {
         const riskValue = value.slice('risk:'.length);
-        if (riskValue === 'low' || riskValue === 'medium' || riskValue === 'high') {
+        if (riskValue === 'Low' || riskValue === 'Medium' || riskValue === 'High' || riskValue === 'Severe') {
           risk = riskValue;
         }
         continue;
       }
       if (value.startsWith('effort:')) {
         const effortValue = value.slice('effort:'.length);
-        if (effortValue === 'low' || effortValue === 'medium' || effortValue === 'high') {
+        if (effortValue === 'XS' || effortValue === 'S' || effortValue === 'M' || effortValue === 'L' || effortValue === 'XL') {
           effort = effortValue;
         }
         continue;
