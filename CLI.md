@@ -35,6 +35,8 @@ Options:
 - `--tags <tags>` — Comma-separated tags (optional).
 - `-a, --assignee <assignee>` — Assignee name (optional).
 - `--stage <stage>` — Stage of the work item in the workflow (optional).
+- `--risk <risk>` — Risk level: `low|medium|high` (optional; no default).
+- `--effort <effort>` — Effort level: `low|medium|high` (optional; no default).
 - `--issue-type <issueType>` — Interoperability: issue type (optional).
 - `--created-by <createdBy>` — Interoperability: created by (optional).
 - `--deleted-by <deletedBy>` — Interoperability: deleted by (optional).
@@ -47,18 +49,20 @@ Examples:
 ```sh
 wl create -t "Fix login bug"
 wl create -t "Add telemetry" -d "Add event for signup" -p high -a alice --tags telemetry,signup
+wl create -t "High-risk task" --risk high --effort medium
 wl --json create -t "Investigate CI flakes" -d "Flaky tests seen" -p high
 ```
 
 ### `update` [options] <id>
 
-Update fields on an existing work item. Options mirror `create` for updatable fields.
+Update fields on an existing work item. Options mirror `create` for updatable fields, including `--risk` and `--effort`.
 
 Example:
 
 ```sh
 wl update WL-ABC123 -t "New title" -p low
 wl update WL-ABC123 -s in-progress -a "bob"
+wl update WL-ABC123 --risk high --effort low
 ```
 
 ### `delete` [options] <id>
