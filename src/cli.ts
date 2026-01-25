@@ -116,88 +116,109 @@ try {
   // Silently continue with built-in commands only
 }
 
-// Customize help output to group commands for readability
-program.configureHelp({
-  formatHelp: (cmd: any, helper: any) => {
-    const usage = helper.commandUsage(cmd);
-    const description = cmd.description() || '';
+// Customize help output to group commands for readability and ensure global
+// options appear on subcommand help as well. Commander applies help
+// configuration per-Command instance, so apply the same formatter to the
+// program and each registered command recursively.
 
-    // Build groups and mapping of command name -> group
-    // Order: Issue Management, Status, Team, Plugins, Other
-    const groupsDef: { name: string; names: string[] }[] = [
-      { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete'] },
-      { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
-      { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
-      { name: 'Plugins', names: [] },
-    ];
+const formatHelp = (cmd: any, helper: any) => {
+  const usage = helper.commandUsage(cmd);
+  const description = cmd.description() || '';
 
-    const visible = helper.visibleCommands(cmd) as any[];
+  // Build groups and mapping of command name -> group
+  const groupsDef: { name: string; names: string[] }[] = [
+    { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete'] },
+    { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
+    { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
+    { name: 'Plugins', names: [] },
+  ];
 
-    const groups: Map<string, any[]> = new Map();
-    for (const g of groupsDef) groups.set(g.name, []);
-    groups.set('Other', []);
+  const visible = helper.visibleCommands(cmd) as any[];
 
-    let helpCommand: any | null = null;
-    for (const c of visible) {
-      const name = c.name();
-      if (name === 'help') {
-        helpCommand = c;
-        continue;
-      }
-      if (name === 'plugins' || !builtInCommandNames.has(name)) {
-        groups.get('Plugins')!.push(c);
-        continue;
-      }
+  const groups: Map<string, any[]> = new Map();
+  for (const g of groupsDef) groups.set(g.name, []);
+  groups.set('Other', []);
 
-      const matched = groupsDef.find(g => g.names.includes(name));
-      if (matched) {
-        groups.get(matched.name)!.push(c);
-      } else {
-        groups.get('Other')!.push(c);
-      }
+  let helpCommand: any | null = null;
+  for (const c of visible) {
+    const name = c.name();
+    if (name === 'help') {
+      helpCommand = c;
+      continue;
+    }
+    if (name === 'plugins' || !builtInCommandNames.has(name)) {
+      groups.get('Plugins')!.push(c);
+      continue;
     }
 
-    if (helpCommand) {
-      groups.get('Other')!.push(helpCommand);
+    const matched = groupsDef.find(g => g.names.includes(name));
+    if (matched) {
+      groups.get(matched.name)!.push(c);
+    } else {
+      groups.get('Other')!.push(c);
     }
-
-    // Compose help text
-    let out = '';
-    out += `Usage: ${usage}\n\n`;
-    if (description) out += `${description}\n\n`;
-
-    for (const [groupName, cmds] of groups) {
-      if (!cmds || cmds.length === 0) continue;
-      out += `${groupName}:\n`;
-      // Determine padding width
-      const terms = cmds.map((c: any) => helper.subcommandTerm(c));
-      const pad = Math.max(...terms.map((t: string) => t.length)) + 2;
-      for (const c of cmds) {
-        const term = helper.subcommandTerm(c);
-        const desc = c.description();
-        out += `  ${term.padEnd(pad)} ${desc}\n`;
-      }
-      out += '\n';
-    }
-
-    // Global options
-    const options = helper.visibleOptions ? helper.visibleOptions(cmd) : [];
-    if (options && options.length > 0) {
-      out += 'Options:\n';
-      const terms = options.map((o: any) => (helper.optionTerm ? helper.optionTerm(o) : o.flags));
-      const padOptions = Math.max(...terms.map((t: string) => t.length)) + 2;
-      for (let i = 0; i < options.length; i++) {
-        const o = options[i];
-        const term = terms[i];
-        const desc = o.description || '';
-        out += `  ${term.padEnd(padOptions)} ${desc}\n`;
-      }
-      out += '\n';
-    }
-
-    return out;
   }
-});
+
+  if (helpCommand) {
+    groups.get('Other')!.push(helpCommand);
+  }
+
+  // Compose help text
+  let out = '';
+  out += `Usage: ${usage}\n\n`;
+  if (description) out += `${description}\n\n`;
+
+  for (const [groupName, cmds] of groups) {
+    if (!cmds || cmds.length === 0) continue;
+    out += `${groupName}:\n`;
+    const terms = cmds.map((c: any) => helper.subcommandTerm(c));
+    const pad = Math.max(...terms.map((t: string) => t.length)) + 2;
+    for (const c of cmds) {
+      const term = helper.subcommandTerm(c);
+      const desc = c.description();
+      out += `  ${term.padEnd(pad)} ${desc}\n`;
+    }
+    out += '\n';
+  }
+
+  // Global + command-specific options
+  const cmdOptions = helper.visibleOptions ? helper.visibleOptions(cmd) : [];
+  const globalOptions = program.options || [];
+
+  const seen = new Set<string>();
+  const options: any[] = [];
+  for (const o of [...globalOptions, ...cmdOptions]) {
+    const key = o.flags || o.long || JSON.stringify(o);
+    if (!seen.has(key)) {
+      seen.add(key);
+      options.push(o);
+    }
+  }
+
+  if (options.length > 0) {
+    out += 'Options:\n';
+    const terms = options.map((o: any) => (helper.optionTerm ? helper.optionTerm(o) : o.flags));
+    const padOptions = Math.max(...terms.map((t: string) => t.length)) + 2;
+    for (let i = 0; i < options.length; i++) {
+      const o = options[i];
+      const term = terms[i];
+      const desc = o.description || '';
+      out += `  ${term.padEnd(padOptions)} ${desc}\n`;
+    }
+    out += '\n';
+  }
+
+  return out;
+};
+
+function applyHelpFormatting(cmd: any) {
+  cmd.configureHelp({ formatHelp });
+  if (cmd.commands && cmd.commands.length > 0) {
+    for (const sub of cmd.commands) applyHelpFormatting(sub);
+  }
+}
+
+applyHelpFormatting(program);
 
 // Parse command line arguments
 program.parse();
