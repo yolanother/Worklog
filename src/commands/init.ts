@@ -68,7 +68,7 @@ function ensureGitignore(options: { silent: boolean }): { updated: boolean; pres
   }
 
   if (missing.length === 0) {
-    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath };
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, added: [] };
   }
 
   let out = existing;
