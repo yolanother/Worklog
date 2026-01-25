@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
+const WORKLOG_POST_PULL_HOOK_MARKER = 'worklog:post-pull-hook:v1';
 const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
 const WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH = 'templates/AGENTS.md';
 const WORKLOG_AGENT_DESTINATION_FILENAME = 'AGENTS.md';
@@ -171,6 +172,84 @@ function installPrePushHook(options: { silent: boolean }): { installed: boolean;
     return { installed: true, skipped: false, present: true, hookPath: hookFile };
   } catch (e) {
     return { installed: false, skipped: true, present: false, hookPath: hookFile, reason: (e as Error).message };
+  }
+}
+
+function installPostPullHooks(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPaths?: string[]; reason?: string } {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
+  } catch {
+    return { installed: false, skipped: true, present: false, reason: 'not a git repository' };
+  }
+
+  let repoRoot = '';
+  let hooksPath = '';
+  try {
+    repoRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+    hooksPath = execSync('git rev-parse --git-path hooks', { encoding: 'utf8' }).trim();
+  } catch (e) {
+    return { installed: false, skipped: true, present: false, reason: 'unable to locate git hooks directory' };
+  }
+
+  const hooksDir = path.isAbsolute(hooksPath) ? hooksPath : path.join(repoRoot, hooksPath);
+  const hookFiles = ['post-merge', 'post-checkout', 'post-rewrite'].map(f => path.join(hooksDir, f));
+
+  const hookScript =
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
+    `# Auto-sync Worklog data after pulling/merging/checking out.\n` +
+    `# Set WORKLOG_SKIP_POST_PULL=1 to bypass.\n` +
+    `\n` +
+    `set -e\n` +
+    `\n` +
+    `if [ \"$WORKLOG_SKIP_POST_PULL\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\n` +
+    `if command -v wl >/dev/null 2>&1; then\n` +
+    `  WL=wl\n` +
+    `elif command -v worklog >/dev/null 2>&1; then\n` +
+    `  WL=worklog\n` +
+    `else\n` +
+    `  echo \"worklog: wl/worklog not found; skipping post-pull sync\" >&2\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\n` +
+    `"$WL" sync\n` +
+    `\n` +
+    `exit 0\n`;
+
+  try {
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    const installedPaths: string[] = [];
+    for (const hookFile of hookFiles) {
+      if (fs.existsSync(hookFile)) {
+        const existing = fs.readFileSync(hookFile, 'utf-8');
+        if (existing.includes(WORKLOG_POST_PULL_HOOK_MARKER)) {
+          // already installed for this hook, skip
+          installedPaths.push(hookFile);
+          continue;
+        }
+        // don't overwrite user hooks
+        return { installed: false, skipped: true, present: true, hookPaths: installedPaths, reason: `hook already exists at ${hookFile} (not overwriting)` };
+      }
+
+      fs.writeFileSync(hookFile, hookScript, { encoding: 'utf-8', mode: 0o755 });
+      try {
+        fs.chmodSync(hookFile, 0o755);
+      } catch {
+        // ignore
+      }
+      installedPaths.push(hookFile);
+    }
+
+    if (!options.silent) {
+      console.log(`✓ Installed git post-pull hooks at ${hooksDir}`);
+    }
+    return { installed: true, skipped: false, present: true, hookPaths: installedPaths };
+  } catch (e) {
+    return { installed: false, skipped: true, present: false, hookPaths: hookFiles, reason: (e as Error).message };
   }
 }
 
@@ -364,6 +443,8 @@ export default function register(ctx: PluginContext): void {
 
             console.log('\n' + chalk.blue('## Git Hooks') + '\n');
             const hookResult = installPrePushHook({ silent: false });
+            // Try to install post-pull hooks too, but don't fail init if they can't be installed
+            const postPullResult = installPostPullHooks({ silent: true });
             if (hookResult.present) {
               if (hookResult.installed) {
                 console.log(`Git pre-push hook: present (installed)`);
@@ -378,6 +459,13 @@ export default function register(ctx: PluginContext): void {
             }
             if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
               console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
+            }
+            if (postPullResult && postPullResult.installed) {
+              console.log(`Git post-pull hooks: installed at ${postPullResult.hookPaths?.join(', ')}`);
+            } else if (postPullResult && postPullResult.skipped) {
+              // don't spam the user when we silently skipped
+            } else if (postPullResult && postPullResult.reason) {
+              console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
             }
 
             console.log('\n' + chalk.blue('## Agent Template') + '\n');
@@ -454,8 +542,9 @@ export default function register(ctx: PluginContext): void {
           }
 
           console.log('\n' + chalk.blue('## Git Hooks') + '\n');
-          const hookResult = installPrePushHook({ silent: false });
-          if (hookResult.present) {
+            const hookResult = installPrePushHook({ silent: false });
+            const postPullResult = installPostPullHooks({ silent: true });
+            if (hookResult.present) {
             if (hookResult.installed) {
               console.log(`Git pre-push hook: present (installed)`);
             } else {
@@ -467,9 +556,16 @@ export default function register(ctx: PluginContext): void {
           } else {
             console.log('Git pre-push hook: not present');
           }
-          if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
-            console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
-          }
+            if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
+              console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
+            }
+            if (postPullResult && postPullResult.installed) {
+              console.log(`Git post-pull hooks: installed at ${postPullResult.hookPaths?.join(', ')}`);
+            } else if (postPullResult && postPullResult.skipped) {
+              // ok
+            } else if (postPullResult && postPullResult.reason) {
+              console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
+            }
 
           console.log('\n' + chalk.blue('## Agent Template') + '\n');
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
