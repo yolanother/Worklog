@@ -31,12 +31,12 @@ export default function register(ctx: PluginContext): void {
     .action((id: string, options: UpdateOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      if (options.parent !== undefined) updates.parentId = options.parent;
       const updates: UpdateWorkItemInput = {};
       if (options.title) updates.title = options.title;
       if (options.description) updates.description = options.description;
       if (options.status) updates.status = options.status as WorkItemStatus;
       if (options.priority) updates.priority = options.priority as WorkItemPriority;
+      if (options.parent !== undefined) updates.parentId = options.parent;
       
       if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
       if (options.assignee !== undefined) updates.assignee = options.assignee;
