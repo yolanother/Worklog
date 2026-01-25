@@ -11,6 +11,7 @@ import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from '../sync-defaults.js';
 import { importFromJsonlContent, exportToJsonl } from '../jsonl.js';
 import { loadConfig } from '../config.js';
 import { displayConflictDetails } from './helpers.js';
+import { createLogFileWriter, getWorklogLogPath, logConflictDetails } from '../logging.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import { promisify } from 'util';
@@ -39,11 +40,18 @@ async function performSync(
   }
 ): Promise<SyncResult> {
   const isJsonMode = program.opts().json;
+  const isVerbose = program.opts().verbose;
   const isSilent = options.silent || false;
+  const logPath = getWorklogLogPath('sync.log');
+  const logLine = createLogFileWriter(logPath);
+  logLine(`--- sync start ${new Date().toISOString()} file=${options.file} ---`);
+  logLine(`Options json=${isJsonMode} verbose=${isVerbose} dryRun=${options.dryRun} push=${options.push}`);
+  logLine(`Starting sync for ${options.file}...`);
   
   const db = getDatabase(options.prefix);
   const localItems = db.getAll();
   const localComments = db.getAllComments();
+  logLine(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
   
   if (!isJsonMode && !isSilent) {
     console.log(`Starting sync for ${options.file}...`);
@@ -74,6 +82,7 @@ async function performSync(
   if (!isJsonMode && !isSilent) {
     console.log(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
   }
+  logLine(`Remote state: ${remoteItems.length} work items, ${remoteComments.length} comments`);
   
   if (!isJsonMode && !isSilent) {
     console.log('\nMerging work items...');
@@ -101,6 +110,12 @@ async function performSync(
     conflictDetails: itemMergeResult.conflictDetails
   };
   
+  const finalizeLog = () => {
+    logLine(`Sync summary itemsAdded=${result.itemsAdded} itemsUpdated=${result.itemsUpdated} itemsUnchanged=${result.itemsUnchanged}`);
+    logLine(`Sync summary commentsAdded=${result.commentsAdded} commentsUnchanged=${result.commentsUnchanged}`);
+    logLine(`--- sync end ${new Date().toISOString()} ---`);
+  };
+
   if (isJsonMode && !isSilent) {
     if (options.dryRun) {
       console.log(JSON.stringify({
@@ -119,10 +134,16 @@ async function performSync(
           summary: result
         }
       }, null, 2));
+      logConflictDetails(result, itemMergeResult.merged, logLine);
+      finalizeLog();
       return result;
     }
   } else if (!isSilent) {
-    displayConflictDetails(result, itemMergeResult.merged);
+    if (isVerbose) {
+      displayConflictDetails(result, itemMergeResult.merged);
+    } else {
+      logLine('Conflict details suppressed (run with --verbose to print).');
+    }
     
     console.log('\nSync summary:');
     console.log(`  Work items added: ${result.itemsAdded}`);
@@ -135,11 +156,15 @@ async function performSync(
     
     if (options.dryRun) {
       console.log('\n[DRY RUN MODE - No changes were made]');
+      logConflictDetails(result, itemMergeResult.merged, logLine);
+      finalizeLog();
       return result;
     }
   }
   
   if (options.dryRun) {
+    logConflictDetails(result, itemMergeResult.merged, logLine);
+    finalizeLog();
     return result;
   }
   
@@ -187,6 +212,9 @@ async function performSync(
   } else if (!isSilent) {
     console.log('\n✓ Sync completed successfully');
   }
+
+  logConflictDetails(result, itemMergeResult.merged, logLine);
+  finalizeLog();
   
   return result;
 }
