@@ -39,6 +39,10 @@ export default function register(ctx: PluginContext): void {
       
       let items = db.list(query);
 
+      if (!options.status) {
+        items = items.filter(item => item.status !== 'completed');
+      }
+
       if (search) {
         const lower = String(search).toLowerCase();
         items = items.filter(item => {
