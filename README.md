@@ -279,6 +279,18 @@ worklog sync --dry-run        # Preview changes without applying
 worklog sync --no-push        # Pull and merge but don't push
 worklog sync -f custom.jsonl  # Sync a different file
 
+## Git Hooks
+
+Worklog can install lightweight Git hooks to keep the local JSONL data in sync automatically:
+
+- Pre-push hook: installed by `worklog init` when possible. Runs `wl sync` (or `worklog sync`) before pushes so your exported `.worklog/worklog-data.jsonl` is merged and pushed. To skip this behavior set `WORKLOG_SKIP_PRE_PUSH=1` in your environment. The hook avoids recursion when pushing the internal worklog ref.
+- Post-pull hooks: `post-merge`, `post-checkout`, and `post-rewrite` are also attempted by `worklog init`. They run `wl sync` after pull/merge/checkout events so the local database is refreshed/merged from the updated JSONL automatically. To skip post-pull syncing set `WORKLOG_SKIP_POST_PULL=1` in your environment.
+
+Notes:
+
+- The installer is conservative: it will not overwrite existing user hooks. If a hook file already exists, Worklog will skip installing its hook for that file and report the reason during `wl init`.
+- Hooks are simple shell scripts that call the Worklog CLI if it is available on your PATH; if not found they are no-ops and will not block Git operations.
+
 # Mirror work items to GitHub Issues
 worklog github push --repo owner/name
 
