@@ -5,7 +5,7 @@
 import type { PluginContext } from '../plugin-types.js';
 import type { ListOptions } from '../cli-types.js';
 import type { WorkItemQuery, WorkItemStatus, WorkItemPriority } from '../types.js';
-import { displayItemTree, humanFormatWorkItem, resolveFormat, sortByPriorityAndDate } from './helpers.js';
+import { displayItemTree, displayItemTreeWithFormat, humanFormatWorkItem, resolveFormat, sortByPriorityAndDate } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
@@ -75,7 +75,11 @@ export default function register(ctx: PluginContext): void {
         const format = resolveFormat(program);
         if (format.toLowerCase() === 'concise') {
           console.log('');
-          displayItemTree(displayItems);
+          // Use the shared renderer so `list` and `show` produce identical concise output.
+          // The human formatter's concise mode now includes the additional fields
+          // (Status, Priority, Risk, Effort, Assignee, Tags) so this preserves
+          // the richer information previously shown by the legacy tree printer.
+          displayItemTreeWithFormat(displayItems, db, format);
           console.log('');
           return;
         }

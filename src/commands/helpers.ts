@@ -52,6 +52,10 @@ export function formatTitleOnly(item: WorkItem): string {
 }
 
 // Helper to display work items in a tree structure
+/**
+ * @deprecated Use `displayItemTreeWithFormat(items, db, format)` which delegates
+ * to the human formatter and keeps `list` and `show` outputs consistent.
+ */
 export function displayItemTree(items: WorkItem[]): void {
   const itemIds = new Set(items.map(i => i.id));
   
@@ -143,7 +147,16 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   }
 
   if (fmt === 'concise') {
-    return `${formatTitleOnly(item)} ${chalk.gray(item.id)}`;
+    const lines: string[] = [];
+    // First line: title + id (compact)
+    lines.push(`${formatTitleOnly(item)} ${chalk.gray(item.id)}`);
+    // Second line: status and priority (core metadata shown previously by list)
+    lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    if (item.risk) lines.push(`Risk: ${item.risk}`);
+    if (item.effort) lines.push(`Effort: ${item.effort}`);
+    if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
+    if (item.tags && item.tags.length > 0) lines.push(`Tags: ${item.tags.join(', ')}`);
+    return lines.join('\n');
   }
 
   // normal output
