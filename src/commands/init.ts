@@ -180,10 +180,14 @@ function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
 async function performInitSync(dataPath: string, prefix?: string, isJsonMode: boolean = false): Promise<void> {
   const config = loadConfig();
   const defaults = getSyncDefaults(config || undefined);
+  // Create DB with autoExport disabled to avoid intermediate exports while
+  // importing items and comments separately. We'll write the merged JSONL
+  // once after both imports are applied.
   const db = new (await import('../database.js')).WorklogDatabase(
     prefix || config?.prefix || 'WL',
     undefined,
-    dataPath
+    dataPath,
+    /* autoExport */ false
   );
   
   const localItems = db.getAll();
@@ -261,15 +265,15 @@ export default function register(ctx: PluginContext): void {
             try {
               await performInitSync(dataPath, updatedConfig?.prefix, false);
             } catch (syncError) {
-              console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
+              console.log('\nSync failed (this is OK for new projects without remote data)');
               console.log(`  ${(syncError as Error).message}`);
             }
 
             console.log('\n' + chalk.blue('## Gitignore') + '\n');
             const gitignoreResult = ensureGitignore({ silent: false });
-            if (gitignoreResult.reason) {
-              console.log(`Note: .gitignore not updated: ${gitignoreResult.reason}`);
-            }
+              if (gitignoreResult.reason) {
+                console.log(`.gitignore not updated: ${gitignoreResult.reason}`);
+              }
 
             console.log('\n' + chalk.blue('## Git Hooks') + '\n');
             const hookResult = installPrePushHook({ silent: false });
@@ -286,7 +290,7 @@ export default function register(ctx: PluginContext): void {
               console.log('Git pre-push hook: not present');
             }
             if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
-              console.log(`\nNote: git pre-push hook not installed: ${hookResult.reason}`);
+              console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
             }
             return;
           } catch (error) {
@@ -342,7 +346,7 @@ export default function register(ctx: PluginContext): void {
             };
             output.json(outputData);
           } else {
-            console.log('\nNote: Sync failed (this is OK for new projects without remote data)');
+            console.log('\nSync failed (this is OK for new projects without remote data)');
             console.log(`  ${(syncError as Error).message}`);
           }
         }
@@ -351,7 +355,7 @@ export default function register(ctx: PluginContext): void {
           console.log('\n' + chalk.blue('## Gitignore') + '\n');
           const gitignoreResult = ensureGitignore({ silent: false });
           if (gitignoreResult.reason) {
-            console.log(`Note: .gitignore not updated: ${gitignoreResult.reason}`);
+            console.log(`.gitignore not updated: ${gitignoreResult.reason}`);
           }
 
           console.log('\n' + chalk.blue('## Git Hooks') + '\n');
@@ -369,7 +373,7 @@ export default function register(ctx: PluginContext): void {
             console.log('Git pre-push hook: not present');
           }
           if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
-            console.log(`\nNote: git pre-push hook not installed: ${hookResult.reason}`);
+            console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
           }
         }
       } catch (error) {
