@@ -95,5 +95,17 @@ describe('CLI Team Tests', () => {
         expect(result.error).toContain('not initialized');
       }
     });
+
+    it('should show sync diagnostics in JSON mode', async () => {
+      const { stdout } = await execAsync(`tsx ${cliPath} --json sync debug`);
+
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.debug).toBeDefined();
+      expect(result.debug.file).toBeDefined();
+      expect(result.debug.git).toBeDefined();
+      expect(result.debug.local).toBeDefined();
+      expect(result.debug.remote).toBeDefined();
+    });
   });
 });

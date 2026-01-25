@@ -3,7 +3,7 @@
  */
 
 import type { PluginContext } from '../plugin-types.js';
-import type { SyncOptions } from '../cli-types.js';
+import type { SyncOptions, SyncDebugOptions } from '../cli-types.js';
 import type { WorkItem, Comment } from '../types.js';
 import type { GitTarget, SyncResult } from '../sync.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments } from '../sync.js';
@@ -11,6 +11,11 @@ import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from '../sync-defaults.js';
 import { importFromJsonlContent, exportToJsonl } from '../jsonl.js';
 import { loadConfig } from '../config.js';
 import { displayConflictDetails } from './helpers.js';
+import * as childProcess from 'child_process';
+import * as fs from 'fs';
+import { promisify } from 'util';
+
+const execAsync = promisify(childProcess.exec);
 
 function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
   return {
@@ -186,10 +191,47 @@ async function performSync(
   return result;
 }
 
+async function getGitInfo(remote: string): Promise<{ repoRoot?: string; currentBranch?: string; remoteUrl?: string; error?: string }> {
+  try {
+    const { stdout: repoRoot } = await execAsync('git rev-parse --show-toplevel');
+    const { stdout: currentBranch } = await execAsync('git rev-parse --abbrev-ref HEAD');
+    let remoteUrl: string | undefined;
+    try {
+      const { stdout } = await execAsync(`git remote get-url ${remote}`);
+      remoteUrl = stdout.trim();
+    } catch {
+      remoteUrl = undefined;
+    }
+    return {
+      repoRoot: repoRoot.trim(),
+      currentBranch: currentBranch.trim(),
+      remoteUrl
+    };
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
+}
+
+function getLocalDataInfo(filePath: string): { exists: boolean; items: number; comments: number; bytes: number } {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, items: 0, comments: 0, bytes: 0 };
+  }
+
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const data = importFromJsonlContent(content);
+  const bytes = Buffer.byteLength(content, 'utf-8');
+  return {
+    exists: true,
+    items: data.items.length,
+    comments: data.comments.length,
+    bytes
+  };
+}
+
 export default function register(ctx: PluginContext): void {
   const { program, dataPath, output, utils } = ctx;
-  
-  program
+
+  const syncCommand = program
     .command('sync')
     .description('Sync work items with git repository (pull, merge with conflict resolution, and push)')
     .option('-f, --file <filepath>', 'Data file path', dataPath)
@@ -227,6 +269,92 @@ export default function register(ctx: PluginContext): void {
           console.error('\n✗ Sync failed:', (error as Error).message);
         }
         process.exit(1);
+      }
+    });
+
+  syncCommand
+    .command('debug')
+    .description('Show sync diagnostics (data path, git ref, local/remote counts)')
+    .option('-f, --file <filepath>', 'Data file path', dataPath)
+    .option('--prefix <prefix>', 'Override the default prefix')
+    .option('--git-remote <remote>', 'Git remote to use for syncing data', DEFAULT_GIT_REMOTE)
+    .option('--git-branch <ref>', 'Git ref to store worklog data (use refs/worklog/data to avoid GitHub PR banners)', DEFAULT_GIT_BRANCH)
+    .action(async (options: SyncDebugOptions) => {
+      utils.requireInitialized();
+      const isJsonMode = utils.isJsonMode();
+
+      const config = utils.getConfig();
+      const defaults = getSyncDefaults(config || undefined);
+      const gitRemote = options.gitRemote || defaults.gitRemote;
+      const gitBranch = options.gitBranch || defaults.gitBranch;
+      const filePath = options.file || dataPath;
+
+      const gitInfo = await getGitInfo(gitRemote);
+      const localInfo = getLocalDataInfo(filePath);
+      let remoteInfo: { exists: boolean; items: number; comments: number; bytes: number; error?: string } = {
+        exists: false,
+        items: 0,
+        comments: 0,
+        bytes: 0
+      };
+
+      try {
+        const gitTarget: GitTarget = { remote: gitRemote, branch: gitBranch };
+        const remoteContent = await getRemoteDataFileContent(filePath, gitTarget);
+        if (remoteContent) {
+          const remoteData = importFromJsonlContent(remoteContent);
+          remoteInfo = {
+            exists: true,
+            items: remoteData.items.length,
+            comments: remoteData.comments.length,
+            bytes: Buffer.byteLength(remoteContent, 'utf-8')
+          };
+        }
+      } catch (error) {
+        remoteInfo = {
+          exists: false,
+          items: 0,
+          comments: 0,
+          bytes: 0,
+          error: (error as Error).message
+        };
+      }
+
+      const payload = {
+        success: true,
+        debug: {
+          file: filePath,
+          git: {
+            remote: gitRemote,
+            branch: gitBranch,
+            repoRoot: gitInfo.repoRoot,
+            currentBranch: gitInfo.currentBranch,
+            remoteUrl: gitInfo.remoteUrl,
+            error: gitInfo.error
+          },
+          local: localInfo,
+          remote: remoteInfo
+        }
+      };
+
+      if (isJsonMode) {
+        output.json(payload);
+        return;
+      }
+
+      console.log('Sync Debug');
+      console.log(`Data file: ${filePath}`);
+      console.log(`Git remote: ${gitRemote}`);
+      console.log(`Git ref: ${gitBranch}`);
+      if (gitInfo.repoRoot) console.log(`Repo root: ${gitInfo.repoRoot}`);
+      if (gitInfo.currentBranch) console.log(`Current branch: ${gitInfo.currentBranch}`);
+      if (gitInfo.remoteUrl) console.log(`Remote URL: ${gitInfo.remoteUrl}`);
+      if (gitInfo.error) console.log(`Git error: ${gitInfo.error}`);
+      console.log(`Local data: ${localInfo.exists ? 'present' : 'missing'} (${localInfo.items} items, ${localInfo.comments} comments, ${localInfo.bytes} bytes)`);
+      if (remoteInfo.error) {
+        console.log(`Remote data: error (${remoteInfo.error})`);
+      } else {
+        console.log(`Remote data: ${remoteInfo.exists ? 'present' : 'missing'} (${remoteInfo.items} items, ${remoteInfo.comments} comments, ${remoteInfo.bytes} bytes)`);
       }
     });
 }

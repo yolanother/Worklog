@@ -232,6 +232,13 @@ wl sync --dry-run
 wl sync --git-remote origin --git-branch refs/worklog/data
 ```
 
+Diagnostics:
+
+```sh
+wl sync debug
+wl --json sync debug
+```
+
 Example (JSON / dry-run):
 
 ```sh

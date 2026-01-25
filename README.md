@@ -162,6 +162,10 @@ worklog sync
 
 # Dry run to preview changes
 worklog sync --dry-run
+
+# Diagnostics for troubleshooting sync setup
+worklog sync debug
+worklog --json sync debug
 ```
 
 ## Usage

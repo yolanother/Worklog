@@ -68,6 +68,13 @@ export interface SyncOptions {
   dryRun?: boolean;
 }
 
+export interface SyncDebugOptions {
+  file?: string;
+  prefix?: string;
+  gitRemote?: string;
+  gitBranch?: string;
+}
+
 export interface CommentCreateOptions { author: string; comment: string; references?: string; prefix?: string }
 export interface CommentListOptions { prefix?: string }
 export interface CommentShowOptions { prefix?: string }
