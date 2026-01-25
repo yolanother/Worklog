@@ -454,13 +454,11 @@ export default function register(ctx: PluginContext): void {
             // Try to install post-pull hooks too, but don't fail init if they can't be installed
             const postPullResult = installPostPullHooks({ silent: true });
             if (hookResult.present) {
-              if (hookResult.installed) {
-                console.log(`Git pre-push hook: present (installed)`);
-              } else {
-                console.log(`Git pre-push hook: present`);
-              }
+              // Use consistent phrasing with post-pull hooks
               if (hookResult.hookPath) {
-                console.log(`Hook path: ${hookResult.hookPath}`);
+                console.log(`Git pre-push hook: installed at ${hookResult.hookPath}`);
+              } else {
+                console.log('Git pre-push hook: present');
               }
             } else {
               console.log('Git pre-push hook: not present');
@@ -561,17 +559,14 @@ export default function register(ctx: PluginContext): void {
             const hookResult = installPrePushHook({ silent: false });
             const postPullResult = installPostPullHooks({ silent: true });
             if (hookResult.present) {
-            if (hookResult.installed) {
-              console.log(`Git pre-push hook: present (installed)`);
+              if (hookResult.hookPath) {
+                console.log(`Git pre-push hook: installed at ${hookResult.hookPath}`);
+              } else {
+                console.log('Git pre-push hook: present');
+              }
             } else {
-              console.log(`Git pre-push hook: present`);
+              console.log('Git pre-push hook: not present');
             }
-            if (hookResult.hookPath) {
-              console.log(`Hook path: ${hookResult.hookPath}`);
-            }
-          } else {
-            console.log('Git pre-push hook: not present');
-          }
             if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
               console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
             }
