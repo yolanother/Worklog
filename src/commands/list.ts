@@ -5,7 +5,7 @@
 import type { PluginContext } from '../plugin-types.js';
 import type { ListOptions } from '../cli-types.js';
 import type { WorkItemQuery, WorkItemStatus, WorkItemPriority } from '../types.js';
-import { displayItemTree } from './helpers.js';
+import { displayItemTree, humanFormatWorkItem, resolveFormat, sortByPriorityAndDate } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
@@ -61,8 +61,20 @@ export default function register(ctx: PluginContext): void {
         }
 
         console.log(`Found ${items.length} work item(s):\n`);
+        const format = resolveFormat(program);
+        if (format.toLowerCase() === 'concise') {
+          console.log('');
+          displayItemTree(items);
+          console.log('');
+          return;
+        }
+
+        const sortedItems = items.slice().sort(sortByPriorityAndDate);
         console.log('');
-        displayItemTree(items);
+        sortedItems.forEach((item, index) => {
+          console.log(humanFormatWorkItem(item, null, format));
+          if (index < sortedItems.length - 1) console.log('');
+        });
         console.log('');
       }
     });
