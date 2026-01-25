@@ -31,6 +31,7 @@ export interface ListOptions {
   assignee?: string;
   stage?: string;
   prefix?: string;
+  number?: string;
 }
 
 export interface ShowOptions { children?: boolean; prefix?: string }

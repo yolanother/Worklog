@@ -189,9 +189,10 @@ Options:
 
 `-s, --status <status>` (optional)
 `-p, --priority <priority>` (optional)
- 
+
 `--tags <tags>` (optional)
 `-a, --assignee <assignee>` (optional)
+`-n, --number <n>` (optional) — Limit the number of items returned
 `--stage <stage>` (optional)
 `--prefix <prefix>` (optional)
 `--json` (optional)

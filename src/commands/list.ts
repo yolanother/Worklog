@@ -17,6 +17,7 @@ export default function register(ctx: PluginContext): void {
     .option('-s, --status <status>', 'Filter by status')
     .option('-p, --priority <priority>', 'Filter by priority')
     
+    .option('-n, --number <n>', 'Limit the number of items returned')
     .option('--tags <tags>', 'Filter by tags (comma-separated)')
     .option('-a, --assignee <assignee>', 'Filter by assignee')
     .option('--stage <stage>', 'Filter by stage')
@@ -37,6 +38,10 @@ export default function register(ctx: PluginContext): void {
       
       let items = db.list(query);
 
+      // Apply --number/-n limit when provided (only for human or JSON output)
+      const numRequested = options.number ? parseInt(options.number as any, 10) : NaN;
+      const limit = Number.isNaN(numRequested) || numRequested < 1 ? undefined : numRequested;
+
       // By default hide completed items for human-readable output only.
       // When JSON mode is requested return all matching items so callers
       // can decide how to handle completed items programmatically.
@@ -53,24 +58,29 @@ export default function register(ctx: PluginContext): void {
         });
       }
       
+      // Sort then apply limit so we return the highest priority / oldest as intended
+      const sortedAll = items.slice().sort(sortByPriorityAndDate);
+      const limited = limit ? sortedAll.slice(0, limit) : sortedAll;
+
       if (utils.isJsonMode()) {
-        output.json({ success: true, count: items.length, workItems: items });
+        output.json({ success: true, count: limited.length, workItems: limited });
       } else {
         if (items.length === 0) {
           console.log('No work items found');
           return;
         }
 
-        console.log(`Found ${items.length} work item(s):\n`);
+        const displayItems = limited;
+        console.log(`Found ${displayItems.length} work item(s):\n`);
         const format = resolveFormat(program);
         if (format.toLowerCase() === 'concise') {
           console.log('');
-          displayItemTree(items);
+          displayItemTree(displayItems);
           console.log('');
           return;
         }
 
-        const sortedItems = items.slice().sort(sortByPriorityAndDate);
+        const sortedItems = displayItems;
         console.log('');
         sortedItems.forEach((item, index) => {
           console.log(humanFormatWorkItem(item, null, format));
