@@ -36,7 +36,7 @@ export default function register(ctx: PluginContext): void {
       if (options.description) updates.description = options.description;
       if (options.status) updates.status = options.status as WorkItemStatus;
       if (options.priority) updates.priority = options.priority as WorkItemPriority;
-      if (options.parent !== undefined) updates.parentId = options.parent;
+      if (options.parent !== undefined) updates.parentId = utils.normalizeCliId(options.parent, options.prefix) || null;
       
       if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
       if (options.assignee !== undefined) updates.assignee = options.assignee;

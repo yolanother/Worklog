@@ -39,6 +39,8 @@ export interface PluginContext {
     getConfig: () => WorklogConfig | null;
     /** Get prefix from config or override */
     getPrefix: (overridePrefix?: string) => string;
+    /** Normalize a CLI-provided ID by applying default prefix if missing */
+    normalizeCliId: (id?: string, overridePrefix?: string) => string | undefined;
     /** Check if in JSON output mode */
     isJsonMode: () => boolean;
   };

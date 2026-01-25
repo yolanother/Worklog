@@ -37,7 +37,7 @@ export default function register(ctx: PluginContext): void {
         description: options.description || '',
         status: (options.status || 'open') as WorkItemStatus,
         priority: (options.priority || 'medium') as WorkItemPriority,
-        parentId: options.parent || null,
+        parentId: utils.normalizeCliId(options.parent, options.prefix) || null,
         tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
         assignee: options.assignee || '',
         stage: options.stage || '',

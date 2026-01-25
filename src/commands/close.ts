@@ -22,7 +22,8 @@ export default function register(ctx: PluginContext): void {
 
       const results: Array<{ id: string; success: boolean; error?: string }> = [];
 
-      for (const id of ids) {
+      for (const rawId of ids) {
+        const id = utils.normalizeCliId(rawId, options.prefix) || rawId;
         const item = db.get(id);
         if (!item) {
           results.push({ id, success: false, error: 'Work item not found' });

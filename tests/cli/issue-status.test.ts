@@ -186,8 +186,11 @@ describe('CLI Issue Status Tests', () => {
       expect(result.workItem.title).toBe('Task 2');
     });
 
-    it('should prioritize in-progress items', async () => {
-      await execAsync(`tsx ${cliPath} create -t "Open task" -s open -p critical`);
+    it('should prioritize critical open items over lower-priority in-progress items', async () => {
+      const { stdout: openStdout } = await execAsync(`tsx ${cliPath} --json create -t "Open task" -s open -p critical`);
+      const openResult = JSON.parse(openStdout);
+      const openId = openResult.workItem.id;
+
       const { stdout: inProgressStdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress task" -s in-progress -p low`);
       const inProgressResult = JSON.parse(inProgressStdout);
       const inProgressId = inProgressResult.workItem.id;
@@ -196,7 +199,8 @@ describe('CLI Issue Status Tests', () => {
 
       const result = JSON.parse(stdout);
       expect(result.success).toBe(true);
-      expect(result.workItem.id).toBe(inProgressId);
+      // New selection logic favors the critical open item over a lower-priority in-progress item
+      expect(result.workItem.id).toBe(openId);
     });
 
     it('should skip completed items', async () => {

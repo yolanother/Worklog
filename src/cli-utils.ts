@@ -94,6 +94,25 @@ export function getPrefix(overridePrefix?: string): string {
 }
 
 /**
+ * Normalize an ID provided on the CLI. If the value already contains a dash
+ * (assumed to include a prefix) it will be upper-cased and returned as-is.
+ * Otherwise the configured default prefix (or provided override) is prepended
+ * and the resulting ID is returned in upper-case. Returns undefined for
+ * undefined/empty input.
+ */
+export function normalizeCliId(id?: string, overridePrefix?: string): string | undefined {
+  if (!id && id !== '') return undefined;
+  const trimmed = (id || '').toString().trim();
+  if (trimmed === '') return undefined;
+
+  // If it already contains a dash, assume it has a prefix and normalize casing
+  if (trimmed.includes('-')) return trimmed.toUpperCase();
+
+  const prefix = getPrefix(overridePrefix);
+  return `${prefix}-${trimmed.toUpperCase()}`;
+}
+
+/**
  * Create shared plugin context
  */
 export function createPluginContext(program: Command): PluginContext {
@@ -107,6 +126,7 @@ export function createPluginContext(program: Command): PluginContext {
       getDatabase: (prefix?: string) => getDatabase(prefix, program),
       getConfig: loadConfig,
       getPrefix,
+      normalizeCliId,
       isJsonMode: () => program.opts().json
     }
   };

@@ -16,16 +16,17 @@ export default function register(ctx: PluginContext): void {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       
-      const deleted = db.delete(id);
+      const normalizedId = utils.normalizeCliId(id, options.prefix) || id;
+      const deleted = db.delete(normalizedId);
       if (!deleted) {
-        output.error(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
+        output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
         process.exit(1);
       }
       
-      if (utils.isJsonMode()) {
-        output.json({ success: true, message: `Deleted work item: ${id}`, deletedId: id });
+        if (utils.isJsonMode()) {
+        output.json({ success: true, message: `Deleted work item: ${normalizedId}`, deletedId: normalizedId });
       } else {
-        console.log(`Deleted work item: ${id}`);
+        console.log(`Deleted work item: ${normalizedId}`);
       }
     });
 }

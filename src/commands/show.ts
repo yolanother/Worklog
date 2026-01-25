@@ -18,17 +18,18 @@ export default function register(ctx: PluginContext): void {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       
-      const item = db.get(id);
+      const normalizedId = utils.normalizeCliId(id, options.prefix) || id;
+      const item = db.get(normalizedId);
       if (!item) {
-        output.error(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
+        output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
         process.exit(1);
       }
       
       if (utils.isJsonMode()) {
         const result: any = { success: true, workItem: item };
-        result.comments = db.getCommentsForWorkItem(id);
+        result.comments = db.getCommentsForWorkItem(normalizedId);
         if (options.children) {
-          const children = db.getDescendants(id);
+           const children = db.getDescendants(normalizedId);
           const ancestors: typeof item[] = [];
           let currentParentId = item.parentId;
           while (currentParentId) {

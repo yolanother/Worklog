@@ -31,12 +31,21 @@ export default function register(ctx: PluginContext): void {
     .action((workItemId: string, options: CommentCreateOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      
+      const normalizedWorkItemId = utils.normalizeCliId(workItemId, options.prefix) || workItemId;
+      const refs = options.references ? options.references.split(',').map((r: string) => {
+        const t = r.trim();
+        // If looks like an unprefixed ID (alphanumeric only) or contains a dash, normalize
+        if (/^[A-Z0-9]+$/i.test(t) || /^[A-Z0-9]+-[A-Z0-9]+$/i.test(t)) {
+          return utils.normalizeCliId(t, options.prefix) || t;
+        }
+        return t;
+      }) : [];
+
       const comment = db.createComment({
-        workItemId,
+        workItemId: normalizedWorkItemId,
         author: options.author,
         comment: options.comment,
-        references: options.references ? options.references.split(',').map((r: string) => r.trim()) : [],
+        references: refs,
       });
       
       if (!comment) {
@@ -60,10 +69,10 @@ export default function register(ctx: PluginContext): void {
     .action((workItemId: string, options: CommentListOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      
-      const workItem = db.get(workItemId);
+      const normalizedWorkItemId = utils.normalizeCliId(workItemId, options.prefix) || workItemId;
+      const workItem = db.get(normalizedWorkItemId);
       if (!workItem) {
-        output.error(`Work item not found: ${workItemId}`, { success: false, error: `Work item not found: ${workItemId}` });
+        output.error(`Work item not found: ${normalizedWorkItemId}`, { success: false, error: `Work item not found: ${normalizedWorkItemId}` });
         process.exit(1);
       }
       
@@ -96,10 +105,10 @@ export default function register(ctx: PluginContext): void {
     .action((commentId: string, options: CommentShowOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      
-      const comment = db.getComment(commentId);
+      const normalizedCommentId = utils.normalizeCliId(commentId, options.prefix) || commentId;
+      const comment = db.getComment(normalizedCommentId);
       if (!comment) {
-        output.error(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
+        output.error(`Comment not found: ${normalizedCommentId}`, { success: false, error: `Comment not found: ${normalizedCommentId}` });
         process.exit(1);
       }
       
@@ -125,11 +134,18 @@ export default function register(ctx: PluginContext): void {
       const updates: UpdateCommentInput = {};
       if (options.author) updates.author = options.author;
       if (options.comment) updates.comment = options.comment;
-      if (options.references) updates.references = options.references.split(',').map((r: string) => r.trim());
+      if (options.references) updates.references = options.references.split(',').map((r: string) => {
+        const t = r.trim();
+        if (/^[A-Z0-9]+$/i.test(t) || /^[A-Z0-9]+-[A-Z0-9]+$/i.test(t)) {
+          return utils.normalizeCliId(t, options.prefix) || t;
+        }
+        return t;
+      });
       
-      const comment = db.updateComment(commentId, updates);
+      const normalizedCommentId = utils.normalizeCliId(commentId, options.prefix) || commentId;
+      const comment = db.updateComment(normalizedCommentId, updates);
       if (!comment) {
-        output.error(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
+        output.error(`Comment not found: ${normalizedCommentId}`, { success: false, error: `Comment not found: ${normalizedCommentId}` });
         process.exit(1);
       }
       
@@ -149,17 +165,17 @@ export default function register(ctx: PluginContext): void {
     .action((commentId: string, options: CommentDeleteOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      
-      const deleted = db.deleteComment(commentId);
+      const normalizedCommentId = utils.normalizeCliId(commentId, options.prefix) || commentId;
+      const deleted = db.deleteComment(normalizedCommentId);
       if (!deleted) {
-        output.error(`Comment not found: ${commentId}`, { success: false, error: `Comment not found: ${commentId}` });
+        output.error(`Comment not found: ${normalizedCommentId}`, { success: false, error: `Comment not found: ${normalizedCommentId}` });
         process.exit(1);
       }
       
-      if (utils.isJsonMode()) {
-        output.json({ success: true, message: `Deleted comment: ${commentId}`, deletedId: commentId });
+        if (utils.isJsonMode()) {
+        output.json({ success: true, message: `Deleted comment: ${normalizedCommentId}`, deletedId: normalizedCommentId });
       } else {
-        console.log(`Deleted comment: ${commentId}`);
+        console.log(`Deleted comment: ${normalizedCommentId}`);
       }
     });
 }
