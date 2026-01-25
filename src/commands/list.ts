@@ -16,7 +16,7 @@ export default function register(ctx: PluginContext): void {
     .argument('[search]', 'Search term (matches title and description)')
     .option('-s, --status <status>', 'Filter by status')
     .option('-p, --priority <priority>', 'Filter by priority')
-    .option('-P, --parent <parentId>', 'Filter by parent ID (use "null" for root items)')
+    
     .option('--tags <tags>', 'Filter by tags (comma-separated)')
     .option('-a, --assignee <assignee>', 'Filter by assignee')
     .option('--stage <stage>', 'Filter by stage')
@@ -28,9 +28,7 @@ export default function register(ctx: PluginContext): void {
       const query: WorkItemQuery = {};
       if (options.status) query.status = options.status as WorkItemStatus;
       if (options.priority) query.priority = options.priority as WorkItemPriority;
-      if (options.parent !== undefined) {
-        query.parentId = options.parent === 'null' ? null : options.parent;
-      }
+      
       if (options.tags) {
         query.tags = options.tags.split(',').map((t: string) => t.trim());
       }
@@ -39,7 +37,10 @@ export default function register(ctx: PluginContext): void {
       
       let items = db.list(query);
 
-      if (!options.status) {
+      // By default hide completed items for human-readable output only.
+      // When JSON mode is requested return all matching items so callers
+      // can decide how to handle completed items programmatically.
+      if (!options.status && !utils.isJsonMode()) {
         items = items.filter(item => item.status !== 'completed');
       }
 

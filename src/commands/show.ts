@@ -70,8 +70,9 @@ export default function register(ctx: PluginContext): void {
         return;
       }
       console.log('');
-      // For single-item show, use the human formatter which respects `-F/--format`.
-      // The formatter will include comments when `full` is selected.
-      console.log(humanFormatWorkItem(item, db, chosenFormat));
+      // For single-item show, display as a tree (preserves the same visual
+      // layout used when showing children). This ensures a consistent
+      // hierarchy marker is present even for a single item in human mode.
+      displayItemTreeWithFormat([item], db, chosenFormat);
     });
 }

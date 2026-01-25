@@ -189,7 +189,7 @@ Options:
 
 `-s, --status <status>` (optional)
 `-p, --priority <priority>` (optional)
-`-P, --parent <parentId>` (use `null` to show root items) (optional)
+ 
 `--tags <tags>` (optional)
 `-a, --assignee <assignee>` (optional)
 `--stage <stage>` (optional)
