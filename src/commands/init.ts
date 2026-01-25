@@ -437,9 +437,17 @@ export default function register(ctx: PluginContext): void {
 
             console.log('\n' + chalk.blue('## Gitignore') + '\n');
             const gitignoreResult = ensureGitignore({ silent: false });
+            if (gitignoreResult.updated) {
+              console.log(`.gitignore updated at ${gitignoreResult.gitignorePath} (added ${gitignoreResult.added?.length || 0} entries)`);
+            } else if (gitignoreResult.present) {
+              console.log('.gitignore is already up-to-date');
+            } else {
               if (gitignoreResult.reason) {
                 console.log(`.gitignore not updated: ${gitignoreResult.reason}`);
+              } else {
+                console.log('.gitignore: no changes required');
               }
+            }
 
             console.log('\n' + chalk.blue('## Git Hooks') + '\n');
             const hookResult = installPrePushHook({ silent: false });
@@ -534,12 +542,20 @@ export default function register(ctx: PluginContext): void {
           }
         }
 
-        if (!isJsonMode) {
-          console.log('\n' + chalk.blue('## Gitignore') + '\n');
-          const gitignoreResult = ensureGitignore({ silent: false });
-          if (gitignoreResult.reason) {
-            console.log(`.gitignore not updated: ${gitignoreResult.reason}`);
-          }
+          if (!isJsonMode) {
+            console.log('\n' + chalk.blue('## Gitignore') + '\n');
+            const gitignoreResult = ensureGitignore({ silent: false });
+            if (gitignoreResult.updated) {
+              console.log(`.gitignore updated at ${gitignoreResult.gitignorePath} (added ${gitignoreResult.added?.length || 0} entries)`);
+            } else if (gitignoreResult.present) {
+              console.log('.gitignore is already up-to-date');
+            } else {
+              if (gitignoreResult.reason) {
+                console.log(`.gitignore not updated: ${gitignoreResult.reason}`);
+              } else {
+                console.log('.gitignore: no changes required');
+              }
+            }
 
           console.log('\n' + chalk.blue('## Git Hooks') + '\n');
             const hookResult = installPrePushHook({ silent: false });
