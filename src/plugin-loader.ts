@@ -6,13 +6,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import type { PluginContext, PluginInfo, PluginLoaderOptions, PluginModule } from './plugin-types.js';
+import { resolveWorklogDir } from './worklog-paths.js';
 
 /**
  * Get the default plugin directory path
  * @returns Absolute path to the plugin directory
  */
 export function getDefaultPluginDir(): string {
-  return path.join(process.cwd(), '.worklog', 'plugins');
+  return path.join(resolveWorklogDir(), 'plugins');
 }
 
 /**

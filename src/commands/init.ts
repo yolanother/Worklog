@@ -180,7 +180,11 @@ function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
 async function performInitSync(dataPath: string, prefix?: string, isJsonMode: boolean = false): Promise<void> {
   const config = loadConfig();
   const defaults = getSyncDefaults(config || undefined);
-  const db = new (await import('../database.js')).WorklogDatabase(prefix || config?.prefix || 'WL');
+  const db = new (await import('../database.js')).WorklogDatabase(
+    prefix || config?.prefix || 'WL',
+    undefined,
+    dataPath
+  );
   
   const localItems = db.getAll();
   const localComments = db.getAllComments();

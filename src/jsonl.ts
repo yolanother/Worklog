@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorkItem, Comment } from './types.js';
 import { stripWorklogMarkers } from './github.js';
+import { resolveWorklogDir } from './worklog-paths.js';
 
 function normalizeForStableJson(value: any): any {
   if (value === null || value === undefined) return value;
@@ -199,5 +200,5 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
  * Get the default data file path
  */
 export function getDefaultDataPath(): string {
-  return path.join(process.cwd(), '.worklog', 'worklog-data.jsonl');
+  return path.join(resolveWorklogDir(), 'worklog-data.jsonl');
 }

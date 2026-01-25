@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { WorklogConfig } from './types.js';
 import * as readline from 'readline';
+import { resolveWorklogDir } from './worklog-paths.js';
 import chalk from 'chalk';
 
 const CONFIG_DIR = '.worklog';
@@ -18,7 +19,7 @@ const INIT_SEMAPHORE_FILE = 'initialized';
  * Get the path to the config directory
  */
 export function getConfigDir(): string {
-  return path.join(process.cwd(), CONFIG_DIR);
+  return resolveWorklogDir();
 }
 
 /**
