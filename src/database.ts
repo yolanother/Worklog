@@ -316,6 +316,15 @@ export class WorklogDatabase {
   }
 
   /**
+   * Get children that are not closed or deleted
+   */
+  private getNonClosedChildren(parentId: string): WorkItem[] {
+    return this.getChildren(parentId).filter(
+      item => item.status !== 'completed' && item.status !== 'deleted'
+    );
+  }
+
+  /**
    * Get all descendants (children, grandchildren, etc.) of a work item
    */
   getDescendants(parentId: string): WorkItem[] {
@@ -419,6 +428,26 @@ export class WorklogDatabase {
   }
 
   /**
+   * Select the highest priority blocking candidate with critical reference
+   */
+  private selectHighestPriorityBlocking(pairs: { blocking: WorkItem; critical: WorkItem }[]): { blocking: WorkItem; critical: WorkItem } | null {
+    if (pairs.length === 0) {
+      return null;
+    }
+
+    const sorted = pairs.sort((a, b) => {
+      const priorityDiff = this.getPriorityValue(b.blocking.priority) - this.getPriorityValue(a.blocking.priority);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      return new Date(a.blocking.createdAt).getTime() - new Date(b.blocking.createdAt).getTime();
+    });
+
+    return sorted[0];
+  }
+
+  /**
    * Find the next work item to work on based on priority and creation time
    * @param assignee - Optional assignee filter
    * @param searchTerm - Optional search term for fuzzy matching
@@ -432,6 +461,63 @@ export class WorklogDatabase {
 
     // Apply filters
     items = this.applyFilters(items, assignee, searchTerm);
+
+    const criticalItems = items.filter(
+      item => item.priority === 'critical' && item.status !== 'completed' && item.status !== 'deleted'
+    );
+    const unblockedCriticals = criticalItems.filter(
+      item => item.status !== 'blocked' && this.getNonClosedChildren(item.id).length === 0
+    );
+
+    if (unblockedCriticals.length > 0) {
+      const selected = this.selectHighestPriorityOldest(unblockedCriticals);
+      return {
+        workItem: selected,
+        reason: 'Unblocked critical work item'
+      };
+    }
+
+    const blockedCriticals = criticalItems.filter(
+      item => item.status === 'blocked' || this.getNonClosedChildren(item.id).length > 0
+    );
+    if (blockedCriticals.length > 0) {
+      const blockingPairs: { blocking: WorkItem; critical: WorkItem }[] = [];
+
+      for (const critical of blockedCriticals) {
+        if (critical.status === 'blocked') {
+          const blockingIssues = this.extractBlockingIssues(critical);
+          for (const id of blockingIssues) {
+            const blockingItem = this.get(id);
+            if (blockingItem && blockingItem.status !== 'completed' && blockingItem.status !== 'deleted') {
+              blockingPairs.push({ blocking: blockingItem, critical });
+            }
+          }
+        }
+
+        const blockingChildren = this.getNonClosedChildren(critical.id);
+        for (const child of blockingChildren) {
+          blockingPairs.push({ blocking: child, critical });
+        }
+      }
+
+      const filteredBlockingPairs = blockingPairs.filter(pair =>
+        this.applyFilters([pair.blocking], assignee, searchTerm).length > 0
+      );
+      const selectedBlocking = this.selectHighestPriorityBlocking(filteredBlockingPairs);
+
+      if (selectedBlocking) {
+        return {
+          workItem: selectedBlocking.blocking,
+          reason: `Blocking issue for critical item ${selectedBlocking.critical.id} (${selectedBlocking.critical.title})`
+        };
+      }
+
+      const selectedBlockedCritical = this.selectHighestPriorityOldest(blockedCriticals);
+      return {
+        workItem: selectedBlockedCritical,
+        reason: 'Blocked critical work item with no identifiable blocking issues'
+      };
+    }
 
     // Find in-progress and blocked items
     const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
@@ -533,12 +619,69 @@ export class WorklogDatabase {
       // Apply filters
       items = this.applyFilters(items, assignee, searchTerm);
 
+      let result: NextWorkItemResult | null = null;
+
+      const criticalItems = items.filter(
+        item => item.priority === 'critical' && item.status !== 'completed' && item.status !== 'deleted'
+      );
+      const unblockedCriticals = criticalItems.filter(
+        item => item.status !== 'blocked' && this.getNonClosedChildren(item.id).length === 0
+      );
+
+      if (unblockedCriticals.length > 0) {
+        const selected = this.selectHighestPriorityOldest(unblockedCriticals);
+        result = {
+          workItem: selected,
+          reason: 'Unblocked critical work item'
+        };
+      } else {
+        const blockedCriticals = criticalItems.filter(
+          item => item.status === 'blocked' || this.getNonClosedChildren(item.id).length > 0
+        );
+        if (blockedCriticals.length > 0) {
+          const blockingPairs: { blocking: WorkItem; critical: WorkItem }[] = [];
+
+          for (const critical of blockedCriticals) {
+            if (critical.status === 'blocked') {
+              const blockingIssues = this.extractBlockingIssues(critical);
+              for (const id of blockingIssues) {
+                const blockingItem = this.get(id);
+                if (blockingItem && blockingItem.status !== 'completed' && blockingItem.status !== 'deleted') {
+                  blockingPairs.push({ blocking: blockingItem, critical });
+                }
+              }
+            }
+
+            const blockingChildren = this.getNonClosedChildren(critical.id);
+            for (const child of blockingChildren) {
+              blockingPairs.push({ blocking: child, critical });
+            }
+          }
+
+          const filteredBlockingPairs = blockingPairs.filter(pair =>
+            this.applyFilters([pair.blocking], assignee, searchTerm).length > 0
+          );
+          const selectedBlocking = this.selectHighestPriorityBlocking(filteredBlockingPairs);
+
+          if (selectedBlocking) {
+            result = {
+              workItem: selectedBlocking.blocking,
+              reason: `Blocking issue for critical item ${selectedBlocking.critical.id} (${selectedBlocking.critical.title})`
+            };
+          } else {
+            const selectedBlockedCritical = this.selectHighestPriorityOldest(blockedCriticals);
+            result = {
+              workItem: selectedBlockedCritical,
+              reason: 'Blocked critical work item with no identifiable blocking issues'
+            };
+          }
+        }
+      }
+
       // Find in-progress and blocked items
       const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
 
-      let result: NextWorkItemResult | null = null;
-
-      if (inProgressItems.length === 0) {
+      if (!result && inProgressItems.length === 0) {
         const openItems = items.filter(item => item.status !== 'completed');
         if (openItems.length === 0) {
           result = { workItem: null, reason: 'No work items available' };
@@ -549,7 +692,7 @@ export class WorklogDatabase {
             reason: `Highest priority (${selected?.priority}) and oldest open item`
           };
         }
-      } else {
+      } else if (!result) {
         const selectedInProgress = this.selectDeepestInProgress(inProgressItems);
         if (!selectedInProgress) {
           result = { workItem: null, reason: 'No work items available' };
