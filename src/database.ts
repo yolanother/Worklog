@@ -346,6 +346,79 @@ export class WorklogDatabase {
   }
 
   /**
+   * Get the depth of an item in the tree (root = 0)
+   */
+  private getDepth(itemId: string): number {
+    let depth = 0;
+    let current = this.get(itemId);
+
+    while (current && current.parentId) {
+      depth += 1;
+      current = this.get(current.parentId);
+    }
+
+    return depth;
+  }
+
+  /**
+   * Get numeric priority value for comparisons
+   */
+  private getPriorityValue(priority?: string): number {
+    const priorityOrder: { [key: string]: number } = {
+      'critical': 4,
+      'high': 3,
+      'medium': 2,
+      'low': 1,
+    };
+
+    if (!priority) return 0;
+    return priorityOrder[priority] ?? 0;
+  }
+
+  /**
+   * Select the deepest in-progress item, using priority+age as tie-breaker
+   */
+  private selectDeepestInProgress(items: WorkItem[]): WorkItem | null {
+    if (items.length === 0) {
+      return null;
+    }
+
+    const depths = items.map(item => ({ item, depth: this.getDepth(item.id) }));
+    const maxDepth = Math.max(...depths.map(entry => entry.depth));
+    const deepest = depths
+      .filter(entry => entry.depth === maxDepth)
+      .map(entry => entry.item);
+
+    return this.selectHighestPriorityOldest(deepest);
+  }
+
+  /**
+   * Find a higher priority sibling of an in-progress item
+   */
+  private findHigherPrioritySibling(items: WorkItem[], selectedInProgress: WorkItem): WorkItem | null {
+    if (!selectedInProgress.parentId) {
+      return null;
+    }
+
+    const inProgressPriority = this.getPriorityValue(selectedInProgress.priority);
+    const siblingCandidates = items.filter(item =>
+      item.parentId === selectedInProgress.parentId &&
+      item.id !== selectedInProgress.id &&
+      item.status !== 'completed' &&
+      item.status !== 'deleted' &&
+      item.status !== 'in-progress' &&
+      item.status !== 'blocked' &&
+      this.getPriorityValue(item.priority) > inProgressPriority
+    );
+
+    if (siblingCandidates.length === 0) {
+      return null;
+    }
+
+    return this.selectHighestPriorityOldest(siblingCandidates);
+  }
+
+  /**
    * Find the next work item to work on based on priority and creation time
    * @param assignee - Optional assignee filter
    * @param searchTerm - Optional search term for fuzzy matching
@@ -379,9 +452,17 @@ export class WorklogDatabase {
     // There are in-progress or blocked items
     // Find the highest priority and oldest active item
     // Note: Blocked items trigger blocking issue detection, in-progress items trigger descendant traversal
-    const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
+    const selectedInProgress = this.selectDeepestInProgress(inProgressItems);
     if (!selectedInProgress) {
       return { workItem: null, reason: 'No work items available' };
+    }
+
+    const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress);
+    if (higherPrioritySibling) {
+      return {
+        workItem: higherPrioritySibling,
+        reason: `Higher priority sibling of in-progress item ${selectedInProgress.id} (${selectedInProgress.title}); selected item priority is ${higherPrioritySibling.priority}`
+      };
     }
 
     // Check if the item is blocked - if so, prioritize its blocking issues
@@ -433,7 +514,7 @@ export class WorklogDatabase {
     const selected = this.selectHighestPriorityOldest(filteredLeaves);
     return {
       workItem: selected,
-      reason: `Highest priority (${selected?.priority}) leaf descendant of in-progress item ${selectedInProgress.id}`
+      reason: `Highest priority (${selected?.priority}) leaf descendant of deepest in-progress item ${selectedInProgress.id}`
     };
   }
 
@@ -469,51 +550,61 @@ export class WorklogDatabase {
           };
         }
       } else {
-        const selectedInProgress = this.selectHighestPriorityOldest(inProgressItems);
+        const selectedInProgress = this.selectDeepestInProgress(inProgressItems);
         if (!selectedInProgress) {
           result = { workItem: null, reason: 'No work items available' };
-        } else if (selectedInProgress.status === 'blocked') {
-          const blockingIssues = this.extractBlockingIssues(selectedInProgress);
-          if (blockingIssues.length > 0) {
-            const blockingItems = blockingIssues
-              .map(id => this.get(id))
-              .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+        } else {
+          const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress);
+          if (higherPrioritySibling) {
+            result = {
+              workItem: higherPrioritySibling,
+              reason: `Higher priority sibling of in-progress item ${selectedInProgress.id} (${selectedInProgress.title}); selected item priority is ${higherPrioritySibling.priority}`
+            };
+          }
 
-            if (blockingItems.length > 0) {
-              const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
-              if (filteredBlockingItems.length > 0) {
-                const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
-                result = {
-                  workItem: selected,
-                  reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
-                };
+          if (!result && selectedInProgress.status === 'blocked') {
+            const blockingIssues = this.extractBlockingIssues(selectedInProgress);
+            if (blockingIssues.length > 0) {
+              const blockingItems = blockingIssues
+                .map(id => this.get(id))
+                .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+
+              if (blockingItems.length > 0) {
+                const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+                if (filteredBlockingItems.length > 0) {
+                  const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
+                  result = {
+                    workItem: selected,
+                    reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+                  };
+                }
               }
             }
-          }
 
-          if (!result) {
-            result = {
-              workItem: selectedInProgress,
-              reason: `Blocked item with no identifiable blocking issues`
-            };
-          }
-        } else {
-          const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
-          const filteredLeaves = this.applyFilters(leafDescendants, assignee, searchTerm).filter(
-            item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
-          );
+            if (!result) {
+              result = {
+                workItem: selectedInProgress,
+                reason: `Blocked item with no identifiable blocking issues`
+              };
+            }
+          } else if (!result) {
+            const leafDescendants = this.getLeafDescendants(selectedInProgress.id);
+            const filteredLeaves = this.applyFilters(leafDescendants, assignee, searchTerm).filter(
+              item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
+            );
 
-          if (filteredLeaves.length === 0) {
-            result = {
-              workItem: selectedInProgress,
-              reason: `In-progress item with no open descendants`
-            };
-          } else {
-            const selected = this.selectHighestPriorityOldest(filteredLeaves);
-            result = {
-              workItem: selected,
-              reason: `Highest priority (${selected?.priority}) leaf descendant of in-progress item ${selectedInProgress.id}`
-            };
+            if (filteredLeaves.length === 0) {
+              result = {
+                workItem: selectedInProgress,
+                reason: `In-progress item with no open descendants`
+              };
+            } else {
+              const selected = this.selectHighestPriorityOldest(filteredLeaves);
+              result = {
+                workItem: selected,
+                reason: `Highest priority (${selected?.priority}) leaf descendant of deepest in-progress item ${selectedInProgress.id}`
+              };
+            }
           }
         }
       }
