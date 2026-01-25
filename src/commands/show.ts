@@ -28,8 +28,17 @@ export default function register(ctx: PluginContext): void {
         const result: any = { success: true, workItem: item };
         result.comments = db.getCommentsForWorkItem(id);
         if (options.children) {
-          const children = db.getChildren(id);
+          const children = db.getDescendants(id);
+          const ancestors: typeof item[] = [];
+          let currentParentId = item.parentId;
+          while (currentParentId) {
+            const parent = db.get(currentParentId);
+            if (!parent) break;
+            ancestors.push(parent);
+            currentParentId = parent.parentId;
+          }
           result.children = children;
+          result.ancestors = ancestors;
         }
         output.json(result);
         return;
