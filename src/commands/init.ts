@@ -192,20 +192,21 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
   }
 
   const hooksDir = path.isAbsolute(hooksPath) ? hooksPath : path.join(repoRoot, hooksPath);
-  const hookFiles = ['post-merge', 'post-checkout', 'post-rewrite'].map(f => path.join(hooksDir, f));
+  const hookNames = ['post-merge', 'post-checkout', 'post-rewrite'];
+  const hookFiles = hookNames.map(f => path.join(hooksDir, f));
 
-  const hookScript =
+  // Central script that performs the post-pull sync. Hook wrappers will call this
+  // central script so we only manage one implementation location.
+  const centralScript = path.join(hooksDir, 'worklog-post-pull');
+  const centralScriptContent =
     `#!/bin/sh\n` +
     `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
-    `# Auto-sync Worklog data after pulling/merging/checking out.\n` +
+    `# Central Worklog post-pull sync script.\n` +
     `# Set WORKLOG_SKIP_POST_PULL=1 to bypass.\n` +
-    `\n` +
     `set -e\n` +
-    `\n` +
     `if [ \"$WORKLOG_SKIP_POST_PULL\" = \"1\" ]; then\n` +
     `  exit 0\n` +
     `fi\n` +
-    `\n` +
     `if command -v wl >/dev/null 2>&1; then\n` +
     `  WL=wl\n` +
     `elif command -v worklog >/dev/null 2>&1; then\n` +
@@ -214,13 +215,36 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
     `  echo \"worklog: wl/worklog not found; skipping post-pull sync\" >&2\n` +
     `  exit 0\n` +
     `fi\n` +
-    `\n` +
-    `"$WL" sync\n` +
-    `\n` +
+    `# Run sync but do not fail the checkout/merge if sync is not available or fails\n` +
+    `if \"$WL\" sync >/dev/null 2>&1; then\n` +
+    `  :\n` +
+    `else\n` +
+    `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
+    `fi\n` +
     `exit 0\n`;
+
+  // Small wrapper hooks that call the central script. These are the files Git
+  // expects to exist: post-merge, post-checkout, post-rewrite.
+  const wrapperContent = (centralPath: string) => (
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
+    `# Wrapper that delegates to central Worklog post-pull script.\n` +
+    `exec \"${centralPath}\" \"$@\"\n`
+  );
 
   try {
     fs.mkdirSync(hooksDir, { recursive: true });
+
+    // Ensure central script is present (but don't overwrite user-provided scripts)
+    if (fs.existsSync(centralScript)) {
+      const existing = fs.readFileSync(centralScript, 'utf-8');
+      if (!existing.includes(WORKLOG_POST_PULL_HOOK_MARKER)) {
+        return { installed: false, skipped: true, present: true, hookPaths: [centralScript], reason: `central script exists at ${centralScript} (not overwriting)` };
+      }
+    } else {
+      fs.writeFileSync(centralScript, centralScriptContent, { encoding: 'utf-8', mode: 0o755 });
+      try { fs.chmodSync(centralScript, 0o755); } catch {}
+    }
 
     const installedPaths: string[] = [];
     for (const hookFile of hookFiles) {
@@ -235,17 +259,13 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
         return { installed: false, skipped: true, present: true, hookPaths: installedPaths, reason: `hook already exists at ${hookFile} (not overwriting)` };
       }
 
-      fs.writeFileSync(hookFile, hookScript, { encoding: 'utf-8', mode: 0o755 });
-      try {
-        fs.chmodSync(hookFile, 0o755);
-      } catch {
-        // ignore
-      }
+      fs.writeFileSync(hookFile, wrapperContent(centralScript), { encoding: 'utf-8', mode: 0o755 });
+      try { fs.chmodSync(hookFile, 0o755); } catch {}
       installedPaths.push(hookFile);
     }
 
     if (!options.silent) {
-      console.log(`✓ Installed git post-pull hooks at ${hooksDir}`);
+      console.log(`✓ Installed git post-pull hooks (wrappers) at ${hooksDir}`);
     }
     return { installed: true, skipped: false, present: true, hookPaths: installedPaths };
   } catch (e) {
