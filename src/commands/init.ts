@@ -12,10 +12,14 @@ import { importFromJsonlContent } from '../jsonl.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import * as readline from 'readline';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
 const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
+const WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH = 'templates/AGENTS.md';
+const WORKLOG_AGENT_DESTINATION_FILENAME = 'AGENTS.md';
 
 const WORKLOG_GITIGNORE_ENTRIES: string[] = [
   `# ${WORKLOG_GITIGNORE_MARKER}`,
@@ -177,6 +181,87 @@ function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
   };
 }
 
+function resolveRepoRoot(): string | null {
+  try {
+    const repoRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return repoRoot || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveProjectRoot(): string {
+  return resolveRepoRoot() || process.cwd();
+}
+
+function locateAgentTemplate(): string | null {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageRoot = path.resolve(moduleDir, '..', '..');
+  const candidate = path.join(packageRoot, WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+function resolveAgentDestination(projectRoot: string): string {
+  return path.join(projectRoot, WORKLOG_AGENT_DESTINATION_FILENAME);
+}
+
+function normalizeContent(content: string): string {
+  return content.replace(/\r\n/g, '\n').trimEnd();
+}
+
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      resolve(/^y(es)?$/i.test(answer.trim()));
+    });
+  });
+}
+
+async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
+  const templatePath = locateAgentTemplate();
+  if (!templatePath) {
+    return { installed: false, skipped: true, reason: 'template not found', templatePath: null, destinationPath: null };
+  }
+
+  const projectRoot = resolveProjectRoot();
+  const destinationPath = resolveAgentDestination(projectRoot);
+
+  try {
+    const templateContent = normalizeContent(fs.readFileSync(templatePath, 'utf-8'));
+    if (fs.existsSync(destinationPath)) {
+      const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
+      if (existingContent.includes(templateContent)) {
+        return { installed: false, skipped: true, reason: 'template already present', templatePath, destinationPath };
+      }
+      if (options.silent) {
+        return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
+      }
+
+      const shouldAppend = await promptYesNo('AGENTS.md already exists. Append Worklog agent guidance from template? (y/N): ');
+      if (!shouldAppend) {
+        return { installed: false, skipped: true, reason: 'user declined append', templatePath, destinationPath };
+      }
+
+      const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
+      fs.appendFileSync(destinationPath, `${separator}${templateContent}\n`, { encoding: 'utf-8' });
+      if (!options.silent) {
+        console.log(`✓ Appended AGENTS template to ${destinationPath}`);
+      }
+      return { installed: true, skipped: false, templatePath, destinationPath, appended: true };
+    }
+
+    fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+    if (!options.silent) {
+      console.log(`✓ Installed AGENTS template at ${destinationPath}`);
+    }
+    return { installed: true, skipped: false, templatePath, destinationPath };
+  } catch (e) {
+    return { installed: false, skipped: true, reason: (e as Error).message, templatePath, destinationPath };
+  }
+}
+
 async function performInitSync(dataPath: string, prefix?: string, isJsonMode: boolean = false): Promise<void> {
   const config = loadConfig();
   const defaults = getSyncDefaults(config || undefined);
@@ -241,6 +326,7 @@ export default function register(ctx: PluginContext): void {
         if (isJsonMode) {
           const gitignoreResult = ensureGitignore({ silent: true });
           const hookResult = installPrePushHook({ silent: true });
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
           output.json({
             success: true,
             message: 'Configuration already exists',
@@ -251,7 +337,8 @@ export default function register(ctx: PluginContext): void {
             version: initInfo?.version || version,
             initializedAt: initInfo?.initializedAt,
             gitignore: gitignoreResult,
-            gitHook: hookResult
+            gitHook: hookResult,
+            agentTemplate: agentTemplateResult
           });
           return;
         } else {
@@ -292,6 +379,12 @@ export default function register(ctx: PluginContext): void {
             if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
               console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
             }
+
+            console.log('\n' + chalk.blue('## Agent Template') + '\n');
+            const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+            if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
+              console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
+            }
             return;
           } catch (error) {
             output.error('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
@@ -309,6 +402,7 @@ export default function register(ctx: PluginContext): void {
         if (isJsonMode) {
           const gitignoreResult = ensureGitignore({ silent: true });
           const hookResult = installPrePushHook({ silent: true });
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
           output.json({
             success: true,
             message: 'Configuration initialized',
@@ -319,7 +413,8 @@ export default function register(ctx: PluginContext): void {
             version: version,
             initializedAt: initInfo?.initializedAt,
             gitignore: gitignoreResult,
-            gitHook: hookResult
+            gitHook: hookResult,
+            agentTemplate: agentTemplateResult
           });
         }
         
@@ -374,6 +469,12 @@ export default function register(ctx: PluginContext): void {
           }
           if (!hookResult.installed && hookResult.reason && hookResult.reason !== 'hook already installed') {
             console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
+          }
+
+          console.log('\n' + chalk.blue('## Agent Template') + '\n');
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+          if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
+            console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
           }
         }
       } catch (error) {

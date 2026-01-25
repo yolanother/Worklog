@@ -346,7 +346,7 @@ Other commands cover repository bootstrap and local system status. Use these to 
 
 ### `init`
 
-Initialize Worklog configuration in the repository (creates `.worklog` and default config).
+Initialize Worklog configuration in the repository (creates `.worklog` and default config). `wl init` also installs `AGENTS.md` in the project root from `templates/AGENTS.md`. If `AGENTS.md` already exists, it checks for the template content and prompts before appending it.
 
 Example:
 
