@@ -68,6 +68,46 @@ export function displayItemTree(items: WorkItem[]): void {
   });
 }
 
+// Display work items using the human formatter but preserve tree hierarchy
+export function displayItemTreeWithFormat(items: WorkItem[], db: WorklogDatabase | null, format: string): void {
+  const itemIds = new Set(items.map(i => i.id));
+
+  const rootItems = items.filter(item => {
+    if (item.parentId === null) return true;
+    return !itemIds.has(item.parentId);
+  });
+
+  rootItems.sort(sortByPriorityAndDate);
+
+  const displayNode = (item: WorkItem, allItems: WorkItem[], indent: string, isLast: boolean) => {
+    const prefix = indent + (isLast ? '└── ' : '├── ');
+    const detailIndent = indent + (isLast ? '    ' : '│   ');
+
+    const formatted = humanFormatWorkItem(item, db, format);
+    const lines = formatted.split('\n');
+    // First line gets the tree marker prefix
+    console.log(prefix + lines[0]);
+    // Subsequent lines align under the detail indent
+    for (let i = 1; i < lines.length; i++) {
+      console.log(detailIndent + lines[i]);
+    }
+
+    const children = allItems.filter(i => i.parentId === item.id);
+    if (children.length > 0) {
+      children.sort(sortByPriorityAndDate);
+      children.forEach((child, idx) => {
+        const last = idx === children.length - 1;
+        displayNode(child, allItems, detailIndent, last);
+      });
+    }
+  };
+
+  rootItems.forEach((item, index) => {
+    const isLastItem = index === rootItems.length - 1;
+    displayNode(item, items, '', isLastItem);
+  });
+}
+
 function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
   const prefix = indent + (isLast ? '└── ' : '├── ');
   console.log(formatTitleAndId(item, prefix));

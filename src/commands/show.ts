@@ -4,7 +4,7 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { ShowOptions } from '../cli-types.js';
-import { displayItemTree, humanFormatComment, resolveFormat } from './helpers.js';
+import { displayItemTree, displayItemTreeWithFormat, humanFormatComment, resolveFormat, humanFormatWorkItem } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
@@ -35,35 +35,34 @@ export default function register(ctx: PluginContext): void {
         return;
       }
 
+      const chosenFormat = resolveFormat(program);
+
       if (options.children) {
         const itemsToDisplay = [item, ...db.getDescendants(id)];
+
         console.log('');
-        displayItemTree(itemsToDisplay);
+        // Always show a tree with hierarchy markers; the per-item formatting
+        // is controlled by `chosenFormat` so `-F full` will include comments
+        // inline for each item while concise/normal stay compact.
+        displayItemTreeWithFormat(itemsToDisplay, db, chosenFormat);
         console.log('');
 
-        const comments = db.getCommentsForWorkItem(id);
-        if (comments.length > 0) {
-          console.log('Comments:');
-          comments.forEach(c => {
-            console.log(humanFormatComment(c, resolveFormat(program)));
-            console.log('');
-          });
+        // For non-full formats, also show comments for the root item (legacy behavior)
+        if (chosenFormat !== 'full') {
+          const comments = db.getCommentsForWorkItem(id);
+          if (comments.length > 0) {
+            console.log('Comments:');
+            comments.forEach(c => {
+              console.log(humanFormatComment(c, chosenFormat));
+              console.log('');
+            });
+          }
         }
         return;
       }
-
-      const chosenFormat = resolveFormat(program);
       console.log('');
-      displayItemTree([item]);
-      if (chosenFormat !== 'full') {
-        const comments = db.getCommentsForWorkItem(id);
-        if (comments.length > 0) {
-          console.log('\nComments:');
-          comments.forEach(c => {
-            console.log(humanFormatComment(c, chosenFormat));
-            console.log('');
-          });
-        }
-      }
+      // For single-item show, use the human formatter which respects `-F/--format`.
+      // The formatter will include comments when `full` is selected.
+      console.log(humanFormatWorkItem(item, db, chosenFormat));
     });
 }
