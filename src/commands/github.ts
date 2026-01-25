@@ -7,6 +7,7 @@ import { getRepoFromGitRemote, normalizeGithubLabelPrefix } from '../github.js';
 import { upsertIssuesFromWorkItems, importIssuesToWorkItems, GithubProgress } from '../github-sync.js';
 import { loadConfig } from '../config.js';
 import { displayConflictDetails } from './helpers.js';
+import { createLogFileWriter, getWorklogLogPath, logConflictDetails } from '../logging.js';
 
 function resolveGithubConfig(options: { repo?: string; labelPrefix?: string }) {
   const config = loadConfig();
@@ -47,6 +48,9 @@ export default function register(ctx: PluginContext): void {
       const isVerbose = program.opts().verbose;
       let lastProgress = '';
       let lastProgressLength = 0;
+      const logLine = createLogFileWriter(getWorklogLogPath('github_sync.log'));
+      logLine(`--- github push start ${new Date().toISOString()} ---`);
+      logLine(`Options json=${isJsonMode} verbose=${isVerbose}`);
 
       const renderProgress = (progress: GithubProgress) => {
         if (isJsonMode || process.stdout.isTTY !== true) {
@@ -93,6 +97,17 @@ export default function register(ctx: PluginContext): void {
           db.import(updatedItems);
         }
 
+        logLine(`Repo ${githubConfig.repo}`);
+        logLine(`Push summary created=${result.created} updated=${result.updated} skipped=${result.skipped}`);
+        if ((result.commentsCreated || 0) > 0 || (result.commentsUpdated || 0) > 0) {
+          logLine(`Comment summary created=${result.commentsCreated || 0} updated=${result.commentsUpdated || 0}`);
+        }
+        if (result.errors.length > 0) {
+          logLine(`Errors (${result.errors.length}): ${result.errors.join(' | ')}`);
+        }
+        logLine(`Timing totalMs=${timing.totalMs} upsertMs=${timing.upsertMs} commentListMs=${timing.commentListMs} commentUpsertMs=${timing.commentUpsertMs}`);
+        logLine(`Timing hierarchyCheckMs=${timing.hierarchyCheckMs} hierarchyLinkMs=${timing.hierarchyLinkMs} hierarchyVerifyMs=${timing.hierarchyVerifyMs}`);
+
         if (isJsonMode) {
           output.json({ success: true, ...result, repo: githubConfig.repo });
         } else {
@@ -119,7 +134,9 @@ export default function register(ctx: PluginContext): void {
             console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);
           }
         }
+        logLine(`--- github push end ${new Date().toISOString()} ---`);
       } catch (error) {
+        logLine(`GitHub sync failed: ${(error as Error).message}`);
         output.error(`GitHub sync failed: ${(error as Error).message}`, { success: false, error: (error as Error).message });
         process.exit(1);
       }
@@ -137,8 +154,12 @@ export default function register(ctx: PluginContext): void {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const isJsonMode = utils.isJsonMode();
+      const isVerbose = program.opts().verbose;
       let lastProgress = '';
       let lastProgressLength = 0;
+      const logLine = createLogFileWriter(getWorklogLogPath('github_sync.log'));
+      logLine(`--- github import start ${new Date().toISOString()} ---`);
+      logLine(`Options json=${isJsonMode} verbose=${isVerbose} createNew=${options.createNew ?? ''} since=${options.since || ''}`);
 
       const renderProgress = (progress: GithubProgress) => {
         if (isJsonMode || process.stdout.isTTY !== true) {
@@ -188,6 +209,24 @@ export default function register(ctx: PluginContext): void {
           }
         }
 
+        logLine(`Repo ${githubConfig.repo}`);
+        logLine(`Import summary updated=${updatedItems.length} created=${createdItems.length} totalIssues=${issues.length} markers=${markersFound}`);
+        logLine(`Import config createNew=${createNew} since=${options.since || ''}`);
+        logConflictDetails(
+          {
+            itemsAdded: createdItems.length,
+            itemsUpdated: updatedItems.length,
+            itemsUnchanged: Math.max(items.length - updatedIds.size, 0),
+            commentsAdded: 0,
+            commentsUnchanged: 0,
+            conflicts: conflictDetails.conflicts,
+            conflictDetails: conflictDetails.conflictDetails,
+          },
+          mergedItems,
+          logLine,
+          { repoUrl: `https://github.com/${githubConfig.repo}` }
+        );
+
         if (isJsonMode) {
           output.json({
             success: true,
@@ -209,21 +248,25 @@ export default function register(ctx: PluginContext): void {
           console.log(`  Issues scanned: ${issues.length} (open: ${openIssues}, closed: ${closedIssues}, worklog: ${markersFound})`);
           console.log(`  Create new: ${createNew ? 'enabled' : 'disabled'}`);
           console.log(`  Total work items: ${totalItems}`);
-          displayConflictDetails(
-            {
-              itemsAdded: createdItems.length,
-              itemsUpdated: updatedItems.length,
-              itemsUnchanged: unchanged,
-              commentsAdded: 0,
-              commentsUnchanged: 0,
-              conflicts: conflictDetails.conflicts,
-              conflictDetails: conflictDetails.conflictDetails,
-            },
-            mergedItems,
-            { repoUrl: `https://github.com/${githubConfig.repo}` }
-          );
+          if (isVerbose) {
+            displayConflictDetails(
+              {
+                itemsAdded: createdItems.length,
+                itemsUpdated: updatedItems.length,
+                itemsUnchanged: unchanged,
+                commentsAdded: 0,
+                commentsUnchanged: 0,
+                conflicts: conflictDetails.conflicts,
+                conflictDetails: conflictDetails.conflictDetails,
+              },
+              mergedItems,
+              { repoUrl: `https://github.com/${githubConfig.repo}` }
+            );
+          }
         }
+        logLine(`--- github import end ${new Date().toISOString()} ---`);
       } catch (error) {
+        logLine(`GitHub import failed: ${(error as Error).message}`);
         output.error(`GitHub import failed: ${(error as Error).message}`, { success: false, error: (error as Error).message });
         process.exit(1);
       }
