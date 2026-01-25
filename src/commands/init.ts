@@ -175,7 +175,7 @@ function installPrePushHook(options: { silent: boolean }): { installed: boolean;
   }
 }
 
-function installPostPullHooks(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPaths?: string[]; reason?: string } {
+function installPostPullHooks(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPaths?: string[]; centralScriptPath?: string; reason?: string } {
   try {
     execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
   } catch {
