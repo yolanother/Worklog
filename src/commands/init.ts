@@ -267,7 +267,7 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
     if (!options.silent) {
       console.log(`✓ Installed git post-pull hooks (wrappers) at ${hooksDir}`);
     }
-    return { installed: true, skipped: false, present: true, hookPaths: installedPaths };
+    return { installed: true, skipped: false, present: true, hookPaths: installedPaths, centralScriptPath: centralScript };
   } catch (e) {
     return { installed: false, skipped: true, present: false, hookPaths: hookFiles, reason: (e as Error).message };
   }
@@ -487,7 +487,12 @@ export default function register(ctx: PluginContext): void {
               console.log(`\ngit pre-push hook not installed: ${hookResult.reason}`);
             }
             if (postPullResult && postPullResult.installed) {
-              console.log(`Git post-pull hooks: installed at ${postPullResult.hookPaths?.join(', ')}`);
+              // Prefer to show the central script path when available
+              if ((postPullResult as any).centralScriptPath) {
+                console.log(`Git post-pull hooks: installed (central script at ${(postPullResult as any).centralScriptPath})`);
+              } else {
+                console.log(`Git post-pull hooks: installed at ${postPullResult.hookPaths?.join(', ')}`);
+              }
             } else if (postPullResult && postPullResult.skipped) {
               // don't spam the user when we silently skipped
             } else if (postPullResult && postPullResult.reason) {
