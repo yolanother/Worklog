@@ -21,6 +21,8 @@ const WORKLOG_POST_PULL_HOOK_MARKER = 'worklog:post-pull-hook:v1';
 const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
 const WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH = 'templates/AGENTS.md';
 const WORKLOG_AGENT_DESTINATION_FILENAME = 'AGENTS.md';
+const WORKFLOW_TEMPLATE_RELATIVE_PATH = 'templates/WORKFLOW.md';
+const WORKFLOW_DESTINATION_FILENAME = 'WORKFLOW.md';
 
 const WORKLOG_GITIGNORE_ENTRIES: string[] = [
   `# ${WORKLOG_GITIGNORE_MARKER}`,
@@ -428,6 +430,83 @@ function locateExampleStatsPlugin(): string | null {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+function locateWorkflowTemplate(): string | null {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageRoot = path.resolve(moduleDir, '..', '..');
+  const candidate = path.join(packageRoot, WORKFLOW_TEMPLATE_RELATIVE_PATH);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+async function promptWorkflowInstall(questionText: string): Promise<boolean> {
+  return promptYesNo(questionText);
+}
+
+async function ensureWorkflowTemplateInstalled(options: { silent: boolean; agentTemplateAction?: string; agentDestinationPath?: string }) {
+  // We do not write a standalone WORKFLOW.md into the repository. If an
+  // agent destination path is provided, inline the workflow content into the
+  // agent file. Otherwise, return a skipped result explaining that writing
+  // to disk is disabled by design.
+  const templatePath = locateWorkflowTemplate();
+  if (!templatePath) return { installed: false, skipped: true, reason: 'workflow template not found', templatePath: null, destinationPath: null };
+
+  const projectRoot = resolveProjectRoot();
+  const repoWorkflowPath = path.join(projectRoot, WORKFLOW_DESTINATION_FILENAME);
+
+  // If caller provided an agentDestinationPath, attempt to inline workflow
+  // content into the agent file (prefer repo copy if present, otherwise packaged template).
+  if (options.agentDestinationPath) {
+    try {
+      // insertWorkflowLoaderIntoAgents will read repo/workspace or packaged
+      // template as needed and perform the insertion. It will also avoid
+      // duplicating content if already present.
+      const insertResult = insertWorkflowLoaderIntoAgents(options.agentDestinationPath);
+      if (insertResult.inserted) {
+        if (!options.silent) console.log(`✓ Inlined WORKFLOW content into ${options.agentDestinationPath}`);
+        return { installed: true, skipped: false, templatePath, destinationPath: null };
+      }
+      // Already present is not an error — report as skipped
+      if (insertResult.reason === 'already present') return { installed: false, skipped: true, reason: 'already in place', templatePath, destinationPath: null };
+      return { installed: false, skipped: true, reason: insertResult.reason || 'insertion failed', templatePath, destinationPath: null };
+    } catch (e) {
+      return { installed: false, skipped: true, reason: (e as Error).message, templatePath, destinationPath: null };
+    }
+  }
+
+  // No agent destination provided: do not create a standalone WORKFLOW.md file.
+  return { installed: false, skipped: true, reason: 'not writing WORKFLOW.md to repository (inlining only)', templatePath, destinationPath: null };
+}
+
+function insertWorkflowLoaderIntoAgents(agentPath: string) {
+  try {
+    if (!fs.existsSync(agentPath)) return { inserted: false, reason: 'agents file not found' };
+
+    // Determine workflow content: prefer repository WORKFLOW.md, fall back to packaged template
+    const projectRoot = resolveProjectRoot();
+    const repoWorkflowPath = path.join(projectRoot, WORKFLOW_DESTINATION_FILENAME);
+    let workflowContent: string | null = null;
+    if (fs.existsSync(repoWorkflowPath)) {
+      workflowContent = normalizeContent(fs.readFileSync(repoWorkflowPath, 'utf-8'));
+    } else {
+      const packaged = locateWorkflowTemplate();
+      if (packaged && fs.existsSync(packaged)) {
+        workflowContent = normalizeContent(fs.readFileSync(packaged, 'utf-8'));
+      }
+    }
+    if (!workflowContent) return { inserted: false, reason: 'workflow file not found' };
+
+    const existing = fs.readFileSync(agentPath, 'utf-8');
+
+    // Avoid inserting twice (if the agent file already contains the workflow markers)
+    if (existing.includes('<!-- WORKFLOW: start -->')) return { inserted: false, reason: 'already present' };
+
+    const out = `<!-- WORKFLOW: start -->\n${workflowContent}\n<!-- WORKFLOW: end -->\n\n${existing}`;
+    fs.writeFileSync(agentPath, out, { encoding: 'utf-8' });
+    return { inserted: true, path: agentPath };
+  } catch (e) {
+    return { inserted: false, reason: (e as Error).message };
+  }
+}
+
 async function promptYesNo(question: string): Promise<boolean> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
@@ -509,7 +588,8 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
     const templateContent = normalizeContent(fs.readFileSync(templatePath, 'utf-8'));
     if (fs.existsSync(destinationPath)) {
       const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
-      const templateAlreadyPresent = existingContent === templateContent;
+      // Consider the template present if the template content is included in the existing file
+      const templateAlreadyPresent = existingContent.includes(templateContent);
       if (templateAlreadyPresent) {
         return { installed: false, skipped: true, reason: 'template already in place', templatePath, destinationPath };
       }
@@ -718,6 +798,64 @@ export default function register(ctx: PluginContext): void {
             if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
               console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
             }
+            console.log('');
+            // Offer workflow integration after AGENTS.md handling
+            const workflowTemplatePath = locateWorkflowTemplate();
+            if (workflowTemplatePath) {
+              const projectRoot = resolveProjectRoot();
+              const agentDestination = resolveAgentDestination(projectRoot);
+                
+
+              if (fs.existsSync(agentDestination)) {
+                const agentContent = fs.readFileSync(agentDestination, 'utf-8');
+                // If loader already present, note it and still offer to install WORKFLOW.md
+                if (agentContent.includes('<!-- WORKFLOW: start -->')) {
+                  // If loader present, report and do not prompt.
+                  console.log('Workflow already inlined in AGENTS.md.');
+                  // Report status of WORKFLOW.md (installed / exists but differs / missing) without prompting
+                  try {
+                    const projectRootCheck = resolveProjectRoot();
+                    const wfDest = path.join(projectRootCheck, WORKFLOW_DESTINATION_FILENAME);
+                    if (fs.existsSync(wfDest)) {
+                      const existingWf = normalizeContent(fs.readFileSync(wfDest, 'utf-8'));
+                      const templateWf = normalizeContent(fs.readFileSync(workflowTemplatePath, 'utf-8'));
+                      if (existingWf.includes(templateWf)) {
+                        // WORKFLOW.md already matches template — loader presence already communicates this intent, skip duplicate line
+                      } else {
+                        
+                      }
+                    } else {
+                      
+                    }
+                  } catch (e) {
+                    
+                  }
+                } else {
+                  // Loader missing: offer to insert loader and install WORKFLOW.md
+                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ');
+                  if (wantBoth) {
+                    const wfResult = await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
+                    // We no longer push a workflow summary line here — the function
+                    // will perform the insertion and emit its own console output above.
+                    await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
+                    await (async () => insertWorkflowLoaderIntoAgents(agentDestination))();
+                  } else {
+                  // user skipped — do not add summary lines
+                  }
+                }
+              } else {
+                // No AGENTS.md present: offer to install only WORKFLOW.md
+                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ');
+                if (wantWorkflow) {
+                  await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
+                } else {
+                  // user skipped — no summary
+                }
+              }
+
+               // We no longer print a workflowReport summary; helpers print output
+            }
+            // (note: reporting already emitted above)
             // Offer to install example stats plugin
             console.log('\n' + chalk.blue('## Install plugins') + '\n');
             const statsPluginResult = await ensureStatsPluginInstalled({ silent: false });
@@ -889,6 +1027,83 @@ export default function register(ctx: PluginContext): void {
 
           console.log('\n' + chalk.blue('## Agent Template') + '\n');
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+          // Offer workflow integration after AGENTS.md handling
+          const workflowTemplatePath = locateWorkflowTemplate();
+          if (workflowTemplatePath) {
+            const projectRoot = resolveProjectRoot();
+            const agentDestination = resolveAgentDestination(projectRoot);
+            
+
+            if (fs.existsSync(agentDestination)) {
+              const agentContent = fs.readFileSync(agentDestination, 'utf-8');
+              // If loader already present, note it and still offer to install WORKFLOW.md
+                if (agentContent.includes('<!-- WORKFLOW: start -->')) {
+                  // If loader present, report and do not prompt.
+                  console.log('Workflow already inlined in AGENTS.md.');
+                  // Report status of WORKFLOW.md (installed / exists but differs / missing) without prompting
+                  try {
+                    const projectRootCheck = resolveProjectRoot();
+                    const wfDest = path.join(projectRootCheck, WORKFLOW_DESTINATION_FILENAME);
+                    if (fs.existsSync(wfDest)) {
+                      const existingWf = normalizeContent(fs.readFileSync(wfDest, 'utf-8'));
+                      const templateWf = normalizeContent(fs.readFileSync(workflowTemplatePath, 'utf-8'));
+                      if (existingWf.includes(templateWf)) {
+                        // WORKFLOW.md already matches template — loader presence already communicates this intent, skip duplicate line
+                      } else {
+                        
+                      }
+                    } else {
+                      
+                    }
+                  } catch (e) {
+                    
+                  }
+                } else {
+                // Loader missing: offer to insert loader and install WORKFLOW.md
+                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ');
+                  if (wantBoth) {
+                    const wfResult = await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
+                    if (wfResult.installed) {
+                      
+                    } else if (wfResult.skipped) {
+                      if (wfResult.reason === 'already in place') {
+                        
+                      } else if (wfResult.reason === 'user declined') {
+                        
+                      } else if (wfResult.reason === 'confirmation required') {
+                        
+                      } else {
+                        
+                      }
+                    } else {
+                      
+                    }
+
+                    const insertResult = insertWorkflowLoaderIntoAgents(agentDestination);
+                    if (insertResult.inserted) {
+                      
+                    } else if (insertResult.reason === 'already present') {
+                      
+                    } else {
+                      
+                    }
+                  } else {
+                    
+                  }
+              }
+            } else {
+              // No AGENTS.md present: offer to install only WORKFLOW.md
+                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ');
+                if (wantWorkflow) {
+                  await ensureWorkflowTemplateInstalled({ silent: false });
+                } else {
+                  // user skipped — no summary output
+                }
+            }
+
+            // We no longer print a workflowReport summary; helpers print output
+          }
+
           if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
             console.log('AGENTS.md already matches the Worklog template.');
           }
