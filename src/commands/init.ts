@@ -308,12 +308,23 @@ function normalizeContent(content: string): string {
   return content.replace(/\r\n/g, '\n').trimEnd();
 }
 
-async function promptYesNo(question: string): Promise<boolean> {
+type AgentTemplateAction = 'overwrite' | 'append' | 'skip';
+
+async function promptAgentTemplateAction(): Promise<AgentTemplateAction> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
-    rl.question(question, answer => {
+    rl.question('AGENTS.md already exists. Overwrite, append, or manage manually? (o/a/m): ', answer => {
       rl.close();
-      resolve(/^y(es)?$/i.test(answer.trim()));
+      const trimmed = answer.trim().toLowerCase();
+      if (trimmed === 'o' || trimmed === 'overwrite') {
+        resolve('overwrite');
+        return;
+      }
+      if (trimmed === 'a' || trimmed === 'append') {
+        resolve('append');
+        return;
+      }
+      resolve('skip');
     });
   });
 }
@@ -331,16 +342,26 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
     const templateContent = normalizeContent(fs.readFileSync(templatePath, 'utf-8'));
     if (fs.existsSync(destinationPath)) {
       const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
-      if (existingContent.includes(templateContent)) {
-        return { installed: false, skipped: true, reason: 'template already present', templatePath, destinationPath };
+      const templateAlreadyPresent = existingContent === templateContent;
+      if (templateAlreadyPresent) {
+        return { installed: false, skipped: true, reason: 'template already in place', templatePath, destinationPath };
       }
       if (options.silent) {
         return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
       }
 
-      const shouldAppend = await promptYesNo('AGENTS.md already exists. Append Worklog agent guidance from template? (y/N): ');
-      if (!shouldAppend) {
-        return { installed: false, skipped: true, reason: 'user declined append', templatePath, destinationPath };
+      printAgentTemplateSummary();
+      const action = await promptAgentTemplateAction();
+      if (action === 'skip') {
+        return { installed: false, skipped: true, reason: 'user chose to manage manually', templatePath, destinationPath };
+      }
+
+      if (action === 'overwrite') {
+        fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+        if (!options.silent) {
+          console.log(`✓ Overwrote AGENTS template at ${destinationPath}`);
+        }
+        return { installed: true, skipped: false, templatePath, destinationPath, overwritten: true };
       }
 
       const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
@@ -359,6 +380,15 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
   } catch (e) {
     return { installed: false, skipped: true, reason: (e as Error).message, templatePath, destinationPath };
   }
+}
+
+function printAgentTemplateSummary(): void {
+  console.log('You already have an AGENTS.md file, but it is different from the template provided by Worklog.');
+  console.log('');
+  console.log('The AGENTS.md template adds Worklog-aware instructions so agents use wl for tracking, manage workflow stages, and follow the project rules for issues, priorities, and sync.');
+  console.log('');
+  console.log('If you do not add this content to AGENTS.md, you are expected to add your own Worklog-aware instructions to your agent definition files.');
+  console.log('');
 }
 
 async function performInitSync(dataPath: string, prefix?: string, isJsonMode: boolean = false): Promise<void> {
@@ -499,8 +529,11 @@ export default function register(ctx: PluginContext): void {
               console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
             }
 
-            console.log('\n' + chalk.blue('## Agent Template') + '\n');
+            console.log('\n' + chalk.blue('## Agent Instructions') + '\n');
             const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+            if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
+              console.log('AGENTS.md already matches the Worklog template.');
+            }
             if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
               console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
             }
@@ -603,8 +636,11 @@ export default function register(ctx: PluginContext): void {
               console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
             }
 
-          console.log('\n' + chalk.blue('## Agent Template') + '\n');
+          console.log('\n' + chalk.blue('## Agent Instructions') + '\n');
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+          if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
+            console.log('AGENTS.md already matches the Worklog template.');
+          }
           if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
             console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
           }

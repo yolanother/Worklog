@@ -120,6 +120,8 @@ wl recent --children --json
 
 # List all work items except those in a completed state
 wl list --json
+# Limit list output
+wl list -n 5 --json
 # List items filtered by status (open, in-progress, closed, etc.)
 wl list --status open --json
 # List items filtered by priority (critical, high, medium, low)
