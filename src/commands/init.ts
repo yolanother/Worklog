@@ -421,6 +421,52 @@ function locateAgentTemplate(): string | null {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+function locateExampleStatsPlugin(): string | null {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageRoot = path.resolve(moduleDir, '..', '..');
+  const candidate = path.join(packageRoot, 'examples', 'stats-plugin.mjs');
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      const t = String(answer || '').trim().toLowerCase();
+      resolve(t === 'y' || t === 'yes');
+    });
+  });
+}
+
+async function ensureStatsPluginInstalled(options: { silent: boolean }) {
+  const templatePath = locateExampleStatsPlugin();
+  if (!templatePath) return { installed: false, skipped: true, reason: 'template not found', templatePath: null, destinationPath: null };
+
+  const projectRoot = resolveProjectRoot();
+  const pluginsDir = path.join(projectRoot, '.worklog', 'plugins');
+  const destinationPath = path.join(pluginsDir, 'stats-plugin.mjs');
+
+  try {
+    const templateContent = normalizeContent(fs.readFileSync(templatePath, 'utf-8'));
+    if (fs.existsSync(destinationPath)) {
+      const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
+      const already = existingContent === templateContent;
+      if (already) return { installed: false, skipped: true, reason: 'already in place', templatePath, destinationPath };
+      if (options.silent) return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
+
+      const answer = await promptYesNo('A stats plugin already exists at .worklog/plugins/stats-plugin.mjs. Overwrite? (y/N): ');
+      if (!answer) return { installed: false, skipped: true, reason: 'user declined', templatePath, destinationPath };
+    }
+
+    fs.mkdirSync(pluginsDir, { recursive: true });
+    fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+    return { installed: true, skipped: false, templatePath, destinationPath };
+  } catch (e) {
+    return { installed: false, skipped: true, reason: (e as Error).message, templatePath, destinationPath };
+  }
+}
+
 function resolveAgentDestination(projectRoot: string): string {
   return path.join(projectRoot, WORKLOG_AGENT_DESTINATION_FILENAME);
 }
@@ -579,6 +625,7 @@ export default function register(ctx: PluginContext): void {
           const postPullResult = installPostPullHooks({ silent: true });
           const committedHooksResult = installCommittedHooks({ silent: true });
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
+          const statsPluginResult = await ensureStatsPluginInstalled({ silent: true });
           output.json({
             success: true,
             message: 'Configuration already exists',
@@ -592,7 +639,8 @@ export default function register(ctx: PluginContext): void {
             gitHook: hookResult,
             postPullHooks: postPullResult,
             committedHooks: committedHooksResult,
-            agentTemplate: agentTemplateResult
+            agentTemplate: agentTemplateResult,
+            statsPlugin: statsPluginResult
           });
           return;
         } else {
@@ -670,6 +718,71 @@ export default function register(ctx: PluginContext): void {
             if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
               console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
             }
+            // Offer to install example stats plugin
+            console.log('\n' + chalk.blue('## Install plugins') + '\n');
+            const statsPluginResult = await ensureStatsPluginInstalled({ silent: false });
+            if (statsPluginResult.installed) {
+              console.log(`✓ Installed example stats plugin at ${statsPluginResult.destinationPath}`);
+            } else if (statsPluginResult.skipped && statsPluginResult.reason === 'already in place') {
+              console.log('Stats plugin already present.');
+            } else if (statsPluginResult.skipped && statsPluginResult.reason === 'user declined') {
+              console.log('Stats plugin installation skipped by user.');
+            } else if (statsPluginResult.skipped && statsPluginResult.reason) {
+              console.log(`Stats plugin: ${statsPluginResult.reason}`);
+            }
+
+            // Summary of actions
+            console.log('\n\n' + chalk.blue('## Summary') + '\n');
+            // gitignore
+            if (gitignoreResult.updated) {
+              console.log(' - .gitignore: updated');
+            } else if (gitignoreResult.present) {
+              console.log(' - .gitignore: present (no changes)');
+            } else {
+              console.log(` - .gitignore: not updated${gitignoreResult.reason ? `: ${gitignoreResult.reason}` : ''}`);
+            }
+            // pre-push hook
+            if (hookResult.installed) {
+              console.log(' - Git pre-push hook: installed');
+            } else if (hookResult.skipped && hookResult.present) {
+              console.log(' - Git pre-push hook: present (not modified)');
+            } else {
+              console.log(` - Git pre-push hook: not installed${hookResult.reason ? `: ${hookResult.reason}` : ''}`);
+            }
+            // post-pull hooks
+            if (postPullResult && (postPullResult as any).installed) {
+              console.log(' - Git post-pull hooks: installed');
+            } else if (postPullResult && (postPullResult as any).skipped) {
+              console.log(' - Git post-pull hooks: skipped');
+            } else if (postPullResult && (postPullResult as any).reason) {
+              console.log(` - Git post-pull hooks: not installed: ${(postPullResult as any).reason}`);
+            }
+            // committed hooks
+            if (committedHooksResult && committedHooksResult.installed) {
+              console.log(' - Git committed hooks: written');
+            } else if (committedHooksResult && committedHooksResult.skipped) {
+              console.log(' - Git committed hooks: skipped');
+            }
+            // agent template
+            if (agentTemplateResult.installed) {
+              console.log(' - AGENTS.md: installed');
+            } else if (agentTemplateResult.skipped && agentTemplateResult.reason === 'template already in place') {
+              console.log(' - AGENTS.md: already in place');
+            } else if (agentTemplateResult.skipped) {
+              console.log(` - AGENTS.md: skipped${agentTemplateResult.reason ? `: ${agentTemplateResult.reason}` : ''}`);
+            }
+            // stats plugin
+            if (statsPluginResult.installed) {
+              console.log(' - Stats plugin: installed');
+            } else if (statsPluginResult.skipped && statsPluginResult.reason === 'already in place') {
+              console.log(' - Stats plugin: already in place');
+            } else if (statsPluginResult.skipped && statsPluginResult.reason === 'user declined') {
+              console.log(' - Stats plugin: skipped by user');
+            } else if (statsPluginResult.skipped) {
+              console.log(` - Stats plugin: skipped${statsPluginResult.reason ? `: ${statsPluginResult.reason}` : ''}`);
+            }
+
+            console.log('\nNote: `wl init` is idempotent and can safely be run again if any options need to be changed.');
             return;
           } catch (error) {
             output.error('Error: ' + (error as Error).message, { success: false, error: (error as Error).message });
@@ -781,6 +894,18 @@ export default function register(ctx: PluginContext): void {
           }
           if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
             console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
+          }
+          // Offer to install example stats plugin
+          console.log('\n' + chalk.blue('## Install plugins') + '\n');
+          const statsPluginResult = await ensureStatsPluginInstalled({ silent: false });
+          if (statsPluginResult.installed) {
+            console.log(`✓ Installed example stats plugin at ${statsPluginResult.destinationPath}`);
+          } else if (statsPluginResult.skipped && statsPluginResult.reason === 'already in place') {
+            console.log('Stats plugin already present.');
+          } else if (statsPluginResult.skipped && statsPluginResult.reason === 'user declined') {
+            console.log('Stats plugin installation skipped by user.');
+          } else if (statsPluginResult.skipped && statsPluginResult.reason) {
+            console.log(`Stats plugin: ${statsPluginResult.reason}`);
           }
         }
       } catch (error) {

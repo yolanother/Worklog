@@ -74,7 +74,14 @@ export default function register(ctx: PluginContext): void {
         }
         if (chosenFormat === 'concise') {
           console.log(`${idx + 1}. ${formatTitleAndId(res.workItem)}`);
-          console.log(`   Status: ${res.workItem.status} | Priority: ${res.workItem.priority}`);
+          // Display stage even when it's an empty string (map to 'Undefined').
+          const _stage = (res.workItem.stage as string | undefined);
+          const stageLabel = _stage === undefined ? undefined : (_stage === '' ? 'Undefined' : _stage);
+          if (stageLabel !== undefined) {
+            console.log(`   Status: ${res.workItem.status} · Stage: ${stageLabel} | Priority: ${res.workItem.priority}`);
+          } else {
+            console.log(`   Status: ${res.workItem.status} | Priority: ${res.workItem.priority}`);
+          }
           if (res.workItem.assignee) console.log(`   Assignee: ${res.workItem.assignee}`);
           if (res.workItem.parentId) console.log(`   Parent: ${res.workItem.parentId}`);
           if (res.workItem.description) console.log(`   ${res.workItem.description}`);
