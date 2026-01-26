@@ -349,10 +349,37 @@ Other commands cover repository bootstrap and local system status. Use these to 
 
 Initialize Worklog configuration in the repository (creates `.worklog` and default config). `wl init` also installs `AGENTS.md` in the project root from `templates/AGENTS.md`. If `AGENTS.md` already exists, it checks for the template content and prompts before appending it.
 
+Options:
+
+- `--project-name <name>` — Project name (optional).
+- `--prefix <prefix>` — Issue ID prefix (optional).
+- `--auto-export <yes|no>` — Auto-export data to JSONL after changes (optional).
+- `--auto-sync <yes|no>` — Auto-sync data to git after changes (optional).
+- `--agents-template <overwrite|append|skip>` — What to do when AGENTS.md exists (optional).
+- `--workflow-inline <yes|no>` — Inline workflow into AGENTS.md when prompted (optional).
+- `--stats-plugin-overwrite <yes|no>` — Overwrite existing stats plugin if present (optional).
+
 Example:
 
 ```sh
 wl init
+wl init --project-name "My Project" --prefix PROJ --auto-export yes --auto-sync no
+```
+
+### `tui` [options]
+
+Launch the terminal UI for browsing and filtering work items.
+
+Options:
+
+- `--in-progress` — Show only in-progress items.
+- `--all` — Include completed/deleted items in the list.
+- `--prefix <prefix>` — Override the default prefix.
+
+Example:
+
+```sh
+wl tui --in-progress
 ```
 
 Example (JSON):

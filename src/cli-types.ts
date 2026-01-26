@@ -1,7 +1,15 @@
 // Per-command CLI option interfaces for strong typing
 import { WorkItemPriority, WorkItemStatus } from './types.js';
 
-export interface InitOptions {}
+export interface InitOptions {
+  projectName?: string;
+  prefix?: string;
+  autoExport?: string;
+  autoSync?: string;
+  agentsTemplate?: string;
+  workflowInline?: string;
+  statsPluginOverwrite?: string;
+}
 
 export interface StatusOptions { prefix?: string }
 

@@ -17,6 +17,12 @@ npm install -g .
 npm link
 ```
 
+You can run `wl init` in unattended mode by supplying all required values on the command line:
+
+```bash
+wl init --project-name "My Project" --prefix PROJ --auto-export yes --auto-sync no --agents-template append --workflow-inline yes --stats-plugin-overwrite no
+```
+
 **Note:** After installing globally, you can use `worklog` or `wl` commands directly. If you skip the global install, use `npm run cli -- <command>` for development.
 
 ## Your First Work Item

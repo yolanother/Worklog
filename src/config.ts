@@ -197,10 +197,17 @@ function printHeading(title: string): void {
   console.log();
 }
 
+export type InitConfigOptions = {
+  projectName?: string;
+  prefix?: string;
+  autoExport?: boolean;
+  autoSync?: boolean;
+};
+
 /**
  * Interactive initialization of config
  */
-export async function initConfig(existingConfig?: WorklogConfig | null): Promise<WorklogConfig> {
+export async function initConfig(existingConfig?: WorklogConfig | null, options?: InitConfigOptions): Promise<WorklogConfig> {
   if (existingConfig) {
     printHeading('Current Configuration');
     console.log(`  Project: ${existingConfig.projectName}`);
@@ -217,15 +224,25 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
       console.log(`  GitHub import create: ${existingConfig.githubImportCreateNew !== false ? 'enabled' : 'disabled'}\n`);
     }
 
-    const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
-    
-    if (shouldChange.toLowerCase() !== 'y' && shouldChange.toLowerCase() !== 'yes') {
-      console.log(chalk.gray('\nKeeping existing configuration.'));
-      return existingConfig;
+    const hasExplicitOptions = Boolean(
+      options?.projectName !== undefined ||
+      options?.prefix !== undefined ||
+      options?.autoExport !== undefined ||
+      options?.autoSync !== undefined
+    );
+
+    if (!hasExplicitOptions) {
+      const shouldChange = await prompt('Do you want to change these settings? (y/N): ');
+      
+      if (shouldChange.toLowerCase() !== 'y' && shouldChange.toLowerCase() !== 'yes') {
+        console.log(chalk.gray('\nKeeping existing configuration.'));
+        return existingConfig;
+      }
     }
 
     printHeading('Update Configuration');
     console.log('\nEnter new values (press Enter to keep current value):\n');
+
   } else {
     printHeading('Initialize Configuration');
   }
@@ -237,7 +254,10 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   // Ensure a non-empty project name is provided. If an existing config
   // is present the user may press Enter to keep it. Otherwise keep prompting
   // until a non-empty value is entered.
-  let projectName: string | undefined = existingConfig?.projectName;
+  let projectName: string | undefined = options?.projectName || existingConfig?.projectName;
+  if (options?.projectName !== undefined && (!projectName || projectName.trim() === '')) {
+    throw new Error('Project name is required. Please enter a non-empty project name.');
+  }
   while (!projectName || projectName.trim() === '') {
     const projectNameInput = await prompt(projectNamePrompt);
     projectName = projectNameInput || existingConfig?.projectName;
@@ -253,7 +273,10 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
 
   // Ensure a non-empty prefix is provided. Allow pressing Enter to keep
   // an existing value; otherwise require a valid non-empty value.
-  let prefix: string | undefined = existingConfig?.prefix;
+  let prefix: string | undefined = options?.prefix || existingConfig?.prefix;
+  if (options?.prefix !== undefined && (!prefix || prefix.trim() === '')) {
+    throw new Error('Issue ID prefix is required. Please enter a non-empty prefix.');
+  }
   while (!prefix || prefix.trim() === '') {
     const prefixInput = await prompt(prefixPrompt);
     prefix = prefixInput || existingConfig?.prefix;
@@ -268,25 +291,33 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   const autoExportPrompt = existingConfig
     ? `Auto-export data to JSONL after changes? (Y/n) [${currentAutoExport}]: `
     : 'Auto-export data to JSONL after changes? (Y/n) [Y]: ';
-  const autoExportInput = await prompt(autoExportPrompt);
   let autoExport: boolean;
-  if (autoExportInput.trim() === '') {
-    // Use default or existing value
-    autoExport = existingConfig?.autoExport !== false;
+  if (options?.autoExport !== undefined) {
+    autoExport = options.autoExport;
   } else {
-    autoExport = autoExportInput.toLowerCase() !== 'n' && autoExportInput.toLowerCase() !== 'no';
+    const autoExportInput = await prompt(autoExportPrompt);
+    if (autoExportInput.trim() === '') {
+      // Use default or existing value
+      autoExport = existingConfig?.autoExport !== false;
+    } else {
+      autoExport = autoExportInput.toLowerCase() !== 'n' && autoExportInput.toLowerCase() !== 'no';
+    }
   }
 
   const currentAutoSync = existingConfig?.autoSync === true ? 'Y' : 'n';
   const autoSyncPrompt = existingConfig
     ? `Auto-sync data to git after changes? (y/N) [${currentAutoSync}]: `
     : 'Auto-sync data to git after changes? (y/N) [n]: ';
-  const autoSyncInput = await prompt(autoSyncPrompt);
   let autoSync = false;
-  if (autoSyncInput.trim() === '') {
-    autoSync = existingConfig?.autoSync === true;
+  if (options?.autoSync !== undefined) {
+    autoSync = options.autoSync;
   } else {
-    autoSync = autoSyncInput.toLowerCase() === 'y' || autoSyncInput.toLowerCase() === 'yes';
+    const autoSyncInput = await prompt(autoSyncPrompt);
+    if (autoSyncInput.trim() === '') {
+      autoSync = existingConfig?.autoSync === true;
+    } else {
+      autoSync = autoSyncInput.toLowerCase() === 'y' || autoSyncInput.toLowerCase() === 'yes';
+    }
   }
 
   if (!projectName || !prefix) {

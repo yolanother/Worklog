@@ -4,7 +4,7 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { InitOptions } from '../cli-types.js';
-import { initConfig, loadConfig, configExists, isInitialized, readInitSemaphore, writeInitSemaphore } from '../config.js';
+import { initConfig, loadConfig, configExists, isInitialized, readInitSemaphore, writeInitSemaphore, type InitConfigOptions } from '../config.js';
 import { exportToJsonl } from '../jsonl.js';
 import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments } from '../sync.js';
 import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from '../sync-defaults.js';
@@ -36,6 +36,55 @@ const WORKLOG_GITIGNORE_ENTRIES: string[] = [
 ];
 
 const DEFAULT_COMMITTED_HOOKS_DIR = '.githooks';
+
+type NormalizedInitOptions = {
+  projectName?: string;
+  prefix?: string;
+  autoExport?: boolean;
+  autoSync?: boolean;
+  agentsTemplateAction?: AgentTemplateAction;
+  workflowInline?: boolean;
+  statsPluginOverwrite?: boolean;
+};
+
+function normalizeBooleanOption(value: string | undefined, flagName: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['y', 'yes', 'true', '1'].includes(normalized)) return true;
+  if (['n', 'no', 'false', '0'].includes(normalized)) return false;
+  throw new Error(`Invalid value for ${flagName}. Use yes or no.`);
+}
+
+function normalizeAgentTemplateAction(value?: string): AgentTemplateAction | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'overwrite' || normalized === 'o') return 'overwrite';
+  if (normalized === 'append' || normalized === 'a') return 'append';
+  if (normalized === 'skip' || normalized === 'm' || normalized === 'manual' || normalized === 'manage') return 'skip';
+  throw new Error('Invalid value for --agents-template. Use overwrite, append, or skip.');
+}
+
+function normalizeInitOptions(options: InitOptions): NormalizedInitOptions {
+  const projectName = options.projectName?.trim();
+  if (options.projectName !== undefined && (!projectName || projectName === '')) {
+    throw new Error('Project name is required when --project-name is provided.');
+  }
+
+  const prefix = options.prefix?.trim();
+  if (options.prefix !== undefined && (!prefix || prefix === '')) {
+    throw new Error('Issue ID prefix is required when --prefix is provided.');
+  }
+
+  return {
+    projectName,
+    prefix,
+    autoExport: normalizeBooleanOption(options.autoExport, '--auto-export'),
+    autoSync: normalizeBooleanOption(options.autoSync, '--auto-sync'),
+    agentsTemplateAction: normalizeAgentTemplateAction(options.agentsTemplate),
+    workflowInline: normalizeBooleanOption(options.workflowInline, '--workflow-inline'),
+    statsPluginOverwrite: normalizeBooleanOption(options.statsPluginOverwrite, '--stats-plugin-overwrite'),
+  };
+}
 
 function fileHasLine(content: string, line: string): boolean {
   const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -437,7 +486,8 @@ function locateWorkflowTemplate(): string | null {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-async function promptWorkflowInstall(questionText: string): Promise<boolean> {
+async function promptWorkflowInstall(questionText: string, forceAnswer?: boolean): Promise<boolean> {
+  if (forceAnswer !== undefined) return forceAnswer;
   return promptYesNo(questionText);
 }
 
@@ -518,7 +568,7 @@ async function promptYesNo(question: string): Promise<boolean> {
   });
 }
 
-async function ensureStatsPluginInstalled(options: { silent: boolean }) {
+async function ensureStatsPluginInstalled(options: { silent: boolean; overwrite?: boolean }) {
   const templatePath = locateExampleStatsPlugin();
   if (!templatePath) return { installed: false, skipped: true, reason: 'template not found', templatePath: null, destinationPath: null };
 
@@ -532,10 +582,13 @@ async function ensureStatsPluginInstalled(options: { silent: boolean }) {
       const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
       const already = existingContent === templateContent;
       if (already) return { installed: false, skipped: true, reason: 'already in place', templatePath, destinationPath };
-      if (options.silent) return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
+      if (options.overwrite === false) return { installed: false, skipped: true, reason: 'user declined', templatePath, destinationPath };
+      if (options.overwrite !== true) {
+        if (options.silent) return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
 
-      const answer = await promptYesNo('A stats plugin already exists at .worklog/plugins/stats-plugin.mjs. Overwrite? (y/N): ');
-      if (!answer) return { installed: false, skipped: true, reason: 'user declined', templatePath, destinationPath };
+        const answer = await promptYesNo('A stats plugin already exists at .worklog/plugins/stats-plugin.mjs. Overwrite? (y/N): ');
+        if (!answer) return { installed: false, skipped: true, reason: 'user declined', templatePath, destinationPath };
+      }
     }
 
     fs.mkdirSync(pluginsDir, { recursive: true });
@@ -575,7 +628,7 @@ async function promptAgentTemplateAction(): Promise<AgentTemplateAction> {
   });
 }
 
-async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
+async function ensureAgentTemplateInstalled(options: { silent: boolean; action?: AgentTemplateAction }) {
   const templatePath = locateAgentTemplate();
   if (!templatePath) {
     return { installed: false, skipped: true, reason: 'template not found', templatePath: null, destinationPath: null };
@@ -593,17 +646,38 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean }) {
       if (templateAlreadyPresent) {
         return { installed: false, skipped: true, reason: 'template already in place', templatePath, destinationPath };
       }
+      if (options.action === 'skip') {
+        return { installed: false, skipped: true, reason: 'user chose to manage manually', templatePath, destinationPath };
+      }
+
+      if (options.action === 'overwrite') {
+        fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+        if (!options.silent) {
+          console.log(`✓ Overwrote AGENTS template at ${destinationPath}`);
+        }
+        return { installed: true, skipped: false, templatePath, destinationPath, overwritten: true };
+      }
+
+      if (options.action === 'append') {
+        const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
+        fs.appendFileSync(destinationPath, `${separator}${templateContent}\n`, { encoding: 'utf-8' });
+        if (!options.silent) {
+          console.log(`✓ Appended AGENTS template to ${destinationPath}`);
+        }
+        return { installed: true, skipped: false, templatePath, destinationPath, appended: true };
+      }
+
       if (options.silent) {
         return { installed: false, skipped: true, reason: 'confirmation required', templatePath, destinationPath };
       }
 
       printAgentTemplateSummary();
-      const action = await promptAgentTemplateAction();
-      if (action === 'skip') {
+      const resolvedAction = await promptAgentTemplateAction();
+      if (resolvedAction === 'skip') {
         return { installed: false, skipped: true, reason: 'user chose to manage manually', templatePath, destinationPath };
       }
 
-      if (action === 'overwrite') {
+      if (resolvedAction === 'overwrite') {
         fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
         if (!options.silent) {
           console.log(`✓ Overwrote AGENTS template at ${destinationPath}`);
@@ -688,8 +762,28 @@ export default function register(ctx: PluginContext): void {
   program
     .command('init')
     .description('Initialize worklog configuration')
+    .option('--project-name <name>', 'Project name')
+    .option('--prefix <prefix>', 'Issue ID prefix (e.g., WI, PROJ, TASK)')
+    .option('--auto-export <yes|no>', 'Auto-export data to JSONL after changes')
+    .option('--auto-sync <yes|no>', 'Auto-sync data to git after changes')
+    .option('--agents-template <overwrite|append|skip>', 'What to do when AGENTS.md exists')
+    .option('--workflow-inline <yes|no>', 'Inline workflow into AGENTS.md when prompted')
+    .option('--stats-plugin-overwrite <yes|no>', 'Overwrite existing stats plugin if present')
     .action(async (_options: InitOptions) => {
       const isJsonMode = program.opts().json;
+      let normalizedOptions: NormalizedInitOptions;
+      try {
+        normalizedOptions = normalizeInitOptions(_options);
+      } catch (error) {
+        const message = (error as Error).message;
+        if (isJsonMode) {
+          output.json({ success: false, error: message });
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
+        return;
+      }
       
       if (configExists()) {
         if (!isInitialized()) {
@@ -704,8 +798,8 @@ export default function register(ctx: PluginContext): void {
           const hookResult = installPrePushHook({ silent: true });
           const postPullResult = installPostPullHooks({ silent: true });
           const committedHooksResult = installCommittedHooks({ silent: true });
-          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
-          const statsPluginResult = await ensureStatsPluginInstalled({ silent: true });
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction });
+          const statsPluginResult = await ensureStatsPluginInstalled({ silent: true, overwrite: normalizedOptions.statsPluginOverwrite });
           output.json({
             success: true,
             message: 'Configuration already exists',
@@ -725,7 +819,12 @@ export default function register(ctx: PluginContext): void {
           return;
         } else {
           try {
-            const updatedConfig = await initConfig(config);
+            const updatedConfig = await initConfig(config, {
+              projectName: normalizedOptions.projectName,
+              prefix: normalizedOptions.prefix,
+              autoExport: normalizedOptions.autoExport,
+              autoSync: normalizedOptions.autoSync,
+            } satisfies InitConfigOptions);
             writeInitSemaphore(version);
             
             console.log('\n' + chalk.blue('## Git Sync') + '\n');
@@ -791,7 +890,7 @@ export default function register(ctx: PluginContext): void {
             }
 
             console.log('\n' + chalk.blue('## Agent Template') + '\n');
-            const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+            const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false, action: normalizedOptions.agentsTemplateAction });
             if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
               console.log('AGENTS.md already matches the Worklog template.');
             }
@@ -832,20 +931,17 @@ export default function register(ctx: PluginContext): void {
                   }
                 } else {
                   // Loader missing: offer to insert loader and install WORKFLOW.md
-                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ');
+                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ', normalizedOptions.workflowInline);
                   if (wantBoth) {
-                    const wfResult = await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
-                    // We no longer push a workflow summary line here — the function
-                    // will perform the insertion and emit its own console output above.
                     await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
-                    await (async () => insertWorkflowLoaderIntoAgents(agentDestination))();
+                    insertWorkflowLoaderIntoAgents(agentDestination);
                   } else {
                   // user skipped — do not add summary lines
                   }
                 }
               } else {
                 // No AGENTS.md present: offer to install only WORKFLOW.md
-                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ');
+                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ', normalizedOptions.workflowInline);
                 if (wantWorkflow) {
                   await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
                 } else {
@@ -858,7 +954,7 @@ export default function register(ctx: PluginContext): void {
             // (note: reporting already emitted above)
             // Offer to install example stats plugin
             console.log('\n' + chalk.blue('## Install plugins') + '\n');
-            const statsPluginResult = await ensureStatsPluginInstalled({ silent: false });
+            const statsPluginResult = await ensureStatsPluginInstalled({ silent: false, overwrite: normalizedOptions.statsPluginOverwrite });
             if (statsPluginResult.installed) {
               console.log(`✓ Installed example stats plugin at ${statsPluginResult.destinationPath}`);
             } else if (statsPluginResult.skipped && statsPluginResult.reason === 'already in place') {
@@ -930,7 +1026,12 @@ export default function register(ctx: PluginContext): void {
       }
       
       try {
-        await initConfig();
+        await initConfig(undefined, {
+          projectName: normalizedOptions.projectName,
+          prefix: normalizedOptions.prefix,
+          autoExport: normalizedOptions.autoExport,
+          autoSync: normalizedOptions.autoSync,
+        } satisfies InitConfigOptions);
         const config = loadConfig();
         writeInitSemaphore(version);
         const initInfo = readInitSemaphore();
@@ -938,7 +1039,7 @@ export default function register(ctx: PluginContext): void {
         if (isJsonMode) {
           const gitignoreResult = ensureGitignore({ silent: true });
           const hookResult = installPrePushHook({ silent: true });
-          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction });
           output.json({
             success: true,
             message: 'Configuration initialized',
@@ -1026,7 +1127,7 @@ export default function register(ctx: PluginContext): void {
             }
 
           console.log('\n' + chalk.blue('## Agent Template') + '\n');
-          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false, action: normalizedOptions.agentsTemplateAction });
           // Offer workflow integration after AGENTS.md handling
           const workflowTemplatePath = locateWorkflowTemplate();
           if (workflowTemplatePath) {
@@ -1060,40 +1161,17 @@ export default function register(ctx: PluginContext): void {
                   }
                 } else {
                 // Loader missing: offer to insert loader and install WORKFLOW.md
-                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ');
+                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ', normalizedOptions.workflowInline);
                   if (wantBoth) {
-                    const wfResult = await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
-                    if (wfResult.installed) {
-                      
-                    } else if (wfResult.skipped) {
-                      if (wfResult.reason === 'already in place') {
-                        
-                      } else if (wfResult.reason === 'user declined') {
-                        
-                      } else if (wfResult.reason === 'confirmation required') {
-                        
-                      } else {
-                        
-                      }
-                    } else {
-                      
-                    }
-
-                    const insertResult = insertWorkflowLoaderIntoAgents(agentDestination);
-                    if (insertResult.inserted) {
-                      
-                    } else if (insertResult.reason === 'already present') {
-                      
-                    } else {
-                      
-                    }
+                    await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
+                    insertWorkflowLoaderIntoAgents(agentDestination);
                   } else {
-                    
+                    // user skipped — no summary output
                   }
               }
             } else {
               // No AGENTS.md present: offer to install only WORKFLOW.md
-                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ');
+                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ', normalizedOptions.workflowInline);
                 if (wantWorkflow) {
                   await ensureWorkflowTemplateInstalled({ silent: false });
                 } else {
@@ -1112,7 +1190,7 @@ export default function register(ctx: PluginContext): void {
           }
           // Offer to install example stats plugin
           console.log('\n' + chalk.blue('## Install plugins') + '\n');
-          const statsPluginResult = await ensureStatsPluginInstalled({ silent: false });
+          const statsPluginResult = await ensureStatsPluginInstalled({ silent: false, overwrite: normalizedOptions.statsPluginOverwrite });
           if (statsPluginResult.installed) {
             console.log(`✓ Installed example stats plugin at ${statsPluginResult.destinationPath}`);
           } else if (statsPluginResult.skipped && statsPluginResult.reason === 'already in place') {
