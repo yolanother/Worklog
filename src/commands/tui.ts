@@ -5,6 +5,9 @@
 import type { PluginContext } from '../plugin-types.js';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate } from './helpers.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { resolveWorklogDir } from '../worklog-paths.js';
 
 type Item = any;
 
@@ -49,8 +52,44 @@ export default function register(ctx: PluginContext): void {
 
       // Track expanded state by id
       const expanded = new Set<string>();
-      // Default expand roots
-      for (const r of roots) expanded.add(r.id);
+
+      // Persisted state file per-worklog directory
+      const worklogDir = resolveWorklogDir();
+      const statePath = path.join(worklogDir, 'tui-state.json');
+
+      // Load persisted state for this prefix if present
+      function loadPersistedState(prefix: string | undefined) {
+        try {
+          if (!fs.existsSync(statePath)) return null;
+          const raw = fs.readFileSync(statePath, 'utf8');
+          const j = JSON.parse(raw || '{}');
+          return j[prefix || 'default'] || null;
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function savePersistedState(prefix: string | undefined, state: any) {
+        try {
+          if (!fs.existsSync(worklogDir)) fs.mkdirSync(worklogDir, { recursive: true });
+          let j: any = {};
+          if (fs.existsSync(statePath)) {
+            try { j = JSON.parse(fs.readFileSync(statePath, 'utf8') || '{}'); } catch { j = {}; }
+          }
+          j[prefix || 'default'] = state;
+          fs.writeFileSync(statePath, JSON.stringify(j, null, 2), 'utf8');
+        } catch (err) {
+          // ignore persistence errors
+        }
+      }
+
+      // Default expand roots unless persisted state exists
+      const persisted = loadPersistedState(db.getPrefix?.() || undefined);
+      if (persisted && Array.isArray(persisted.expanded)) {
+        for (const id of persisted.expanded) expanded.add(id);
+      } else {
+        for (const r of roots) expanded.add(r.id);
+      }
 
       // Flatten visible nodes for rendering
       type VisibleNode = { item: Item; depth: number; hasChildren: boolean };
@@ -225,10 +264,14 @@ export default function register(ctx: PluginContext): void {
         if (expanded.has(node.item.id)) expanded.delete(node.item.id);
         else expanded.add(node.item.id);
         renderListAndDetail(idx);
+        // persist state
+        savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
       });
 
       // Quit keys
       screen.key(['q', 'C-c', 'escape'], () => {
+        // Persist state before exiting
+        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         screen.destroy();
         process.exit(0);
       });
