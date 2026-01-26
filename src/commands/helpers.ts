@@ -52,11 +52,13 @@ export function formatTitleOnly(item: WorkItem): string {
 }
 
 // Return a chalk function appropriate for a given status
-function titleColorForStatus(status?: WorkItem['status']): (text: string) => string {
-  switch (status) {
+function titleColorForStatus(status?: string): (text: string) => string {
+  const s = (status || '').toLowerCase().trim();
+  switch (s) {
     case 'completed':
       return chalk.gray;
     case 'in-progress':
+    case 'in progress':
       return chalk.cyan; // cyan for in-progress
     case 'blocked':
       return chalk.redBright;
