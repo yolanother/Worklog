@@ -27,17 +27,19 @@ export default function register(ctx: PluginContext): void {
       if (options.inProgress) query.status = 'in-progress';
 
       const items: Item[] = db.list(query);
-      if (items.length === 0) {
+      // By default hide closed items (completed or deleted)
+      const visibleItems = items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+      if (visibleItems.length === 0) {
         console.log('No work items found');
         return;
       }
 
-      // Build parent -> children map
+      // Build parent -> children map using visible items only
       const itemsById = new Map<string, Item>();
-      for (const it of items) itemsById.set(it.id, it);
+      for (const it of visibleItems) itemsById.set(it.id, it);
 
       const childrenMap = new Map<string, Item[]>();
-      for (const it of items) {
+      for (const it of visibleItems) {
         const pid = it.parentId;
         if (pid && itemsById.has(pid)) {
           const arr = childrenMap.get(pid) || [];
@@ -47,7 +49,7 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Find roots (parentId null or parent not present in current set)
-      const roots = items.filter(it => !it.parentId || !itemsById.has(it.parentId)).slice();
+      const roots = visibleItems.filter(it => !it.parentId || !itemsById.has(it.parentId)).slice();
       roots.sort(sortByPriorityAndDate);
 
       // Track expanded state by id
