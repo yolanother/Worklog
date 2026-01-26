@@ -4,7 +4,8 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import blessed from 'blessed';
-import { humanFormatWorkItem, sortByPriorityAndDate } from './helpers.js';
+import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly } from './helpers.js';
+import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
@@ -249,8 +250,8 @@ export default function register(ctx: PluginContext): void {
         const lines = visible.map(n => {
           const indent = '  '.repeat(n.depth);
           const marker = n.hasChildren ? (expanded.has(n.item.id) ? '▾' : '▸') : ' ';
-          const title = typeof n.item.title === 'string' ? n.item.title : String(n.item.id);
-          return `${indent}${marker} ${title} (${n.item.id})`;
+          const title = formatTitleOnly(n.item);
+          return `${indent}${marker} ${title} ${chalk.gray('(' + n.item.id + ')')}`;
         });
         list.setItems(lines);
         // Keep selection in bounds

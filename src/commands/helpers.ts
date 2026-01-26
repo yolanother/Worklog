@@ -43,12 +43,32 @@ export function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
 
 // Format title and id with consistent coloring used in tree/list outputs
 export function formatTitleAndId(item: WorkItem, prefix: string = ''): string {
-  return `${prefix}${chalk.greenBright(item.title)} ${chalk.gray('-')} ${chalk.gray(item.id)}`;
+  return `${prefix}${renderTitle(item)} ${chalk.gray('-')} ${chalk.gray(item.id)}`;
 }
 
 // Format only the title (consistent color)
 export function formatTitleOnly(item: WorkItem): string {
-  return chalk.greenBright(item.title);
+  return renderTitle(item);
+}
+
+// Return a chalk function appropriate for a given status
+function titleColorForStatus(status?: WorkItem['status']): (text: string) => string {
+  switch (status) {
+    case 'completed':
+      return chalk.gray;
+    case 'in-progress':
+      return chalk.cyan; // cyan for in-progress
+    case 'blocked':
+      return chalk.redBright;
+    case 'open':
+    default:
+      return chalk.greenBright;
+  }
+}
+
+// Render a work item title with the color appropriate to its status
+function renderTitle(item: WorkItem, prefix: string = ''): string {
+  return titleColorForStatus(item.status)(prefix + item.title);
 }
 
 // Helper to display work items in a tree structure
@@ -193,7 +213,7 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   }
 
   // full output
-  lines.push(chalk.greenBright(`# ${item.title}`));
+  lines.push(renderTitle(item, '# '));
   lines.push('');
     const frontmatter: Array<[string, string]> = [
       ['ID', chalk.gray(item.id)],
