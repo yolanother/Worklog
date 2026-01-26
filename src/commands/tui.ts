@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
+import { spawnSync } from 'child_process';
 
 type Item = any;
 
@@ -171,6 +172,19 @@ export default function register(ctx: PluginContext): void {
         content: '',
       });
 
+      const copyIdButton = blessed.box({
+        parent: detail,
+        top: 0,
+        right: 1,
+        height: 1,
+        width: 11,
+        content: '[Copy ID]',
+        tags: false,
+        mouse: true,
+        align: 'right',
+        style: { fg: 'yellow' },
+      });
+
       const help = blessed.box({
         parent: screen,
         bottom: 0,
@@ -179,6 +193,17 @@ export default function register(ctx: PluginContext): void {
         width: '100%',
         content: 'Press ? for help',
         style: { fg: 'grey' },
+      });
+
+      const toast = blessed.box({
+        parent: screen,
+        bottom: 1,
+        right: 1,
+        height: 1,
+        width: 12,
+        content: '',
+        hidden: true,
+        style: { fg: 'black', bg: 'green' },
       });
 
       const overlay = blessed.box({
@@ -237,6 +262,9 @@ export default function register(ctx: PluginContext): void {
         'Focus:',
         '  Tab            Cycle focus panes',
         '',
+        'Clipboard:',
+        '  C              Copy selected item ID',
+        '',
         'Help:',
         '  ?              Toggle this help',
         '',
@@ -286,6 +314,62 @@ export default function register(ctx: PluginContext): void {
         const text = humanFormatWorkItem(node.item, db, 'full');
         detail.setContent(text);
         detail.setScroll(0);
+      }
+
+      function getSelectedItem(): Item | null {
+        const idx = list.selected as number;
+        const visible = buildVisible();
+        const node = visible[idx] || visible[0];
+        return node?.item || null;
+      }
+
+      function copyToClipboard(text: string): { success: boolean; error?: string } {
+        try {
+          if (process.platform === 'darwin') {
+            const result = spawnSync('pbcopy', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+            if (result.status === 0) return { success: true };
+            return { success: false, error: result.error?.message || 'pbcopy failed' };
+          }
+
+          if (process.platform === 'win32') {
+            const result = spawnSync('cmd', ['/c', 'clip'], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+            if (result.status === 0) return { success: true };
+            return { success: false, error: result.error?.message || 'clip failed' };
+          }
+
+          const xclip = spawnSync('xclip', ['-selection', 'clipboard'], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+          if (xclip.status === 0) return { success: true };
+
+          const xsel = spawnSync('xsel', ['--clipboard', '--input'], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+          if (xsel.status === 0) return { success: true };
+
+          return { success: false, error: xclip.error?.message || xsel.error?.message || 'clipboard command not available' };
+        } catch (err: any) {
+          return { success: false, error: err?.message || 'clipboard copy failed' };
+        }
+      }
+
+      function copySelectedId() {
+        const item = getSelectedItem();
+        if (!item) return;
+        const result = copyToClipboard(item.id);
+        if (result.success) showToast('ID copied');
+        else showToast('Copy failed');
+      }
+
+      let toastTimer: NodeJS.Timeout | null = null;
+      function showToast(message: string) {
+        if (!message) return;
+        const padded = ` ${message} `;
+        toast.setContent(padded);
+        toast.width = padded.length;
+        toast.show();
+        screen.render();
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          toast.hide();
+          screen.render();
+        }, 1200);
       }
 
       // Initial render
@@ -415,6 +499,11 @@ export default function register(ctx: PluginContext): void {
         else closeHelp();
       });
 
+      // Copy selected ID
+      screen.key(['c', 'C'], () => {
+        copySelectedId();
+      });
+
       // Click footer to open help
       help.on('click', (data: any) => {
         try {
@@ -442,6 +531,10 @@ export default function register(ctx: PluginContext): void {
 
       helpClose.on('click', () => {
         closeHelp();
+      });
+
+      copyIdButton.on('click', () => {
+        copySelectedId();
       });
 
       // Close help with Esc or q when focused
