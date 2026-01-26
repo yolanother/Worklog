@@ -259,12 +259,9 @@ export default function register(ctx: PluginContext): void {
         updateDetailForIndex(idx, visible);
         // Update footer/help with right-aligned closed toggle
         try {
-          const total = items.length;
-          const hidden = Math.max(0, total - visible.length);
-          const closedLabel = showClosed ? 'Closed: Shown' : 'Closed: Hidden';
-          const closedSuffix = hidden > 0 ? ` (${hidden})` : '';
+          const closedCount = items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
           const leftText = 'Press ? for help';
-          const rightText = `${closedLabel}${closedSuffix}`;
+          const rightText = `Closed (${closedCount}): ${showClosed ? 'Shown' : 'Hidden'}`;
           const cols = screen.width as number;
           if (cols && cols > leftText.length + rightText.length + 2) {
             const gap = cols - leftText.length - rightText.length;
@@ -408,7 +405,8 @@ export default function register(ctx: PluginContext): void {
       // Click footer to open help
       help.on('click', (data: any) => {
         try {
-          const rightText = showClosed ? 'Closed: Shown' : 'Closed: Hidden';
+          const closedCount = items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
+          const rightText = `Closed (${closedCount}): ${showClosed ? 'Shown' : 'Hidden'}`;
           const cols = screen.width as number;
           const rightStart = cols - rightText.length;
           const clickX = data?.x ?? 0;
