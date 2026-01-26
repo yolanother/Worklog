@@ -33,6 +33,8 @@ const WORKLOG_GITIGNORE_ENTRIES: string[] = [
   '.worklog/tmp-worktree-*',
 ];
 
+const DEFAULT_COMMITTED_HOOKS_DIR = '.githooks';
+
 function fileHasLine(content: string, line: string): boolean {
   const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`(^|\\n)${escaped}(\\n|$)`);
@@ -273,6 +275,125 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
   }
 }
 
+function installCommittedHooks(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; dirPath?: string; files?: string[]; reason?: string } {
+  // Create a repository-tracked hooks directory (e.g. .githooks) with our
+  // central post-pull script and wrapper hooks. We do NOT change git config
+  // here; the user can opt-in by running `git config core.hooksPath .githooks`.
+  let repoRoot: string | null = resolveRepoRoot();
+  if (!repoRoot) {
+    return { installed: false, skipped: true, present: false, reason: 'not a git repository' };
+  }
+
+  const dir = path.join(repoRoot, DEFAULT_COMMITTED_HOOKS_DIR);
+  const centralScript = path.join(dir, 'worklog-post-pull');
+  const hookNames = ['post-merge', 'post-checkout', 'post-rewrite', 'pre-push'];
+  const hookFiles = hookNames.map(n => path.join(dir, n));
+
+  const centralScriptContent =
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
+    `# Central Worklog post-pull sync script (committed hooks).\n` +
+    `# Set WORKLOG_SKIP_POST_PULL=1 to bypass.\n` +
+    `set -e\n` +
+    `if [ \"$WORKLOG_SKIP_POST_PULL\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `if command -v wl >/dev/null 2>&1; then\n` +
+    `  WL=wl\n` +
+    `elif command -v worklog >/dev/null 2>&1; then\n` +
+    `  WL=worklog\n` +
+    `else\n` +
+    `  echo \"worklog: wl/worklog not found; skipping post-pull sync\" >&2\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `if \"$WL\" sync >/dev/null 2>&1; then\n` +
+    `  :\n` +
+    `else\n` +
+    `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
+    `fi\n` +
+    `exit 0\n`;
+
+  const wrapperContent = (centralPath: string) => (
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
+    `# Wrapper that delegates to central Worklog post-pull script (committed hooks).\n` +
+    `exec \"${centralPath}\" \"$@\"\n`
+  );
+
+  const prePushContent =
+    `#!/bin/sh\n` +
+    `# ${WORKLOG_PRE_PUSH_HOOK_MARKER}\n` +
+    `# Auto-sync Worklog data before pushing (committed hooks).\n` +
+    `# Set WORKLOG_SKIP_PRE_PUSH=1 to bypass.\n` +
+    `set -e\n` +
+    `if [ \"$WORKLOG_SKIP_PRE_PUSH\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `skip=0\n` +
+    `while read local_ref local_sha remote_ref remote_sha; do\n` +
+    `  if [ \"$remote_ref\" = \"refs/worklog/data\" ]; then\n` +
+    `    skip=1\n` +
+    `  fi\n` +
+    `done\n` +
+    `if [ \"$skip\" = \"1\" ]; then\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `if command -v wl >/dev/null 2>&1; then\n` +
+    `  WL=wl\n` +
+    `elif command -v worklog >/dev/null 2>&1; then\n` +
+    `  WL=worklog\n` +
+    `else\n` +
+    `  echo \"worklog: wl/worklog not found; skipping pre-push sync\" >&2\n` +
+    `  exit 0\n` +
+    `fi\n` +
+    `\"$WL\" sync\n` +
+    `exit 0\n`;
+
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+
+    // central script
+    if (fs.existsSync(centralScript)) {
+      const existing = fs.readFileSync(centralScript, 'utf-8');
+      if (!existing.includes(WORKLOG_POST_PULL_HOOK_MARKER)) {
+        return { installed: false, skipped: true, present: true, dirPath: dir, reason: `central script exists at ${centralScript} (not overwriting)` };
+      }
+    } else {
+      fs.writeFileSync(centralScript, centralScriptContent, { encoding: 'utf-8', mode: 0o755 });
+      try { fs.chmodSync(centralScript, 0o755); } catch {}
+    }
+
+    const installed: string[] = [];
+    for (const file of hookFiles) {
+      if (fs.existsSync(file)) {
+        const existing = fs.readFileSync(file, 'utf-8');
+        if (existing.includes(WORKLOG_POST_PULL_HOOK_MARKER) || existing.includes(WORKLOG_PRE_PUSH_HOOK_MARKER)) {
+          installed.push(file);
+          continue;
+        }
+        return { installed: false, skipped: true, present: true, dirPath: dir, files: installed, reason: `hook already exists at ${file} (not overwriting)` };
+      }
+
+      if (path.basename(file) === 'pre-push') {
+        fs.writeFileSync(file, prePushContent, { encoding: 'utf-8', mode: 0o755 });
+      } else {
+        fs.writeFileSync(file, wrapperContent(centralScript), { encoding: 'utf-8', mode: 0o755 });
+      }
+      try { fs.chmodSync(file, 0o755); } catch {}
+      installed.push(file);
+    }
+
+    if (!options.silent) {
+      console.log(`✓ Wrote committed hooks to ${dir}`);
+      console.log(`  To enable these for this repository run: git config core.hooksPath ${DEFAULT_COMMITTED_HOOKS_DIR}`);
+    }
+
+    return { installed: true, skipped: false, present: true, dirPath: dir, files: installed };
+  } catch (e) {
+    return { installed: false, skipped: true, present: false, dirPath: dir, files: hookFiles, reason: (e as Error).message };
+  }
+}
+
 function getSyncDefaults(config?: ReturnType<typeof loadConfig>) {
   return {
     gitRemote: config?.syncRemote || DEFAULT_GIT_REMOTE,
@@ -455,6 +576,8 @@ export default function register(ctx: PluginContext): void {
         if (isJsonMode) {
           const gitignoreResult = ensureGitignore({ silent: true });
           const hookResult = installPrePushHook({ silent: true });
+          const postPullResult = installPostPullHooks({ silent: true });
+          const committedHooksResult = installCommittedHooks({ silent: true });
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true });
           output.json({
             success: true,
@@ -467,6 +590,8 @@ export default function register(ctx: PluginContext): void {
             initializedAt: initInfo?.initializedAt,
             gitignore: gitignoreResult,
             gitHook: hookResult,
+            postPullHooks: postPullResult,
+            committedHooks: committedHooksResult,
             agentTemplate: agentTemplateResult
           });
           return;
@@ -503,6 +628,8 @@ export default function register(ctx: PluginContext): void {
             const hookResult = installPrePushHook({ silent: false });
             // Try to install post-pull hooks too, but don't fail init if they can't be installed
             const postPullResult = installPostPullHooks({ silent: true });
+            // Also write a committed hooks directory (.githooks) the user may enable
+            const committedHooksResult = installCommittedHooks({ silent: true });
             if (hookResult.present) {
               // Use consistent phrasing with post-pull hooks
               if (hookResult.hookPath) {
@@ -529,7 +656,13 @@ export default function register(ctx: PluginContext): void {
               console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
             }
 
-            console.log('\n' + chalk.blue('## Agent Instructions') + '\n');
+            if (committedHooksResult && committedHooksResult.installed) {
+              console.log(`Git committed hooks: written to ${committedHooksResult.dirPath}. To enable run: git config core.hooksPath ${DEFAULT_COMMITTED_HOOKS_DIR}`);
+            } else if (committedHooksResult && committedHooksResult.skipped && committedHooksResult.reason) {
+              // skip quietly
+            }
+
+            console.log('\n' + chalk.blue('## Agent Template') + '\n');
             const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
             if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
               console.log('AGENTS.md already matches the Worklog template.');
@@ -616,6 +749,7 @@ export default function register(ctx: PluginContext): void {
           console.log('\n' + chalk.blue('## Git Hooks') + '\n');
             const hookResult = installPrePushHook({ silent: false });
             const postPullResult = installPostPullHooks({ silent: true });
+            const committedHooksResult = installCommittedHooks({ silent: true });
             if (hookResult.present) {
               if (hookResult.hookPath) {
                 console.log(`Git pre-push hook: installed at ${hookResult.hookPath}`);
@@ -636,7 +770,11 @@ export default function register(ctx: PluginContext): void {
               console.log(`Git post-pull hooks: not installed: ${postPullResult.reason}`);
             }
 
-          console.log('\n' + chalk.blue('## Agent Instructions') + '\n');
+            if (committedHooksResult && committedHooksResult.installed) {
+              console.log(`Git committed hooks: written to ${committedHooksResult.dirPath}. To enable run: git config core.hooksPath ${DEFAULT_COMMITTED_HOOKS_DIR}`);
+            }
+
+          console.log('\n' + chalk.blue('## Agent Template') + '\n');
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false });
           if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
             console.log('AGENTS.md already matches the Worklog template.');
