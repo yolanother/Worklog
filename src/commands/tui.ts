@@ -18,8 +18,9 @@ export default function register(ctx: PluginContext): void {
     .command('tui')
     .description('Interactive TUI: browse work items in a tree (use --in-progress to show only in-progress)')
     .option('--in-progress', 'Show only in-progress items')
+    .option('--all', 'Include completed/deleted items in the list')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options: { inProgress?: boolean; prefix?: string }) => {
+    .action((options: { inProgress?: boolean; prefix?: string; all?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
 
@@ -27,8 +28,8 @@ export default function register(ctx: PluginContext): void {
       if (options.inProgress) query.status = 'in-progress';
 
       const items: Item[] = db.list(query);
-      // By default hide closed items (completed or deleted)
-      const visibleItems = items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+      // By default hide closed items (completed or deleted) unless --all is set
+      const visibleItems = options.all ? items : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
       if (visibleItems.length === 0) {
         console.log('No work items found');
         return;
