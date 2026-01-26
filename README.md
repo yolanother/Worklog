@@ -41,6 +41,20 @@ npm link
 
 This will make the `worklog` and `wl` commands available globally.
 
+## QUICKSTART
+
+```bash
+wl init # Initialize your project to use Worklog, including adding instructions to your AGENTS.md file
+```
+
+That's it. Just use your agents as you normally would. They will start using Worklog to plan and track their work. You can use the CLI to review the state of the project and add or edit work-items manually if you so desire (use `wl help`). You can also use `wl github import` and `wl github push` to bi-directionally sync work-items with Github issues, giving you and your communit a convenient way to interact if you don't like CLIs.
+
+### Is that REALY it?
+
+You can get alot of value from just using Worklog as a memory for your agents. But you can go much further by building a personal workflow to manage the agents work.  We believe that everyone is unique. Our workflows should be optimized for ourselves, our teams and our environments. Consequently Worklog brings the bare minimum workflow with it. It is installed when you run `wl init` (unless you said no to the AGENTS.md update during initialization, you can run it again if you want to add it later).
+
+If you want to define your own workflow then you might take inspiration from the [Sorra Agents Repository](https://github.com/sorratheorc/sorraagents) which is a very complete workflow that leverages Worklog and a number of customer commands, skills and agents.
+
 ## Configuration
 
 Worklog uses a two-tier configuration system:
