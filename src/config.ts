@@ -230,17 +230,38 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
     printHeading('Initialize Configuration');
   }
 
-  const projectNamePrompt = existingConfig 
+  const projectNamePrompt = existingConfig
     ? `Project name (${existingConfig.projectName}): `
     : 'Project name: ';
-  const projectNameInput = await prompt(projectNamePrompt);
-  const projectName = projectNameInput || existingConfig?.projectName;
+
+  // Ensure a non-empty project name is provided. If an existing config
+  // is present the user may press Enter to keep it. Otherwise keep prompting
+  // until a non-empty value is entered.
+  let projectName: string | undefined = existingConfig?.projectName;
+  while (!projectName || projectName.trim() === '') {
+    const projectNameInput = await prompt(projectNamePrompt);
+    projectName = projectNameInput || existingConfig?.projectName;
+    if (!projectName || projectName.trim() === '') {
+      console.log('Project name is required. Please enter a non-empty project name.');
+    }
+  }
+  projectName = projectName.trim();
 
   const prefixPrompt = existingConfig
     ? `Issue ID prefix (${existingConfig.prefix}): `
     : 'Issue ID prefix (e.g., WI, PROJ, TASK): ';
-  const prefixInput = await prompt(prefixPrompt);
-  const prefix = prefixInput || existingConfig?.prefix;
+
+  // Ensure a non-empty prefix is provided. Allow pressing Enter to keep
+  // an existing value; otherwise require a valid non-empty value.
+  let prefix: string | undefined = existingConfig?.prefix;
+  while (!prefix || prefix.trim() === '') {
+    const prefixInput = await prompt(prefixPrompt);
+    prefix = prefixInput || existingConfig?.prefix;
+    if (!prefix || prefix.trim() === '') {
+      console.log('Issue ID prefix is required. Please enter a non-empty prefix.');
+    }
+  }
+  prefix = prefix.trim();
 
   // Prompt for auto-export setting
   const currentAutoExport = existingConfig?.autoExport !== false ? 'Y' : 'n';
@@ -269,6 +290,7 @@ export async function initConfig(existingConfig?: WorklogConfig | null): Promise
   }
 
   if (!projectName || !prefix) {
+    // Defensive check - loops above should prevent this from ever firing
     throw new Error('Project name and prefix are required');
   }
 
