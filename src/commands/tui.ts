@@ -173,6 +173,15 @@ export default function register(ctx: PluginContext): void {
         const idx = Math.max(0, Math.min(selectIndex, lines.length - 1));
         list.select(idx);
         updateDetailForIndex(idx, visible);
+        // Update footer/help with hidden count
+        try {
+          const total = items.length;
+          const hidden = Math.max(0, total - visible.length);
+          const hiddenText = hidden > 0 && !options.all ? ` • Hidden: ${hidden} (use --all)` : '';
+          help.setContent(`Arrows: move • Right/Enter: expand • Left: collapse • q/Esc: quit${hiddenText}`);
+        } catch (err) {
+          // ignore
+        }
         screen.render();
       }
 
