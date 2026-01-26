@@ -154,3 +154,6 @@ vite.config.ts.timestamp-*
 
 # worklog:gitignore:v1
 .worklog/tmp-worktree-*
+
+# Worklog TUI state
+.worklog/tui-state.json
