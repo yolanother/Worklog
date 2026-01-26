@@ -3,8 +3,6 @@
  */
 
 import type { PluginContext } from '../plugin-types.js';
-// Declare module to avoid missing type errors in this codebase (runtime dependency exists)
-declare module 'blessed';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate } from './helpers.js';
 
