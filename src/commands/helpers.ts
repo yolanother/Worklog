@@ -83,11 +83,17 @@ export function displayItemTreeWithFormat(items: WorkItem[], db: WorklogDatabase
 
   rootItems.sort(sortByPriorityAndDate);
 
-  const displayNode = (item: WorkItem, allItems: WorkItem[], indent: string, isLast: boolean) => {
+  const displayNode = (item: WorkItem, allItems: WorkItem[], indent: string, isLast: boolean, inheritedStage?: string) => {
     const prefix = indent + (isLast ? '└── ' : '├── ');
     const detailIndent = indent + (isLast ? '    ' : '│   ');
 
-    const formatted = humanFormatWorkItem(item, db, format);
+    // If the item doesn't have an explicit stage, fall back to an inherited stage
+    const displayItem = Object.assign({}, item, { stage: item.stage ?? inheritedStage });
+    // Normalize empty-string stage to explicit empty so downstream logic can detect it
+    if (displayItem.stage === '') {
+      // keep as empty string to signal 'Undefined' label
+    }
+    const formatted = humanFormatWorkItem(displayItem, db, format);
     const lines = formatted.split('\n');
     // First line gets the tree marker prefix
     console.log(prefix + lines[0]);
@@ -101,23 +107,27 @@ export function displayItemTreeWithFormat(items: WorkItem[], db: WorklogDatabase
       children.sort(sortByPriorityAndDate);
       children.forEach((child, idx) => {
         const last = idx === children.length - 1;
-        displayNode(child, allItems, detailIndent, last);
+        displayNode(child, allItems, detailIndent, last, displayItem.stage);
       });
     }
   };
 
   rootItems.forEach((item, index) => {
     const isLastItem = index === rootItems.length - 1;
-    displayNode(item, items, '', isLastItem);
+    displayNode(item, items, '', isLastItem, undefined);
   });
 }
 
-function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true): void {
+function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = '', isLast: boolean = true, inheritedStage?: string): void {
   const prefix = indent + (isLast ? '└── ' : '├── ');
   console.log(formatTitleAndId(item, prefix));
   
   const detailIndent = indent + (isLast ? '    ' : '│   ');
-  console.log(`${detailIndent}Status: ${item.status} | Priority: ${item.priority}`);
+  const effectiveStage = item.stage ?? inheritedStage;
+  const statusSummary = effectiveStage
+    ? `Status: ${item.status} · Stage: ${effectiveStage} | Priority: ${item.priority}`
+    : `Status: ${item.status} | Priority: ${item.priority}`;
+  console.log(`${detailIndent}${statusSummary}`);
   if (item.risk) console.log(`${detailIndent}Risk: ${item.risk}`);
   if (item.effort) console.log(`${detailIndent}Effort: ${item.effort}`);
   if (item.assignee) console.log(`${detailIndent}Assignee: ${item.assignee}`);
@@ -129,7 +139,7 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
     
     children.forEach((child, childIndex) => {
       const isLastChild = childIndex === children.length - 1;
-      displayItemNode(child, allItems, detailIndent, isLastChild);
+      displayItemNode(child, allItems, detailIndent, isLastChild, effectiveStage);
     });
   }
 }
@@ -150,8 +160,13 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     const lines: string[] = [];
     // First line: title + id (compact)
     lines.push(`${formatTitleOnly(item)} ${chalk.gray(item.id)}`);
-    // Second line: status and priority (core metadata shown previously by list)
-    lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    // Second line: status, stage (if present) and priority (core metadata shown previously by list)
+    if (item.stage !== undefined) {
+      const stageLabel = item.stage === '' ? 'Undefined' : item.stage;
+      lines.push(`Status: ${item.status} · Stage: ${stageLabel} | Priority: ${item.priority}`);
+    } else {
+      lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    }
     if (item.risk) lines.push(`Risk: ${item.risk}`);
     if (item.effort) lines.push(`Effort: ${item.effort}`);
     if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
@@ -163,7 +178,12 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   if (fmt === 'normal') {
     lines.push(idLine);
     lines.push(titleLine);
-    lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    if (item.stage !== undefined) {
+      const stageLabel = item.stage === '' ? 'Undefined' : item.stage;
+      lines.push(`Status: ${item.status} · Stage: ${stageLabel} | Priority: ${item.priority}`);
+    } else {
+      lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+    }
     if (item.risk) lines.push(`Risk: ${item.risk}`);
     if (item.effort) lines.push(`Effort: ${item.effort}`);
     if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
@@ -175,10 +195,10 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   // full output
   lines.push(chalk.greenBright(`# ${item.title}`));
   lines.push('');
-  const frontmatter: Array<[string, string]> = [
-    ['ID', chalk.gray(item.id)],
-    ['Status', `${item.status} | Priority: ${item.priority}`]
-  ];
+    const frontmatter: Array<[string, string]> = [
+      ['ID', chalk.gray(item.id)],
+      ['Status', item.stage !== undefined ? `${item.status} · Stage: ${item.stage === '' ? 'Undefined' : item.stage} | Priority: ${item.priority}` : `${item.status} | Priority: ${item.priority}`]
+    ];
   if (item.risk) frontmatter.push(['Risk', item.risk]);
   if (item.effort) frontmatter.push(['Effort', item.effort]);
   if (item.assignee) frontmatter.push(['Assignee', item.assignee]);
