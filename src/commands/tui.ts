@@ -382,6 +382,12 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
+      list.on('select item', (_el: any, idx: number) => {
+        const visible = buildVisible();
+        updateDetailForIndex(idx, visible);
+        screen.render();
+      });
+
       // Update details immediately when navigating with keys or mouse
       list.on('keypress', (_ch: any, key: any) => {
         try {
@@ -398,10 +404,12 @@ export default function register(ctx: PluginContext): void {
       });
 
       list.on('click', () => {
-        const idx = list.selected as number;
-        const visible = buildVisible();
-        updateDetailForIndex(idx, visible);
-        screen.render();
+        setTimeout(() => {
+          const idx = list.selected as number;
+          const visible = buildVisible();
+          updateDetailForIndex(idx, visible);
+          screen.render();
+        }, 0);
       });
 
       screen.key(['right', 'enter'], () => {
