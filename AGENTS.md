@@ -1,8 +1,70 @@
-## Issue Tracking with wl (Worklog)
+## Workflow for AI Agents
 
-IMPORTANT: This project uses wl (Worklog) for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+It is expected that a session will be started by a human operator who will supply an initial prompt which defines the overall goals and context for the work to be done. When receiving such a prompt the agent will create an initial work-item in the worklog to track the work required to meet those goals. The work-item is created with a command such as `wl create "<work-item-title>" --description "<detailed-description-of-goals-and-context>" --issue-type <type-of-work-item> --json` (see [Work-Item Management](#work-item-management) below for more information). Remember the work-item id that is returnedm this will be referred to below as the <base-item-id>.
 
-### Why wl?
+Once the item has been created the agent should confirm with the operator that the work-item accurately reflects the goals and context provided. If the operator requests changes to the work-item the agent should update the work-item description and acceptance criteria accordingly `wl update <id> --description "<updated-description>"`. DO NOT remove existing content unless it is incorrect, ONLY add to it with appropriate clarifications.
+
+Once approved the agent should ask if they may ask further clarifying questions if required during the planning and implementation of <base-item-id>, the agent should make it clear that if the operator says no the agent will attempt to complete the task without further guidance, but being able to ask questions increases the chances of success. The agent will wait for confirmation from the operator before proceeding and remember the response.
+
+The agent(s) will then plan and execute the work required to meet those goals by following the steps below.
+
+0. **Claim the work-item** created by the operator:
+   - Claim it with `wl update <id> --status in-progress --assignee @your-agent-name`
+1. **Ensure the work-item is clearly defined**:
+   - Review the description, acceptance criteria, and any related files/paths in the work item description and comments (retrieved with `wl show <id> --children --json`)
+   - Review any existing work-items in the repository that may be related to this work-item (`wl list <search-terms> --include-closed` and `wl show <id> --children --json`).
+   - If the work-item is not clearly defined:
+     - Search the worklog (`wl list <search-terms> --include-closed` and `wl show <id> --children --json`) and repository for any existing information that may clarify the requirements
+     - If the operator has allowed further questions ask for clarification on specific requirements, acceptance criteria, and context. Where possible provide suggested responses, but always allow for a free form text response.
+     - If the operator has not allowed further questions attempt to clarify the requirements based on the existing information in the repository and worklog.
+     - Update the work-item description and acceptance criteria with any clarifications found `wl update <id> --description "<updated-description>"`. DO NOT remove existing content unless it is incorrect, ONLY add to it with appropriate clarifications.
+   - Once the work-item is clearly defined update its stage to `intake_complete` using `wl update <id> --stage intake_complete`
+2. **Plan the work**:
+   - Break down the work into smaller sub-tasks if necessary
+   - Each sub-task should be a discrete unit of work that can be completed independently, if a sub-task is still too large break it down further with sub-tasks of its own
+   - Define acceptance criteria for each sub-task
+   - Create child work-items for each sub-task using `wl create -t "<sub-task-title>" -d "<detailed-description>" --parent <base-item-id> --issue-type <type-of-work-item> --priority <critical|high|medium|low> --json`
+   - Once planning is complete update the parent work-item stage to `plan_complete` using `wl update <base-item-id> --stage plan_complete`
+3. **Decide what to work on next**:
+   - Use `wl next --json` to get a recommendation for the next work-item to work on. The id of this item will be referred to below as <WIP-id>.
+   - If the recommended work-item has no children proceed to the next step.
+   - If the recommended work-item has children claim this work-item and mark it as in progress using `wl update <WIP-id> --status in-progress --assignee @your-agent-name`
+   - Repeat this step to get the next recommended work-item until a leaf work-item (one with no children) is reached.
+4. **Implement the work-item**:
+   - Review the content of the selected work-item
+   - Review the description, acceptance criteria, and any related files/paths in the work item description and comments (retrieved with `wl show <WIP-id> --children --json`)
+   - Review any existing work-items in the repository that may be related to this work-item (`wl list <search-terms> --include-closed` and `wl show <id> --children --json`).
+   - If the work-item is not clearly defined:
+     - Search the worklog (`wl list <search-terms> --include-closed` and `wl show <id> --children --json`) and repository for any existing information that may clarify the requirements
+     - If the operator has allowed further questions ask for clarification on specific requirements, acceptance criteria, and context. Where possible provide suggested responses, but always allow for a free form text response.
+     - If the operator has not allowed further questions attempt to clarify the requirements based on the existing information in the repository and worklog.
+     - Update the work-item description and acceptance criteria with any clarifications found with `wl update <WIP-id> --description "<updated-description>"`. DO NOT remove existing content unless it is incorrect, ONLY add to it with appropriate clarifications.
+     - Create a new branch for the work-item following the branch naming conventions (e.g. `wl-<WIP-id>-short-description`)
+   - Complete all work required to meet the acceptance criteria (code, tests, documentation, etc.)
+   - If new work-items are discovered during implementation create new work-items using `wl create "<work-item-title>" --description "<detailed-description-of-goals-and-context>" --issue-type <type-of-work-item> --json`. If the item must be completed in order to satisfy the requirements of the parent work-item, make the new item a child of the parent work-item using `--parent <parent-id>`. If it is an optional item make it a sibling of the <base-item-id> and add a reference to the base item in the description using `discovered-from:<base-item-id>`.
+   - Regularly run all tests and checks to ensure nothing is broken
+   - If any tests/checks fail, fix the issues and repeat until all tests/checks pass
+     Commit changes regularly with clear commit messages that reference the WIP id and summarise the changes made.
+   - If a particularly complex issue is identified or a significant design decisions or assumption is made record this in a comment on the work-item using `wl comment add <WIP-id> --comment "<detailed-comment>" --author @your-agent-name --json`
+   - Once the acceptance criteria of <WIP-id> has been satisfied and all tests pass, Commit final changes to the branch with a message such as `<WIP-id>: Completed work to satisfy acceptance criteria: <acceptance-criteria-summary>`
+   - When work is complete record a comment on the work-item summarising the changes made and the reason for them, including the commit hash using `wl comment add <id> --comment "Completed work, see commit <commit-hash> for details." --author @your-agent-name --json`
+5. **Merge work into main**:
+   - Update the branch against main
+   - Run all tests and checks to ensure nothing is broken
+   - If any tests/checks fail, fix the issues and repeat until all tests/checks pass
+   - Push the branch to the remote repository
+   - Switch back to main, merge the branch and push the updated main branch to the remote repository
+   - Close the work-item with a comment summarising the changes made and the reason for them, including the commit hash using `wl close <WIP-id> --reason "Completed work, see merge commit <merge-commit-hash> for details." --json`
+6. **Update the operator**:
+   - Provide the operator a summary of the work completed, including any relevant links (work-item id, commit hashes, PR links, etc.)
+   - Go back to the `Decide what to work on next` step to continue working on the overall goals defined by the operator until all work-items are complete.
+   - Once there are no descendents of <base-item-id> left to work on, inform the operator that all required work is complete and summaries any remaining tasks that were siblings of <base-item-id> (`wl list --json`).
+
+## work-item Tracking with Worklog (wl)
+
+IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+
+### Why Worklog (wl)?
 
 - Agent-optimized planning with parent/child relationships, tags, and comments
 - Syncs via a dedicated git ref (`refs/worklog/data`)
@@ -11,9 +73,9 @@ IMPORTANT: This project uses wl (Worklog) for ALL issue tracking. Do NOT use mar
 - Lightweight CLI and JSON-friendly output
 - Prevents duplicate tracking systems and confusion
 
-### Issue Types
+### work-item Types
 
-Track issue types with `--issue-type`:
+Track work-item types with `--issue-type`:
 
 - bug - Something broken
 - feature - New functionality
@@ -63,7 +125,7 @@ Worklog does not enforce these relationships but they can be used for planning a
 5. Complete: `wl close <id> --reason "PR #123 merged"`
 6. Sync: run `wl sync` before ending the session
 
-### Issue Management
+### Work-Item Management
 
 ```bash
 # Create work items
@@ -175,11 +237,6 @@ Run `wl <command> --help` to see help text and all available flags for any comma
 - Do NOT use external issue trackers
 - Do NOT duplicate tracking systems
 - Do NOT clutter repo root with planning documents
-
-### Branch guidance (branch-per-work-item):
-
-- All work must be performed on branches that include the WL id
-- If a branch already exists for the WL issue or one of its ancestors, reuse it and record your involvement in comments
 
 ## CRITICAL RULES
 
