@@ -311,6 +311,17 @@ worklog github push --repo owner/name
 # Shorthand
 worklog gh push --repo owner/name
 
+# Interactive TUI
+
+Worklog includes a simple interactive terminal UI for browsing work items as a tree. Run:
+
+```bash
+wl tui            # open TUI showing all items
+wl tui --in-progress  # show only in-progress items
+```
+
+See `TUI.md` for more details and controls.
+
 # Import updates from GitHub Issues (only items with worklog markers)
 worklog github import --repo owner/name --since 2024-01-01T00:00:00Z
 
