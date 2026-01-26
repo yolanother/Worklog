@@ -21,6 +21,19 @@ Track work-item types with `--issue-type`:
 - epic - Large feature with subtasks
 - chore - Maintenance (dependencies, tooling)
 
+### Work Item Descriptions
+
+- Use clear, concise titles summarizing the work item.
+- The description must provide sufficient context for understanding and implementing the work item.
+- At a minimum include:
+  - A summary of the problem or feature.
+  - Example User Stories if applicable.
+  - Expected behaviour and outcomes.
+  - Steps to reproduce (for bugs).
+  - Suggested implementation approach if relevant.
+  - Links to related work items or documentation.
+  - Measurable and testable acceptance criteria.
+
 ### Priorities
 
 Worklog uses named priorities:
