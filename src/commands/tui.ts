@@ -370,9 +370,21 @@ export default function register(ctx: PluginContext): void {
         savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
       });
 
-      // Quit keys
-      screen.key(['q', 'C-c', 'escape'], () => {
+      // Quit keys: q and Ctrl-C always quit; Escape should close the help overlay
+      // when it's open instead of exiting the whole TUI.
+      screen.key(['q', 'C-c'], () => {
         // Persist state before exiting
+        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
+        screen.destroy();
+        process.exit(0);
+      });
+
+      screen.key(['escape'], () => {
+        if (!helpMenu.hidden) {
+          // If help overlay is visible, close it instead of quitting
+          closeHelp();
+          return;
+        }
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         screen.destroy();
         process.exit(0);
