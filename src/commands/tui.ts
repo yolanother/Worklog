@@ -29,7 +29,7 @@ export default function register(ctx: PluginContext): void {
       const query: any = {};
       if (options.inProgress) query.status = 'in-progress';
 
-      const items: Item[] = db.list(query);
+      let items: Item[] = db.list(query);
       // By default hide closed items (completed or deleted) unless --all is set
       const visibleItems = options.all ? items : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
       if (visibleItems.length === 0) {
@@ -262,6 +262,9 @@ export default function register(ctx: PluginContext): void {
         'Focus:',
         '  Tab            Cycle focus panes',
         '',
+        'Refresh:',
+        '  R              Reload items from database',
+        '',
         'Clipboard:',
         '  C              Copy selected item ID',
         '',
@@ -314,6 +317,31 @@ export default function register(ctx: PluginContext): void {
         const text = humanFormatWorkItem(node.item, db, 'full');
         detail.setContent(text);
         detail.setScroll(0);
+      }
+
+      function refreshFromDatabase() {
+        const selected = getSelectedItem();
+        const selectedId = selected?.id;
+        const query: any = {};
+        if (options.inProgress) query.status = 'in-progress';
+        items = db.list(query);
+        const nextVisible = options.all
+          ? items.slice()
+          : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+        if (nextVisible.length === 0) {
+          list.setItems([]);
+          detail.setContent('');
+          screen.render();
+          return;
+        }
+        rebuildTree();
+        const visible = buildVisible();
+        let nextIndex = 0;
+        if (selectedId) {
+          const found = visible.findIndex(n => n.item.id === selectedId);
+          if (found >= 0) nextIndex = found;
+        }
+        renderListAndDetail(nextIndex);
       }
 
       function getSelectedItem(): Item | null {
@@ -510,6 +538,11 @@ export default function register(ctx: PluginContext): void {
       // Copy selected ID
       screen.key(['c', 'C'], () => {
         copySelectedId();
+      });
+
+      // Refresh from database
+      screen.key(['r', 'R'], () => {
+        refreshFromDatabase();
       });
 
       // Click footer to open help
