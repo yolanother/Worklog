@@ -35,23 +35,38 @@ export default function register(ctx: PluginContext): void {
         return;
       }
 
-      // Build parent -> children map using visible items only
-      const itemsById = new Map<string, Item>();
-      for (const it of visibleItems) itemsById.set(it.id, it);
+      let showClosed = Boolean(options.all);
+      let currentVisibleItems: Item[] = visibleItems.slice();
+      let itemsById = new Map<string, Item>();
+      let childrenMap = new Map<string, Item[]>();
+      let roots: Item[] = [];
 
-      const childrenMap = new Map<string, Item[]>();
-      for (const it of visibleItems) {
-        const pid = it.parentId;
-        if (pid && itemsById.has(pid)) {
-          const arr = childrenMap.get(pid) || [];
-          arr.push(it);
-          childrenMap.set(pid, arr);
+      function rebuildTree() {
+        currentVisibleItems = showClosed
+          ? items.slice()
+          : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+
+        itemsById = new Map<string, Item>();
+        for (const it of currentVisibleItems) itemsById.set(it.id, it);
+
+        childrenMap = new Map<string, Item[]>();
+        for (const it of currentVisibleItems) {
+          const pid = it.parentId;
+          if (pid && itemsById.has(pid)) {
+            const arr = childrenMap.get(pid) || [];
+            arr.push(it);
+            childrenMap.set(pid, arr);
+          }
+        }
+
+        roots = currentVisibleItems.filter(it => !it.parentId || !itemsById.has(it.parentId)).slice();
+        roots.sort(sortByPriorityAndDate);
+
+        // prune expanded nodes that are no longer present
+        for (const id of Array.from(expanded)) {
+          if (!itemsById.has(id)) expanded.delete(id);
         }
       }
-
-      // Find roots (parentId null or parent not present in current set)
-      const roots = visibleItems.filter(it => !it.parentId || !itemsById.has(it.parentId)).slice();
-      roots.sort(sortByPriorityAndDate);
 
       // Track expanded state by id
       const expanded = new Set<string>();
@@ -91,6 +106,11 @@ export default function register(ctx: PluginContext): void {
       if (persisted && Array.isArray(persisted.expanded)) {
         for (const id of persisted.expanded) expanded.add(id);
       } else {
+        // temp expand roots; actual roots set after rebuildTree
+      }
+
+      rebuildTree();
+      if (!persisted || !Array.isArray(persisted.expanded)) {
         for (const r of roots) expanded.add(r.id);
       }
 
@@ -160,6 +180,16 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'grey' },
       });
 
+      const overlay = blessed.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        style: { bg: 'black' },
+      });
+
       const helpMenu = blessed.box({
         parent: screen,
         top: 'center',
@@ -178,6 +208,17 @@ export default function register(ctx: PluginContext): void {
         style: {
           border: { fg: 'cyan' },
         }
+      });
+
+      const helpClose = blessed.box({
+        parent: helpMenu,
+        top: 0,
+        right: 1,
+        height: 1,
+        width: 3,
+        content: '[x]',
+        style: { fg: 'red' },
+        mouse: true,
       });
 
       const helpText = [
@@ -216,12 +257,21 @@ export default function register(ctx: PluginContext): void {
         const idx = Math.max(0, Math.min(selectIndex, lines.length - 1));
         list.select(idx);
         updateDetailForIndex(idx, visible);
-        // Update footer/help with hidden count
+        // Update footer/help with right-aligned closed toggle
         try {
           const total = items.length;
           const hidden = Math.max(0, total - visible.length);
-          const hiddenText = hidden > 0 && !options.all ? ` • Hidden: ${hidden}` : '';
-          help.setContent(`Press ? for help${hiddenText}`);
+          const closedLabel = showClosed ? 'Closed: Shown' : 'Closed: Hidden';
+          const closedSuffix = hidden > 0 ? ` (${hidden})` : '';
+          const leftText = 'Press ? for help';
+          const rightText = `${closedLabel}${closedSuffix}`;
+          const cols = screen.width as number;
+          if (cols && cols > leftText.length + rightText.length + 2) {
+            const gap = cols - leftText.length - rightText.length;
+            help.setContent(`${leftText}${' '.repeat(gap)}${rightText}`);
+          } else {
+            help.setContent(`${leftText} • ${rightText}`);
+          }
         } catch (err) {
           // ignore
         }
@@ -335,37 +385,57 @@ export default function register(ctx: PluginContext): void {
       list.focus();
       screen.render();
 
-      // Toggle help
-      screen.key(['?'], () => {
-        if (helpMenu.hidden) {
-          helpMenu.show();
-          helpMenu.focus();
-        } else {
-          helpMenu.hide();
-          list.focus();
-        }
-        screen.render();
-      });
-
-      // Click footer to open help
-      help.on('click', () => {
+      function openHelp() {
+        overlay.show();
         helpMenu.show();
         helpMenu.focus();
         screen.render();
+      }
+
+      function closeHelp() {
+        helpMenu.hide();
+        overlay.hide();
+        list.focus();
+        screen.render();
+      }
+
+      // Toggle help
+      screen.key(['?'], () => {
+        if (helpMenu.hidden) openHelp();
+        else closeHelp();
+      });
+
+      // Click footer to open help
+      help.on('click', (data: any) => {
+        try {
+          const rightText = showClosed ? 'Closed: Shown' : 'Closed: Hidden';
+          const cols = screen.width as number;
+          const rightStart = cols - rightText.length;
+          const clickX = data?.x ?? 0;
+          if (cols && clickX >= rightStart) {
+            showClosed = !showClosed;
+            rebuildTree();
+            renderListAndDetail(list.selected as number);
+            return;
+          }
+        } catch (err) {
+          // ignore
+        }
+        openHelp();
       });
 
       // Click help to close
       helpMenu.on('click', () => {
-        helpMenu.hide();
-        list.focus();
-        screen.render();
+        closeHelp();
+      });
+
+      helpClose.on('click', () => {
+        closeHelp();
       });
 
       // Close help with Esc or q when focused
       helpMenu.key(['escape', 'q'], () => {
-        helpMenu.hide();
-        list.focus();
-        screen.render();
+        closeHelp();
       });
     });
 }
