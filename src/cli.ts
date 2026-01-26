@@ -26,6 +26,137 @@ import closeCommand from './commands/close.js';
 import recentCommand from './commands/recent.js';
 import pluginsCommand from './commands/plugins.js';
 
+// Watch flag parsing - supports -w, -wN, --watch, --watch=N
+function parseWatchFlag(argv: string[]) {
+  const out = argv.slice();
+  let enabled = false;
+  let seconds = 5;
+
+  for (let i = 2; i < out.length; i++) {
+    const v = out[i];
+    if (v === '-w' || v === '--watch') {
+      enabled = true;
+      if (i + 1 < out.length && !out[i + 1].startsWith('-')) {
+        const parsed = parseInt(out[i + 1], 10);
+        if (!Number.isNaN(parsed) && parsed > 0) seconds = parsed;
+        out.splice(i, 2);
+      } else {
+        out.splice(i, 1);
+      }
+      break;
+    }
+    if (v.startsWith('--watch=')) {
+      enabled = true;
+      const parsed = parseInt(v.split('=', 2)[1], 10);
+      if (!Number.isNaN(parsed) && parsed > 0) seconds = parsed;
+      out.splice(i, 1);
+      break;
+    }
+    if (v.startsWith('-w') && v.length > 2) {
+      const parsed = parseInt(v.slice(2), 10);
+      enabled = true;
+      if (!Number.isNaN(parsed) && parsed > 0) seconds = parsed;
+      out.splice(i, 1);
+      break;
+    }
+  }
+
+  return { enabled, seconds, argvWithoutWatch: out };
+}
+
+const _parsedWatch = parseWatchFlag(process.argv);
+if (_parsedWatch.enabled) {
+  const freq = _parsedWatch.seconds;
+  // Use the cleaned argv (includes node and script) and spawn the same
+  // command (node <script> <args...>) but with the watch flag removed.
+  const spawnArgs = _parsedWatch.argvWithoutWatch.slice(1);
+  const bannerCommand = _parsedWatch.argvWithoutWatch.slice(2).join(' ') || '(no command)';
+
+  const formatWatchTimestamp = (date: Date) => {
+    const parts = date.toString().split(' ');
+    if (parts.length >= 5) {
+      return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[4]} ${parts[3]}`;
+    }
+    return date.toString();
+  };
+
+
+  let shuttingDown = false;
+  let childProcess: any = null;
+  const shutdownHandler = () => {
+    shuttingDown = true;
+    try { process.stdout.write('\x1b[?25h'); } catch (_) {}
+    if (!childProcess) {
+      process.exit(0);
+    }
+    if (childProcess && !childProcess.killed) {
+      try { childProcess.kill('SIGINT'); } catch (_) {}
+      const forceExit = setTimeout(() => process.exit(0), 500);
+      try { childProcess.once('exit', () => { clearTimeout(forceExit); process.exit(0); }); } catch (_) {}
+    }
+  };
+  process.on('SIGINT', shutdownHandler);
+  process.on('SIGTERM', shutdownHandler);
+
+  // top-level await is allowed in this module — run an async loop and await it
+  await (async () => {
+    let first = true;
+    while (!shuttingDown) {
+      if (!first) {
+        try { process.stdout.write('\x1b[?25l\x1b[H\x1b[2J'); } catch (_) {}
+      }
+      first = false;
+
+      const timestamp = formatWatchTimestamp(new Date());
+      const leftText = `Every ${freq.toFixed(1)}s: ${bannerCommand}`;
+      let banner = `${leftText}  ${timestamp}`;
+      const cols = process.stdout.columns || 0;
+      if (cols > 0) {
+        const minGap = 2;
+        const maxLeft = Math.max(0, cols - timestamp.length - minGap);
+        const trimmedLeft = leftText.length > maxLeft ? leftText.slice(0, maxLeft) : leftText;
+        const gap = Math.max(minGap, cols - timestamp.length - trimmedLeft.length);
+        banner = `${trimmedLeft}${' '.repeat(gap)}${timestamp}`;
+      }
+      try { process.stdout.write(`\x1b[90m${banner}\x1b[0m\n`); } catch (_) {}
+
+      // Spawn using the node executable so the script runs with the same
+      // runtime regardless of how it was invoked (shebang, tsx, npm script).
+      const spawnArgs = _parsedWatch.argvWithoutWatch.slice(1);
+
+      try {
+        const cp = await import('child_process');
+        // Preserve any execArgv used to launch this process (e.g. --loader or -r flags
+        // from tsx). Prepend them so the child runs with the same Node flags.
+        const nodeArgs = [...process.execArgv, ...spawnArgs];
+        // `cp` is the namespace object for the child_process module; use its spawn function
+        childProcess = cp.spawn(process.execPath, nodeArgs, { stdio: 'inherit' });
+      } catch (err: any) {
+        childProcess = null;
+      }
+
+      await new Promise<void>(resolve => {
+        if (!childProcess) return resolve();
+        childProcess.on('exit', () => {
+          childProcess = null;
+          resolve();
+        });
+        childProcess.on('error', () => {
+          childProcess = null;
+          resolve();
+        });
+      });
+
+      if (shuttingDown) break;
+
+      await new Promise(r => setTimeout(r, freq * 1000));
+      try { process.stdout.write('\x1b[?25h'); } catch (_) {}
+    }
+  })();
+  // After loop exits, just return so the watcher process ends
+  process.exit(0);
+}
+
 // Allowed formats for validation
 const ALLOWED_FORMATS = new Set(['concise', 'normal', 'full', 'raw']);
 
@@ -43,7 +174,8 @@ program
   .version(getVersion())
   .option('--json', 'Output in JSON format (machine-readable)')
   .option('--verbose', 'Show verbose output including debug messages')
-  .option('-F, --format <format>', 'Human display format (choices: concise|normal|full|raw)');
+  .option('-F, --format <format>', 'Human display format (choices: concise|normal|full|raw)')
+  .option('-w, --watch [seconds]', 'Rerun the command every N seconds (default: 5)');
 
 // Validate CLI-provided format early before any command action runs
 program.hook('preAction', () => {
@@ -57,6 +189,11 @@ program.hook('preAction', () => {
 
 // Create shared plugin context
 const ctx = createPluginContext(program);
+
+// If watch mode was requested we already handled spawning a watcher
+// earlier; commander should still expose the option on help, but the
+// watcher logic is implemented outside of the command registration so
+// normal command code doesn't need to change.
 
 // Register built-in commands
 const builtInCommands = [
