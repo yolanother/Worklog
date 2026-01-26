@@ -156,9 +156,55 @@ export default function register(ctx: PluginContext): void {
         left: 0,
         height: 1,
         width: '100%',
-        content: 'Arrows: move • Right/Enter: expand • Left: collapse • q/Esc: quit',
+        content: 'Press ? for help',
         style: { fg: 'grey' },
       });
+
+      const helpMenu = blessed.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '70%',
+        height: '70%',
+        label: ' Help ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        scrollable: true,
+        alwaysScroll: true,
+        keys: true,
+        vi: true,
+        mouse: true,
+        style: {
+          border: { fg: 'cyan' },
+        }
+      });
+
+      const helpText = [
+        'Keyboard shortcuts',
+        '',
+        'Navigation:',
+        '  Up/Down, j/k   Move selection',
+        '  PageUp/PageDown, Home/End   Jump',
+        '',
+        'Tree:',
+        '  Right/Enter    Expand node',
+        '  Left           Collapse node / parent',
+        '  Space          Toggle expand/collapse',
+        '',
+        'Focus:',
+        '  Tab            Cycle focus panes',
+        '',
+        'Help:',
+        '  ?              Toggle this help',
+        '',
+        'Exit:',
+        '  q, Esc, Ctrl-C  Quit',
+        '',
+        'Tips:',
+        '  Use --all to include completed/deleted items'
+      ].join('\n');
+      helpMenu.setContent(helpText);
 
       function renderListAndDetail(selectIndex = 0) {
         const visible = buildVisible();
@@ -177,8 +223,8 @@ export default function register(ctx: PluginContext): void {
         try {
           const total = items.length;
           const hidden = Math.max(0, total - visible.length);
-          const hiddenText = hidden > 0 && !options.all ? ` • Hidden: ${hidden} (use --all)` : '';
-          help.setContent(`Arrows: move • Right/Enter: expand • Left: collapse • q/Esc: quit${hiddenText}`);
+          const hiddenText = hidden > 0 && !options.all ? ` • Hidden: ${hidden}` : '';
+          help.setContent(`Press ? for help${hiddenText}`);
         } catch (err) {
           // ignore
         }
@@ -291,5 +337,24 @@ export default function register(ctx: PluginContext): void {
       // Focus list to receive keys
       list.focus();
       screen.render();
+
+      // Toggle help
+      screen.key(['?'], () => {
+        if (helpMenu.hidden) {
+          helpMenu.show();
+          helpMenu.focus();
+        } else {
+          helpMenu.hide();
+          list.focus();
+        }
+        screen.render();
+      });
+
+      // Close help with Esc or q when focused
+      helpMenu.key(['escape', 'q'], () => {
+        helpMenu.hide();
+        list.focus();
+        screen.render();
+      });
     });
 }
