@@ -199,10 +199,7 @@ export default function register(ctx: PluginContext): void {
         '  ?              Toggle this help',
         '',
         'Exit:',
-        '  q, Esc, Ctrl-C  Quit',
-        '',
-        'Tips:',
-        '  Use --all to include completed/deleted items'
+        '  q, Esc, Ctrl-C  Quit'
       ].join('\n');
       helpMenu.setContent(helpText);
 
@@ -347,6 +344,20 @@ export default function register(ctx: PluginContext): void {
           helpMenu.hide();
           list.focus();
         }
+        screen.render();
+      });
+
+      // Click footer to open help
+      help.on('click', () => {
+        helpMenu.show();
+        helpMenu.focus();
+        screen.render();
+      });
+
+      // Click help to close
+      helpMenu.on('click', () => {
+        helpMenu.hide();
+        list.focus();
         screen.render();
       });
 
