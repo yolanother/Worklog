@@ -119,21 +119,41 @@ const outLines = [];
 const input = fs.readFileSync(inPath, 'utf-8');
 const lines = input.split('\n').filter(l => l.trim() !== '');
 
-for (const line of lines) {
-  const issue = JSON.parse(line);
+// Parse all issues first so we can build an ID mapping (original -> ALL CAPS)
+const rawIssues = lines.map(l => JSON.parse(l));
+const idMap = new Map();
+for (const issue of rawIssues) {
+  const orig = String(issue.id);
+  idMap.set(orig, orig.toUpperCase());
+}
 
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+for (const issue of rawIssues) {
   // Parent mapping: for child issues, if there is a parent-child dependency,
   // the depends_on_id is the parent.
   let parentId = null;
   if (Array.isArray(issue.dependencies)) {
     const rel = issue.dependencies.find(d => d && d.type === 'parent-child' && d.issue_id === issue.id);
-    if (rel && rel.depends_on_id) parentId = String(rel.depends_on_id);
+    if (rel && rel.depends_on_id) {
+      const origParent = String(rel.depends_on_id);
+      parentId = idMap.get(origParent) || origParent.toUpperCase();
+    }
+  }
+
+  // Build description and convert any mentions of known IDs to ALL CAPS
+  let description = buildDescription(issue);
+  for (const [orig, upper] of idMap.entries()) {
+    const re = new RegExp(escapeRegExp(orig), 'gi');
+    description = description.replace(re, upper);
   }
 
   const workItem = {
-    id: String(issue.id),
+    id: idMap.get(String(issue.id)),
     title: toStringOrEmpty(issue.title),
-    description: buildDescription(issue),
+    description,
     status: mapStatus(issue.status),
     priority: mapPriority(issue.priority),
     parentId,
@@ -151,11 +171,18 @@ for (const line of lines) {
 
   const comments = Array.isArray(issue.comments) ? issue.comments : [];
   for (const c of comments) {
+    // Convert any mentions in comment text to ALL CAPS for known IDs
+    let commentText = toStringOrEmpty(c.text);
+    for (const [orig, upper] of idMap.entries()) {
+      const re = new RegExp(escapeRegExp(orig), 'gi');
+      commentText = commentText.replace(re, upper);
+    }
+
     const comment = {
       id: `${workItem.id}-C${toStringOrEmpty(c.id)}`,
       workItemId: workItem.id,
       author: toStringOrEmpty(c.author),
-      comment: toStringOrEmpty(c.text),
+      comment: commentText,
       createdAt: normalizeIso(c.created_at),
       references: [],
     };
