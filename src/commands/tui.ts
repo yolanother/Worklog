@@ -1114,6 +1114,56 @@ export default function register(ctx: PluginContext): void {
                       }
                       resolve();
                     }
+                  } else if (data.type === 'question.asked' && data.properties) {
+                    // Handle question.asked events - auto-answer with first option (usually recommended)
+                    const questionSessionId = getSessionId(data.properties) || getSessionId(data);
+                    if (questionSessionId === sessionId) {
+                      const questions = data.properties.questions;
+                      if (questions && questions.length > 0) {
+                        const question = questions[0];
+                        const options = question.options || [];
+                        debugLog(`sse question asked: ${question.question}`);
+                        
+                        // Show the question in the response pane
+                        appendLine(`{yellow-fg}OpenCode asking: ${question.question}{/}`);
+                        
+                        // Auto-answer with first option (recommended) or "save" as fallback
+                        let answer = 'save';
+                        if (options.length > 0) {
+                          answer = options[0].label || options[0].value || 'save';
+                          appendLine(`{green-fg}Auto-answering with: ${answer}{/}`);
+                        }
+                        
+                        // Send the answer back
+                        const answerData = JSON.stringify({
+                          questionID: data.properties.id,
+                          answers: [answer]
+                        });
+                        
+                        const answerOptions = {
+                          hostname: 'localhost',
+                          port: opencodeServerPort,
+                          path: `/session/${sessionId}/question`,
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Content-Length': Buffer.byteLength(answerData)
+                          }
+                        };
+                        
+                        const answerReq = http.request(answerOptions, (res) => {
+                          debugLog(`question answer status=${res.statusCode ?? 'unknown'}`);
+                        });
+                        
+                        answerReq.on('error', (err) => {
+                          debugLog(`question answer error: ${String(err)}`);
+                          appendLine(`{red-fg}Failed to answer question: ${String(err)}{/}`);
+                        });
+                        
+                        answerReq.write(answerData);
+                        answerReq.end();
+                      }
+                    }
                   } else if (data.type === 'input.request' && data.properties) {
                     // Handle input requests
                     const inputSessionId = getSessionId(data.properties) || getSessionId(data);
@@ -1405,22 +1455,34 @@ export default function register(ctx: PluginContext): void {
         const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
         const before = value.substring(0, pos);
         const after = value.substring(pos);
-        this.setValue(before + '\n' + after);
+        const newValue = before + '\n' + after;
+        this.setValue(newValue);
+        
         // Move cursor to start of new line
+        const newCursorPos = before.length + 1;
         if (this.moveCursor) {
-          this.moveCursor(before.length + 1);
+          this.moveCursor(newCursorPos);
         }
-        // Update layout first, then ensure cursor is visible
+        
+        // Update layout first to expand the box
         updateOpencodeInputLayout();
-        // Ensure the textarea scrolls to show the cursor
-        if (this.setScrollPerc && this.getScrollHeight) {
-          const scrollHeight = this.getScrollHeight();
+        
+        // Calculate how many lines are in the textarea
+        const totalLines = newValue.split('\n').length;
+        const visibleHeight = opencodeDialog.height - 2; // Minus borders
+        
+        // If we have more lines than visible height, scroll to show cursor
+        if (totalLines > visibleHeight) {
+          // Scroll so cursor line is at bottom of visible area
           const cursorLine = (before.match(/\n/g) || []).length + 1;
-          if (scrollHeight > 0) {
-            const scrollPerc = Math.min(100, (cursorLine / scrollHeight) * 100);
-            this.setScrollPerc(scrollPerc);
+          const scrollTo = Math.max(0, cursorLine - visibleHeight + 1);
+          if (this.setScroll) {
+            this.setScroll(scrollTo);
           }
         }
+        
+        // Force focus back to ensure cursor is visible
+        this.focus();
         screen.render();
       });
 
