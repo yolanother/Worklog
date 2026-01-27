@@ -603,19 +603,19 @@ export default function register(ctx: PluginContext): void {
         
         switch (opencodeServerStatus) {
           case 'stopped':
-            statusText = '⚫ Server stopped';
+            statusText = '[-] Server stopped';
             statusColor = 'gray';
             break;
           case 'starting':
-            statusText = '🟡 Starting server...';
+            statusText = '[~] Starting...';
             statusColor = 'yellow';
             break;
           case 'running':
-            statusText = `🟢 Server: ${opencodeServerPort}`;
+            statusText = `[OK] Port: ${opencodeServerPort}`;
             statusColor = 'green';
             break;
           case 'error':
-            statusText = '🔴 Server error';
+            statusText = '[X] Server error';
             statusColor = 'red';
             break;
         }
