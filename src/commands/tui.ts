@@ -595,8 +595,10 @@ export default function register(ctx: PluginContext): void {
           opencodeText.left = 1;
           opencodeText.width = '100%-2';
           opencodeText.height = Math.max(1, desiredHeight - 1);
-          delete opencodeText.style?.border;
-          delete opencodeText.style?.focus;
+          // Reset styles instead of deleting them
+          opencodeText.style = opencodeText.style || {};
+          opencodeText.style.border = {};
+          opencodeText.style.focus = {};
         } else {
           // In full mode, keep textarea border
           opencodeText.top = 0;
@@ -649,9 +651,10 @@ export default function register(ctx: PluginContext): void {
           opencodeText.left = 1;
           opencodeText.width = '100%-2';
           opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
+          // Reset styles instead of deleting them
           opencodeText.style = opencodeText.style || {};
-          delete opencodeText.style.border;
-          delete opencodeText.style.focus;
+          opencodeText.style.border = {};
+          opencodeText.style.focus = {};
         } else {
           opencodeDialogMode = 'full';
           opencodeOverlay.show();
@@ -1363,8 +1366,8 @@ export default function register(ctx: PluginContext): void {
         // Note: We'll handle the close with click detection on the label area
         opencodePaneClose = blessed.box({
           parent: screen,  // Make it a sibling, not a child
-          top: opencodePane.atop + 0,
-          right: opencodePane.aright + 2,
+          top: 0,  // Will be positioned after pane is rendered
+          right: 2,
           height: 1,
           width: 3,
           content: '[x]',
@@ -1391,6 +1394,18 @@ export default function register(ctx: PluginContext): void {
         opencodePane.setFront();
         opencodePaneClose.show();
         opencodePaneClose.setFront();
+        
+        // Position the close button after pane is rendered
+        process.nextTick(() => {
+          if (opencodePaneClose && opencodePane) {
+            const paneTop = typeof opencodePane.atop === 'number' ? opencodePane.atop : 0;
+            const paneRight = typeof opencodePane.aright === 'number' ? opencodePane.aright : 0;
+            opencodePaneClose.top = paneTop;
+            opencodePaneClose.right = paneRight + 2;
+            screen.render();
+          }
+        });
+        
         opencodePane.focus();
       }
 
