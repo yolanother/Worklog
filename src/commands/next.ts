@@ -16,16 +16,20 @@ export default function register(ctx: PluginContext): void {
     .option('-a, --assignee <assignee>', 'Filter by assignee')
     .option('-s, --search <term>', 'Search term for fuzzy matching against title, description, and comments')
     .option('-n, --number <n>', 'Number of items to return (default: 1)', '1')
+    .option('--recency-policy <policy>', 'Recency policy: prefer|avoid|ignore (default: ignore)', 'ignore')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action(async (options: NextOptions) => {
+    .action(async (options: any) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      const numRequested = parseInt(options.number || '1', 10);
+       const numRequested = parseInt(options.number || '1', 10);
       const count = Number.isNaN(numRequested) || numRequested < 1 ? 1 : numRequested;
 
+      const recencyPolicy = options.recencyPolicy || 'ignore';
+
+      // `findNextWorkItems` and `findNextWorkItem` gained an optional recencyPolicy
       const results = (db as any).findNextWorkItems 
-        ? (db as any).findNextWorkItems(count, options.assignee, options.search) 
-        : [db.findNextWorkItem(options.assignee, options.search)];
+        ? (db as any).findNextWorkItems(count, options.assignee, options.search, recencyPolicy) 
+        : [db.findNextWorkItem(options.assignee, options.search, recencyPolicy)];
 
       if (utils.isJsonMode()) {
         if (results.length === 1) {

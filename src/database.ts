@@ -387,7 +387,7 @@ export class WorklogDatabase {
   /**
    * Select the deepest in-progress item, using priority+age as tie-breaker
    */
-  private selectDeepestInProgress(items: WorkItem[]): WorkItem | null {
+   private selectDeepestInProgress(items: WorkItem[], recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem | null {
     if (items.length === 0) {
       return null;
     }
@@ -398,13 +398,13 @@ export class WorklogDatabase {
       .filter(entry => entry.depth === maxDepth)
       .map(entry => entry.item);
 
-    return this.selectHighestPriorityOldest(deepest);
+    return this.selectByScore(deepest, recencyPolicy);
   }
 
   /**
    * Find a higher priority sibling of an in-progress item
    */
-  private findHigherPrioritySibling(items: WorkItem[], selectedInProgress: WorkItem): WorkItem | null {
+  private findHigherPrioritySibling(items: WorkItem[], selectedInProgress: WorkItem, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem | null {
     if (!selectedInProgress.parentId) {
       return null;
     }
@@ -424,7 +424,7 @@ export class WorklogDatabase {
       return null;
     }
 
-    return this.selectHighestPriorityOldest(siblingCandidates);
+    return this.selectByScore(siblingCandidates, recencyPolicy);
   }
 
   /**
@@ -435,6 +435,7 @@ export class WorklogDatabase {
       return null;
     }
 
+    // Use priority then creation time (stable and simple) for blocking selections
     const sorted = pairs.sort((a, b) => {
       const priorityDiff = this.getPriorityValue(b.blocking.priority) - this.getPriorityValue(a.blocking.priority);
       if (priorityDiff !== 0) {
@@ -448,12 +449,83 @@ export class WorklogDatabase {
   }
 
   /**
+   * Compute a score for an item. Defaults: recencyPolicy='ignore'.
+   * Higher score == more desirable.
+   */
+  private computeScore(item: WorkItem, now: number, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): number {
+    // Weights are intentionally fixed and not configurable per request
+    const WEIGHTS = {
+      priority: 1000,
+      age: 10, // per day
+      updated: 100, // recency boost/penalty
+      blocked: -10000,
+      effort: 20,
+      assigneeBoost: 200,
+    };
+
+    let score = 0;
+
+    // Priority base
+    score += this.getPriorityValue(item.priority) * WEIGHTS.priority;
+
+    // Age (createdAt) - small boost per day to avoid starvation
+    const ageDays = Math.max(0, (now - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    score += Math.min(ageDays, 365) * WEIGHTS.age;
+
+    // Effort: prefer smaller numeric efforts if present
+    if (item.effort) {
+      const effortVal = parseFloat(String(item.effort)) || 0;
+      if (effortVal > 0) score += (1 / (1 + effortVal)) * WEIGHTS.effort;
+    }
+
+    // UpdatedAt recency policy
+    if (recencyPolicy !== 'ignore' && item.updatedAt) {
+      const updatedHours = (now - new Date(item.updatedAt).getTime()) / (1000 * 60 * 60);
+      if (recencyPolicy === 'avoid') {
+        // Penalty stronger when updated very recently, decays to zero by 72 hours
+        const penaltyFactor = Math.max(0, (72 - updatedHours) / 72);
+        score -= penaltyFactor * WEIGHTS.updated;
+      } else if (recencyPolicy === 'prefer') {
+        // Boost for recent updates (peak within ~48 hours)
+        const boostFactor = Math.max(0, (48 - updatedHours) / 48);
+        score += boostFactor * WEIGHTS.updated;
+      }
+    }
+
+    // Blocked status - heavy penalty
+    if (item.status === 'blocked') score += WEIGHTS.blocked;
+
+    return score;
+  }
+
+  /**
+   * Select item by computed score. Tie-breakers: createdAt (older first), then id.
+   */
+  private selectByScore(items: WorkItem[], recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem | null {
+    if (!items || items.length === 0) return null;
+    const now = Date.now();
+    const scored = items.map(it => ({
+      it,
+      score: this.computeScore(it, now, recencyPolicy),
+      createdAt: new Date(it.createdAt).getTime(),
+    }));
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+      return a.it.id.localeCompare(b.it.id);
+    });
+
+    return scored[0].it;
+  }
+
+  /**
    * Find the next work item to work on based on priority and creation time
    * @param assignee - Optional assignee filter
    * @param searchTerm - Optional search term for fuzzy matching
    * @returns The next work item and a reason for the selection, or null if none found
    */
-  findNextWorkItem(assignee?: string, searchTerm?: string): NextWorkItemResult {
+  findNextWorkItem(assignee?: string, searchTerm?: string, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): NextWorkItemResult {
     let items = this.store.getAllWorkItems();
 
     // Filter out deleted items first
@@ -469,13 +541,13 @@ export class WorklogDatabase {
       item => item.status !== 'blocked' && this.getNonClosedChildren(item.id).length === 0
     );
 
-    if (unblockedCriticals.length > 0) {
-      const selected = this.selectHighestPriorityOldest(unblockedCriticals);
-      return {
-        workItem: selected,
-        reason: 'Unblocked critical work item'
-      };
-    }
+      if (unblockedCriticals.length > 0) {
+        const selected = this.selectByScore(unblockedCriticals, recencyPolicy);
+        return {
+          workItem: selected,
+          reason: 'Unblocked critical work item'
+        };
+      }
 
     const blockedCriticals = criticalItems.filter(
       item => item.status === 'blocked' || this.getNonClosedChildren(item.id).length > 0
@@ -505,30 +577,30 @@ export class WorklogDatabase {
       );
       const selectedBlocking = this.selectHighestPriorityBlocking(filteredBlockingPairs);
 
-      if (selectedBlocking) {
+        if (selectedBlocking) {
+          return {
+            workItem: selectedBlocking.blocking,
+            reason: `Blocking issue for critical item ${selectedBlocking.critical.id} (${selectedBlocking.critical.title})`
+          };
+        }
+
+        const selectedBlockedCritical = this.selectByScore(blockedCriticals, recencyPolicy);
         return {
-          workItem: selectedBlocking.blocking,
-          reason: `Blocking issue for critical item ${selectedBlocking.critical.id} (${selectedBlocking.critical.title})`
+          workItem: selectedBlockedCritical,
+          reason: 'Blocked critical work item with no identifiable blocking issues'
         };
       }
-
-      const selectedBlockedCritical = this.selectHighestPriorityOldest(blockedCriticals);
-      return {
-        workItem: selectedBlockedCritical,
-        reason: 'Blocked critical work item with no identifiable blocking issues'
-      };
-    }
 
     // Find in-progress and blocked items
     const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
 
-    if (inProgressItems.length === 0) {
-      // No in-progress items, find highest priority and oldest non-in-progress item
-      const openItems = items.filter(item => item.status !== 'completed');
-      if (openItems.length === 0) {
-        return { workItem: null, reason: 'No work items available' };
-      }
-      const selected = this.selectHighestPriorityOldest(openItems);
+      if (inProgressItems.length === 0) {
+        // No in-progress items, find highest priority and oldest non-in-progress item
+        const openItems = items.filter(item => item.status !== 'completed');
+        if (openItems.length === 0) {
+          return { workItem: null, reason: 'No work items available' };
+        }
+      const selected = this.selectByScore(openItems, recencyPolicy);
       return {
         workItem: selected,
         reason: `Highest priority (${selected?.priority}) and oldest open item`
@@ -538,12 +610,12 @@ export class WorklogDatabase {
     // There are in-progress or blocked items
     // Find the highest priority and oldest active item
     // Note: Blocked items trigger blocking issue detection, in-progress items trigger descendant traversal
-    const selectedInProgress = this.selectDeepestInProgress(inProgressItems);
+    const selectedInProgress = this.selectDeepestInProgress(inProgressItems, recencyPolicy);
     if (!selectedInProgress) {
       return { workItem: null, reason: 'No work items available' };
     }
 
-    const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress);
+    const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress, recencyPolicy);
     if (higherPrioritySibling) {
       return {
         workItem: higherPrioritySibling,
@@ -563,14 +635,14 @@ export class WorklogDatabase {
         
         if (blockingItems.length > 0) {
           // Apply filters to blocking items and select highest priority
-          const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
-          if (filteredBlockingItems.length > 0) {
-            const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
-            return {
-              workItem: selected,
-              reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
-            };
-          }
+            const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+            if (filteredBlockingItems.length > 0) {
+              const selected = this.selectByScore(filteredBlockingItems, recencyPolicy);
+              return {
+                workItem: selected,
+                reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+              };
+            }
         }
       }
       // If no blocking issues found or they don't exist, return the blocked item itself
@@ -597,7 +669,7 @@ export class WorklogDatabase {
     }
 
     // Select highest priority and oldest leaf descendant
-    const selected = this.selectHighestPriorityOldest(filteredLeaves);
+    const selected = this.selectByScore(filteredLeaves, recencyPolicy);
     return {
       workItem: selected,
       reason: `Highest priority (${selected?.priority}) leaf descendant of deepest in-progress item ${selectedInProgress.id}`
@@ -608,7 +680,7 @@ export class WorklogDatabase {
    * Find multiple next work items (up to `count`) using the same selection logic
    * as `findNextWorkItem`, but excluding already-selected items between iterations.
    */
-  findNextWorkItems(count: number, assignee?: string, searchTerm?: string): NextWorkItemResult[] {
+  findNextWorkItems(count: number, assignee?: string, searchTerm?: string, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): NextWorkItemResult[] {
     const results: NextWorkItemResult[] = [];
     const excluded = new Set<string>();
 
@@ -628,8 +700,8 @@ export class WorklogDatabase {
         item => item.status !== 'blocked' && this.getNonClosedChildren(item.id).length === 0
       );
 
-      if (unblockedCriticals.length > 0) {
-        const selected = this.selectHighestPriorityOldest(unblockedCriticals);
+        if (unblockedCriticals.length > 0) {
+        const selected = this.selectByScore(unblockedCriticals, recencyPolicy);
         result = {
           workItem: selected,
           reason: 'Unblocked critical work item'
@@ -669,7 +741,7 @@ export class WorklogDatabase {
               reason: `Blocking issue for critical item ${selectedBlocking.critical.id} (${selectedBlocking.critical.title})`
             };
           } else {
-            const selectedBlockedCritical = this.selectHighestPriorityOldest(blockedCriticals);
+            const selectedBlockedCritical = this.selectByScore(blockedCriticals, recencyPolicy);
             result = {
               workItem: selectedBlockedCritical,
               reason: 'Blocked critical work item with no identifiable blocking issues'
@@ -681,23 +753,23 @@ export class WorklogDatabase {
       // Find in-progress and blocked items
       const inProgressItems = items.filter(item => item.status === 'in-progress' || item.status === 'blocked');
 
-      if (!result && inProgressItems.length === 0) {
-        const openItems = items.filter(item => item.status !== 'completed');
-        if (openItems.length === 0) {
-          result = { workItem: null, reason: 'No work items available' };
-        } else {
-          const selected = this.selectHighestPriorityOldest(openItems);
+        if (!result && inProgressItems.length === 0) {
+          const openItems = items.filter(item => item.status !== 'completed');
+          if (openItems.length === 0) {
+            result = { workItem: null, reason: 'No work items available' };
+          } else {
+          const selected = this.selectByScore(openItems, recencyPolicy);
           result = {
             workItem: selected,
             reason: `Highest priority (${selected?.priority}) and oldest open item`
           };
         }
       } else if (!result) {
-        const selectedInProgress = this.selectDeepestInProgress(inProgressItems);
+        const selectedInProgress = this.selectDeepestInProgress(inProgressItems, recencyPolicy);
         if (!selectedInProgress) {
           result = { workItem: null, reason: 'No work items available' };
         } else {
-          const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress);
+          const higherPrioritySibling = this.findHigherPrioritySibling(items, selectedInProgress, recencyPolicy);
           if (higherPrioritySibling) {
             result = {
               workItem: higherPrioritySibling,
@@ -712,16 +784,16 @@ export class WorklogDatabase {
                 .map(id => this.get(id))
                 .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
 
-              if (blockingItems.length > 0) {
-                const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
-                if (filteredBlockingItems.length > 0) {
-                  const selected = this.selectHighestPriorityOldest(filteredBlockingItems);
-                  result = {
-                    workItem: selected,
-                    reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
-                  };
+                if (blockingItems.length > 0) {
+                  const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
+                  if (filteredBlockingItems.length > 0) {
+                    const selected = this.selectByScore(filteredBlockingItems, recencyPolicy);
+                    result = {
+                      workItem: selected,
+                      reason: `Blocking issue for ${selectedInProgress.id} (${selectedInProgress.title})`
+                    };
+                  }
                 }
-              }
             }
 
             if (!result) {
@@ -742,11 +814,11 @@ export class WorklogDatabase {
                 reason: `In-progress item with no open descendants`
               };
             } else {
-              const selected = this.selectHighestPriorityOldest(filteredLeaves);
-              result = {
-                workItem: selected,
-                reason: `Highest priority (${selected?.priority}) leaf descendant of deepest in-progress item ${selectedInProgress.id}`
-              };
+               const selected = this.selectByScore(filteredLeaves, 'ignore');
+               result = {
+                 workItem: selected,
+                 reason: `Highest priority (${selected?.priority}) leaf descendant of deepest in-progress item ${selectedInProgress.id}`
+               };
             }
           }
         }
