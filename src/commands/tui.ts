@@ -135,7 +135,7 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Setup blessed screen and layout
-      const screen = blessed.screen({ smartCSR: true, title: 'Worklog TUI' });
+      const screen = blessed.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
 
       const list = blessed.list({
         parent: screen,
@@ -167,6 +167,7 @@ export default function register(ctx: PluginContext): void {
         keys: true,
         vi: true,
         mouse: true,
+        clickable: true,
         border: { type: 'line' },
         style: { focus: { border: { fg: 'green' } } },
         content: '',
@@ -206,6 +207,49 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'black', bg: 'green' },
       });
 
+      const detailOverlay = blessed.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        mouse: true,
+        clickable: true,
+        style: { bg: 'black' },
+      });
+
+      const detailModal = blessed.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '70%',
+        height: '70%',
+        label: ' Item Details ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        scrollable: true,
+        alwaysScroll: true,
+        keys: true,
+        vi: true,
+        mouse: true,
+        clickable: true,
+        style: { border: { fg: 'green' } },
+        content: '',
+      });
+
+      const detailClose = blessed.box({
+        parent: detailModal,
+        top: 0,
+        right: 1,
+        height: 1,
+        width: 3,
+        content: '[x]',
+        style: { fg: 'red' },
+        mouse: true,
+      });
+
       const overlay = blessed.box({
         parent: screen,
         top: 0,
@@ -213,6 +257,8 @@ export default function register(ctx: PluginContext): void {
         width: '100%',
         height: '100% - 1',
         hidden: true,
+        mouse: true,
+        clickable: true,
         style: { bg: 'black' },
       });
 
@@ -273,6 +319,9 @@ export default function register(ctx: PluginContext): void {
         'Clipboard:',
         '  C              Copy selected item ID',
         '',
+        'Preview:',
+        '  P              Open parent in modal',
+        '',
         'Help:',
         '  ?              Toggle this help',
         '',
@@ -281,14 +330,16 @@ export default function register(ctx: PluginContext): void {
       ].join('\n');
       helpMenu.setContent(helpText);
 
+      let listLines: string[] = [];
       function renderListAndDetail(selectIndex = 0) {
         const visible = buildVisible();
         const lines = visible.map(n => {
           const indent = '  '.repeat(n.depth);
           const marker = n.hasChildren ? (expanded.has(n.item.id) ? '▾' : '▸') : ' ';
           const title = formatTitleOnly(n.item);
-          return `${indent}${marker} ${title} ${chalk.gray('(' + n.item.id + ')')}`;
+          return `${indent}${marker} ${title} {gray-fg}({underline}${n.item.id}{/underline}){/gray-fg}`;
         });
+        listLines = lines;
         list.setItems(lines);
         // Keep selection in bounds
         const idx = Math.max(0, Math.min(selectIndex, lines.length - 1));
@@ -320,8 +371,122 @@ export default function register(ctx: PluginContext): void {
         }
         const node = v[idx] || v[0];
         const text = humanFormatWorkItem(node.item, db, 'full');
-        detail.setContent(text);
+        detail.setContent(decorateIdsForClick(text));
         detail.setScroll(0);
+      }
+
+      function stripAnsi(value: string): string {
+        return value.replace(/\u001b\[[0-9;]*m/g, '');
+      }
+
+      function stripTags(value: string): string {
+        return value.replace(/{[^}]+}/g, '');
+      }
+
+      function decorateIdsForClick(value: string): string {
+        return value.replace(/\b[A-Z][A-Z0-9]+-[A-Z0-9-]+\b/g, '{underline}$&{/underline}');
+      }
+
+      function extractIdFromLine(line: string): string | null {
+        const plain = stripTags(stripAnsi(line));
+        const match = plain.match(/\b[A-Z][A-Z0-9]+-[A-Z0-9-]+\b/);
+        return match ? match[0] : null;
+      }
+
+      function extractIdAtColumn(line: string, col?: number): string | null {
+        const plain = stripTags(stripAnsi(line));
+        const matches = Array.from(plain.matchAll(/\b[A-Z][A-Z0-9]+-[A-Z0-9-]+\b/g));
+        if (matches.length === 0) return null;
+        if (typeof col !== 'number') return matches[0][0];
+        for (const match of matches) {
+          const start = match.index ?? 0;
+          const end = start + match[0].length;
+          if (col >= start && col <= end) return match[0];
+        }
+        return null;
+      }
+
+      function getClickRow(box: any, data: any): { row: number; col: number } | null {
+        const lpos = box?.lpos;
+        const topBase = (lpos?.yi ?? box?.atop ?? 0) + (box?.itop ?? 0);
+        const leftBase = (lpos?.xi ?? box?.aleft ?? 0) + (box?.ileft ?? 0);
+        const row = (data?.y ?? 0) - topBase;
+        const col = (data?.x ?? 0) - leftBase;
+        if (row < 0 || col < 0) return null;
+        return { row, col };
+      }
+
+      function getRenderedLineAtClick(box: any, data: any): string | null {
+        const coords = getClickRow(box, data);
+        if (!coords) return null;
+        const scroll = typeof box.getScroll === 'function' ? (box.getScroll() as number) : 0;
+        const lines = (box as any)?._clines?.real || (box as any)?._clines?.fake || box.getContent().split('\n');
+        const lineIndex = coords.row + (scroll || 0);
+        return lines[lineIndex] ?? null;
+      }
+
+      function getRenderedLineAtScreen(box: any, data: any): string | null {
+        const lpos = box?.lpos;
+        if (!lpos) return null;
+        const scroll = typeof box.getScroll === 'function' ? (box.getScroll() as number) : 0;
+        const lines = (box as any)?._clines?.real || (box as any)?._clines?.fake || box.getContent().split('\n');
+        const base = (lpos.yi ?? 0);
+        const offsets = [0, 1, 2, 3, -1, -2];
+        for (const off of offsets) {
+          const row = (data?.y ?? 0) - base - off;
+          if (row < 0) continue;
+          const lineIndex = row + (scroll || 0);
+          if (lineIndex >= 0 && lineIndex < lines.length) return lines[lineIndex] ?? null;
+        }
+        return null;
+      }
+
+      let suppressDetailCloseUntil = 0;
+      function openDetailsForId(id: string) {
+        const item = db.get(id);
+        if (!item) {
+          showToast('Item not found');
+          return;
+        }
+        detailOverlay.show();
+        detailModal.setContent(decorateIdsForClick(humanFormatWorkItem(item, db, 'full')));
+        detailModal.setScroll(0);
+        detailModal.show();
+        detailOverlay.setFront();
+        detailModal.setFront();
+        detailModal.focus();
+        suppressDetailCloseUntil = Date.now() + 200;
+        screen.render();
+      }
+
+      function openDetailsFromClick(line: string | null) {
+        if (!line) return;
+        const id = extractIdFromLine(line);
+        if (!id) return;
+        openDetailsForId(id);
+      }
+
+      function closeDetails() {
+        detailModal.hide();
+        detailOverlay.hide();
+        list.focus();
+        screen.render();
+      }
+
+      function isInside(box: any, x: number, y: number): boolean {
+        const lpos = box?.lpos;
+        if (!lpos) return false;
+        return x >= lpos.xi && x <= lpos.xl && y >= lpos.yi && y <= lpos.yl;
+      }
+
+      function openParentPreview() {
+        const item = getSelectedItem();
+        const parentId = item?.parentId;
+        if (!parentId) {
+          showToast('No parent');
+          return;
+        }
+        openDetailsForId(parentId);
       }
 
       function refreshFromDatabase() {
@@ -472,6 +637,49 @@ export default function register(ctx: PluginContext): void {
         }, 0);
       });
 
+      list.on('click', (data: any) => {
+        const coords = getClickRow(list as any, data);
+        if (!coords) return;
+        const scroll = list.getScroll() as number;
+        const lineIndex = coords.row + (scroll || 0);
+        const line = listLines[lineIndex];
+        if (!line) return;
+        const id = extractIdAtColumn(line, coords.col);
+        if (id) openDetailsForId(id);
+      });
+
+      detail.on('click', (data: any) => {
+        openDetailsFromClick(getRenderedLineAtClick(detail as any, data));
+      });
+
+      detailModal.on('click', (data: any) => {
+        openDetailsFromClick(getRenderedLineAtClick(detailModal as any, data));
+      });
+
+      detail.on('mouse', (data: any) => {
+        if (data?.action === 'click') {
+          openDetailsFromClick(getRenderedLineAtClick(detail as any, data));
+        }
+      });
+
+      detail.on('mousedown', (data: any) => {
+        openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
+      });
+
+      detail.on('mouseup', (data: any) => {
+        openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
+      });
+
+      detailModal.on('mouse', (data: any) => {
+        if (data?.action === 'click') {
+          openDetailsFromClick(getRenderedLineAtClick(detailModal as any, data));
+        }
+      });
+
+      detailClose.on('click', () => {
+        closeDetails();
+      });
+
       screen.key(['right', 'enter'], () => {
         const idx = list.selected as number;
         const visible = buildVisible();
@@ -533,6 +741,10 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['escape'], () => {
+        if (!detailModal.hidden) {
+          closeDetails();
+          return;
+        }
         if (!helpMenu.hidden) {
           // If help overlay is visible, close it instead of quitting
           closeHelp();
@@ -550,6 +762,8 @@ export default function register(ctx: PluginContext): void {
       function openHelp() {
         overlay.show();
         helpMenu.show();
+        overlay.setFront();
+        helpMenu.setFront();
         helpMenu.focus();
         screen.render();
       }
@@ -570,6 +784,11 @@ export default function register(ctx: PluginContext): void {
       // Copy selected ID
       screen.key(['c', 'C'], () => {
         copySelectedId();
+      });
+
+      // Open parent preview
+      screen.key(['p', 'P'], () => {
+        openParentPreview();
       });
 
       // Refresh from database
@@ -619,6 +838,10 @@ export default function register(ctx: PluginContext): void {
         closeHelp();
       });
 
+      overlay.on('click', () => {
+        closeHelp();
+      });
+
       copyIdButton.on('click', () => {
         copySelectedId();
       });
@@ -626,6 +849,32 @@ export default function register(ctx: PluginContext): void {
       // Close help with Esc or q when focused
       helpMenu.key(['escape', 'q'], () => {
         closeHelp();
+      });
+
+      detailOverlay.on('click', () => {
+        closeDetails();
+      });
+
+      detailModal.key(['escape'], () => {
+        closeDetails();
+      });
+
+      screen.on('mouse', (data: any) => {
+        if (!data || !['mousedown', 'mouseup', 'click'].includes(data.action)) return;
+        if (!detailModal.hidden && Date.now() < suppressDetailCloseUntil) return;
+        if (!detailModal.hidden && !isInside(detailModal, data.x, data.y)) {
+          closeDetails();
+          return;
+        }
+        if (!helpMenu.hidden && !isInside(helpMenu, data.x, data.y)) {
+          closeHelp();
+          return;
+        }
+        if (detailModal.hidden && helpMenu.hidden && isInside(detail, data.x, data.y)) {
+          if (data.action === 'click' || data.action === 'mousedown') {
+            openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
+          }
+        }
       });
     });
 }
