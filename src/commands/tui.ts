@@ -574,7 +574,7 @@ export default function register(ctx: PluginContext): void {
       let opencodePane: any = null;
       let opencodePaneClose: any = null;
 
-      const MIN_INPUT_HEIGHT = 4;
+      const MIN_INPUT_HEIGHT = 5;  // Increased to accommodate borders and content
       const FOOTER_HEIGHT = 1;
       const availableHeight = () => Math.max(10, (screen.height as number) - FOOTER_HEIGHT);
       const inputMaxHeight = () => Math.max(MIN_INPUT_HEIGHT, Math.floor(availableHeight() * 0.2));
@@ -589,10 +589,10 @@ export default function register(ctx: PluginContext): void {
         
         // Always use compact mode settings
         (opencodeText as any).border = false;
-        opencodeText.top = 0;
+        opencodeText.top = 1;  // Leave room for top border
         opencodeText.left = 1;
         opencodeText.width = '100%-2';
-        opencodeText.height = Math.max(1, desiredHeight - 1);
+        opencodeText.height = Math.max(1, desiredHeight - 2);  // Leave room for both borders
         // Reset styles instead of deleting them
         opencodeText.style = opencodeText.style || {};
         opencodeText.style.border = {};
@@ -637,10 +637,10 @@ export default function register(ctx: PluginContext): void {
         opencodeCancel.right = 1;
         // Remove textarea border since dialog has the border
         (opencodeText as any).border = false;
-        opencodeText.top = 0;
+        opencodeText.top = 1;  // Leave room for top border
         opencodeText.left = 1;
         opencodeText.width = '100%-2';
-        opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
+        opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 2);  // Leave room for both borders
         // Reset styles instead of deleting them
         opencodeText.style = opencodeText.style || {};
         opencodeText.style.border = {};
