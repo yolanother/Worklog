@@ -442,21 +442,19 @@ export default function register(ctx: PluginContext): void {
         '/revert'
       ];
 
-      // Autocomplete suggestion overlay
+      // Autocomplete suggestion overlay - positioned inside the textarea
       const autocompleteSuggestion = blessed.box({
-        parent: opencodeDialog,
-        top: 2,
-        left: 2,
+        parent: opencodeText,
+        top: 0,
+        left: 0,
         width: 'shrink',
         height: 1,
         tags: true,
         hidden: true,
         style: {
-          fg: 'gray',
-          bg: 'black',
-          border: { fg: 'gray' }
-        },
-        border: { type: 'line' }
+          fg: '#888888',
+          transparent: true
+        }
       });
 
       let currentSuggestion = '';
@@ -480,11 +478,11 @@ export default function register(ctx: PluginContext): void {
           if (matches.length > 0 && matches[0] !== input) {
             currentSuggestion = matches[0];
             const displayText = currentSuggestion.slice(input.length);
-            autocompleteSuggestion.setContent(` ${displayText} `);
+            autocompleteSuggestion.setContent(displayText);
             
-            // Position the suggestion after the current input
+            // Position the suggestion after the current input (same line)
             const inputLength = input.length;
-            autocompleteSuggestion.left = 2 + inputLength;
+            autocompleteSuggestion.left = inputLength;
             autocompleteSuggestion.show();
           } else {
             currentSuggestion = '';
@@ -499,8 +497,10 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Hook into textarea input to update autocomplete
-      opencodeText.on('keypress', function() {
-        // Defer to next tick to get updated value
+      opencodeText.on('keypress', function(_ch: any, _key: any) {
+        // Update immediately on keypress for better responsiveness
+        updateAutocomplete();
+        // Also update after the character is processed
         process.nextTick(() => {
           updateAutocomplete();
         });
