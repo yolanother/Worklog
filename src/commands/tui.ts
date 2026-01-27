@@ -522,7 +522,8 @@ export default function register(ctx: PluginContext): void {
 
         const cmd = `opencode run ${shellEscape(prompt)}`;
         try {
-          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
+          // Keep stdin as a pipe so we can forward user input to the process for interactive commands
+          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
         } catch (err) {
           opencodePane.setContent(`Failed to spawn: ${String(err)}`);
           screen.render();
@@ -553,6 +554,45 @@ export default function register(ctx: PluginContext): void {
           opencodeProc = null;
         });
       }
+
+      // Forward keypresses to interactive opencode process when the opencode pane is focused.
+      screen.on('keypress', (ch: any, key: any) => {
+        if (!opencodeProc || !opencodePane) return;
+        // Only forward when the opencode pane or its children are focused
+        const focused = screen.focused;
+        if (!focused) return;
+        // blessed elements have a .parent chain; check if focused is inside opencodePane
+        let node: any = focused;
+        let inside = false;
+        while (node) {
+          if (node === opencodePane) { inside = true; break; }
+          node = node.parent;
+        }
+        if (!inside) return;
+
+        try {
+          if (key && key.ctrl && key.name === 'd') {
+            // Ctrl-D -> EOF
+            try { opencodeProc.stdin.end(); } catch (_) {}
+            return;
+          }
+          if (key && key.name === 'backspace') {
+            opencodeProc.stdin.write('\x7f');
+            return;
+          }
+          if (key && key.full === 'enter') {
+            opencodeProc.stdin.write('\n');
+            return;
+          }
+          if (typeof ch === 'string' && ch.length > 0) {
+            opencodeProc.stdin.write(ch);
+            return;
+          }
+          // handle other control sequences if present
+        } catch (err) {
+          // ignore write errors
+        }
+      });
 
       // Opencode dialog controls
       opencodeSend.on('click', () => {
@@ -1122,9 +1162,13 @@ export default function register(ctx: PluginContext): void {
         savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
       });
 
-      // Quit keys: q and Ctrl-C always quit; Escape should close the help overlay
-      // when it's open instead of exiting the whole TUI.
+      // Quit keys: q and Ctrl-C usually quit; when an interactive opencode process
+      // is running prefer to forward SIGINT to it instead of quitting the app.
       screen.key(['q', 'C-c'], () => {
+        if (opencodeProc) {
+          try { opencodeProc.kill('SIGINT'); } catch (_) {}
+          return;
+        }
         // Persist state before exiting
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         screen.destroy();
