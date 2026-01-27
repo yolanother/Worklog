@@ -1123,6 +1123,7 @@ export default function register(ctx: PluginContext): void {
                         const question = questions[0];
                         const options = question.options || [];
                         debugLog(`sse question asked: ${question.question}`);
+                        debugLog(`sse question options: ${JSON.stringify(options)}`);
                         
                         // Show the question in the response pane
                         appendLine(`{yellow-fg}OpenCode asking: ${question.question}{/}`);
@@ -1132,18 +1133,24 @@ export default function register(ctx: PluginContext): void {
                         if (options.length > 0) {
                           answer = options[0].label || options[0].value || 'save';
                           appendLine(`{green-fg}Auto-answering with: ${answer}{/}`);
+                          debugLog(`sse question answering with: ${answer} from options: ${JSON.stringify(options[0])}`);
+                        } else {
+                          debugLog(`sse question no options, using default: ${answer}`);
                         }
                         
-                        // Send the answer back
+                        // Send the answer back - try different formats
+                        // First try the format that might work
                         const answerData = JSON.stringify({
                           questionID: data.properties.id,
-                          answers: [answer]
+                          answer: answer  // Try singular 'answer' instead of 'answers' array
                         });
+                        
+                        debugLog(`sse question sending answer: ${answerData}`);
                         
                         const answerOptions = {
                           hostname: 'localhost',
                           port: opencodeServerPort,
-                          path: `/session/${sessionId}/question`,
+                          path: `/session/${sessionId}/answer`,  // Try /answer instead of /question
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
