@@ -1,0 +1,67 @@
+// Common types for TUI components
+
+export interface Position {
+  top?: number | string;
+  left?: number | string;
+  right?: number | string;
+  bottom?: number | string;
+  width?: number | string;
+  height?: number | string;
+}
+
+export interface Style {
+  fg?: string;
+  bg?: string;
+  bold?: boolean;
+  underline?: boolean;
+  border?: {
+    fg?: string;
+    bg?: string;
+    type?: 'line' | 'double' | 'round' | 'heavy' | 'light' | 'dashed';
+  };
+  focus?: {
+    fg?: string;
+    bg?: string;
+    border?: {
+      fg?: string;
+      bg?: string;
+    };
+  };
+}
+
+export interface WorkItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'open' | 'in-progress' | 'completed' | 'deleted' | 'blocked';
+  priority?: 'critical' | 'high' | 'medium' | 'low';
+  stage?: string;
+  parentId?: string;
+  tags?: string[];
+  assignee?: string;
+  createdAt: Date | string;
+  updatedAt?: Date | string;
+  issueType?: 'bug' | 'feature' | 'task' | 'epic' | 'chore';
+  effort?: string;
+  risk?: string;
+}
+
+export interface VisibleNode {
+  item: WorkItem;
+  depth: number;
+  hasChildren: boolean;
+}
+
+export interface TUIState {
+  expanded: Set<string>;
+  showClosed: boolean;
+  filter?: 'in-progress' | 'open' | 'blocked' | 'all';
+  selectedId?: string;
+}
+
+export interface ServerStatus {
+  running: boolean;
+  pid?: number;
+  port?: number;
+  sessionId?: string;
+}
