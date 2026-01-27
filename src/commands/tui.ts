@@ -410,6 +410,102 @@ export default function register(ctx: PluginContext): void {
         style: { focus: { border: { fg: 'green' } } },
       });
 
+      // Command autocomplete support
+      const AVAILABLE_COMMANDS = [
+        '/help',
+        '/clear',
+        '/save',
+        '/export',
+        '/import',
+        '/test',
+        '/build',
+        '/run',
+        '/debug',
+        '/search',
+        '/replace',
+        '/refactor',
+        '/explain',
+        '/review',
+        '/commit',
+        '/push',
+        '/pull',
+        '/status',
+        '/diff',
+        '/log',
+        '/branch',
+        '/merge',
+        '/rebase',
+        '/checkout',
+        '/stash',
+        '/tag',
+        '/reset',
+        '/revert'
+      ];
+
+      // Autocomplete suggestion overlay
+      const autocompleteSuggestion = blessed.box({
+        parent: opencodeDialog,
+        top: 2,
+        left: 2,
+        width: 'shrink',
+        height: 1,
+        tags: true,
+        hidden: true,
+        style: {
+          fg: 'gray',
+          bg: 'black',
+          border: { fg: 'gray' }
+        },
+        border: { type: 'line' }
+      });
+
+      let currentSuggestion = '';
+      let isCommandMode = false;
+
+      function updateAutocomplete() {
+        const value = opencodeText.getValue ? opencodeText.getValue() : '';
+        const lines = value.split('\n');
+        const firstLine = lines[0];
+        
+        // Check if we're in command mode (first line starts with '/')
+        if (firstLine.startsWith('/') && lines.length === 1) {
+          isCommandMode = true;
+          const input = firstLine.toLowerCase();
+          
+          // Find the best matching command
+          const matches = AVAILABLE_COMMANDS.filter(cmd => 
+            cmd.toLowerCase().startsWith(input)
+          );
+          
+          if (matches.length > 0 && matches[0] !== input) {
+            currentSuggestion = matches[0];
+            const displayText = currentSuggestion.slice(input.length);
+            autocompleteSuggestion.setContent(` ${displayText} `);
+            
+            // Position the suggestion after the current input
+            const inputLength = input.length;
+            autocompleteSuggestion.left = 2 + inputLength;
+            autocompleteSuggestion.show();
+          } else {
+            currentSuggestion = '';
+            autocompleteSuggestion.hide();
+          }
+        } else {
+          isCommandMode = false;
+          currentSuggestion = '';
+          autocompleteSuggestion.hide();
+        }
+        screen.render();
+      }
+
+      // Hook into textarea input to update autocomplete
+      opencodeText.on('keypress', function() {
+        // Defer to next tick to get updated value
+        process.nextTick(() => {
+          updateAutocomplete();
+        });
+      });
+
       const opencodeSend = blessed.box({
         parent: opencodeDialog,
         bottom: 0,
@@ -451,6 +547,10 @@ export default function register(ctx: PluginContext): void {
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
         try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
+        // Reset autocomplete state
+        currentSuggestion = '';
+        isCommandMode = false;
+        autocompleteSuggestion.hide();
         opencodeText.focus();
         screen.render();
       }
@@ -571,6 +671,35 @@ export default function register(ctx: PluginContext): void {
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
         runOpencode(prompt);
+      });
+
+      // Custom Enter handling for command autocomplete
+      opencodeText.key(['enter'], function(this: any) {
+        if (isCommandMode && currentSuggestion) {
+          // Accept the suggestion and add a space
+          this.setValue(currentSuggestion + ' ');
+          // Move cursor to end
+          if (this.moveCursor) {
+            this.moveCursor(currentSuggestion.length + 1);
+          }
+          // Clear suggestion
+          currentSuggestion = '';
+          isCommandMode = false;
+          autocompleteSuggestion.hide();
+          screen.render();
+        } else {
+          // Default behavior - insert newline
+          const value = this.getValue ? this.getValue() : '';
+          const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
+          const before = value.substring(0, pos);
+          const after = value.substring(pos);
+          this.setValue(before + '\n' + after);
+          // Move cursor to start of new line
+          if (this.moveCursor) {
+            this.moveCursor(before.length + 1);
+          }
+          screen.render();
+        }
       });
 
       opencodeDialog.key(['escape'], () => {
