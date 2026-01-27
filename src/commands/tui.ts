@@ -634,7 +634,7 @@ export default function register(ctx: PluginContext): void {
           opencodeDialog.bottom = FOOTER_HEIGHT;
           opencodeDialog.width = '100%';
           opencodeDialog.height = MIN_INPUT_HEIGHT;
-          opencodeDialog.label = ' Prompt ';
+          opencodeDialog.label = ' prompt ';  // Use lowercase like response pane
           opencodeDialog.border = { type: 'line' };
           opencodeDialog.style = opencodeDialog.style || {};
           opencodeDialog.style.border = { fg: 'white' };
@@ -682,6 +682,10 @@ export default function register(ctx: PluginContext): void {
         }
         opencodeDialog.show();
         opencodeDialog.setFront();
+        // Ensure close button is visible and on top in compact mode
+        if (withPromptMarker) {
+          opencodeCancel.setFront();
+        }
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
         try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
