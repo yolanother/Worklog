@@ -26,6 +26,7 @@ import closeCommand from './commands/close.js';
 import recentCommand from './commands/recent.js';
 import pluginsCommand from './commands/plugins.js';
 import tuiCommand from './commands/tui.js';
+import onboardCommand from './commands/onboard.js';
 
 // Watch flag parsing - supports -w, -wN, --watch, --watch=N
 function parseWatchFlag(argv: string[]) {
@@ -214,8 +215,9 @@ const builtInCommands = [
   commentCommand,
   closeCommand,
   recentCommand,
-  pluginsCommand
-  , tuiCommand
+  pluginsCommand,
+  tuiCommand,
+  onboardCommand
 ];
 
 const builtInCommandNames = new Set([
@@ -235,10 +237,10 @@ const builtInCommandNames = new Set([
   'comment',
   'close',
   'recent',
-  'plugins'
+  'plugins',
+  'tui',
+  'onboard'
 ]);
-
-builtInCommandNames.add('tui');
 
 // Register each built-in command
 for (const registerFn of builtInCommands) {
