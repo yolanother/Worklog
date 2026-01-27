@@ -15,6 +15,7 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Multi-Project Support**: Configure custom prefixes for issue IDs per project
 - **Data Syncing**: Git-backed syncing and optional GitHub Issue mirroring
 - **Risk and Effort Estimation**: Track risk (Low/Medium/High/Severe) and effort (XS/S/M/L/XL) for each work item
+- **Plugins**: Extend functionality with custom plugins
 
 ## Installation
 
@@ -51,7 +52,7 @@ That's it. Just use your agents as you normally would. They will start using Wor
 
 ### Is that REALY it?
 
-You can get alot of value from just using Worklog as a memory for your agents. But you can go much further by building a personal workflow to manage the agents work.  We believe that everyone is unique. Our workflows should be optimized for ourselves, our teams and our environments. Consequently Worklog brings the bare minimum workflow with it. It is installed when you run `wl init` (unless you said no to the AGENTS.md update during initialization, you can run it again if you want to add it later).
+You can get alot of value from just using Worklog as a memory for your agents. But you can go much further by building a personal workflow to manage the agents work. We believe that everyone is unique. Our workflows should be optimized for ourselves, our teams and our environments. Consequently Worklog brings the bare minimum workflow with it. It is installed when you run `wl init` (unless you said no to the AGENTS.md update during initialization, you can run it again if you want to add it later).
 
 If you want to define your own workflow then you might take inspiration from the [Sorra Agents Repository](https://github.com/sorratheorc/sorraagents) which is a very complete workflow that leverages Worklog and a number of customer commands, skills and agents.
 
@@ -75,6 +76,7 @@ wl init
 **Note:** If you haven't installed the CLI globally, you can still use `npm run cli -- init` for development.
 
 This will prompt you for:
+
 - **Project name**: A descriptive name for your project
 - **Issue ID prefix**: A short prefix for your issue IDs (e.g., WI, PROJ, TASK)
 - **Auto-sync**: Enable automatic git sync after changes (optional)
@@ -82,6 +84,7 @@ This will prompt you for:
 `wl init` also installs `AGENTS.md` in the project root from `templates/AGENTS.md`. If `AGENTS.md` already exists, it checks for the template content and prompts before appending it.
 
 Optional GitHub settings (edit `.worklog/config.yaml` manually):
+
 - `githubRepo`: `owner/name` for GitHub Issue mirroring
 - `githubLabelPrefix`: label prefix (default `wl:`)
 - `githubImportCreateNew`: create work items from unmarked issues (default `true`)
@@ -93,6 +96,7 @@ The configuration is saved to `.worklog/config.yaml` as your local configuration
 After creating the configuration, `init` will automatically sync the database with the remote repository to pull any existing work items and comments.
 
 **Example:**
+
 ```
 Project name: MyProject
 Issue ID prefix: MP
@@ -103,6 +107,7 @@ This will create issues with IDs like `MP-0J8L1JQ3H8ZQ2K6D`, `MP-0J8L1JQ3H8ZQ2K6
 ### Configuration Override System
 
 The system loads configuration in this order:
+
 1. First loads `.worklog/config.defaults.yaml` if it exists (team defaults)
 2. Then loads `.worklog/config.yaml` if it exists (your overrides)
 3. Values in `config.yaml` override those in `config.defaults.yaml`
@@ -134,12 +139,14 @@ Worklog uses a **dual-storage model** to combine the benefits of persistent data
 ### How It Works
 
 **On Startup (CLI or API)**:
+
 - Database connects to persistent SQLite file
 - Checks if JSONL file is newer than database's last import
 - If JSONL is newer (e.g., after `git pull`), automatically refreshes database from JSONL
 - If database is empty and JSONL exists, imports from JSONL
 
 **On Write Operations** (create/update/delete):
+
 - Changes saved to database immediately
 - Database automatically exports current state to JSONL
 - If auto-sync is enabled, Worklog pushes updates to the git data ref automatically
@@ -207,9 +214,9 @@ worklog --json list
 Worklog supports a global human display `--format` (short: `-F`) to control how work items and comments are rendered for humans. Valid values: `concise`, `normal`, `full`, `raw`.
 
 - `concise` — compact, one-line title + gray ID (good for lists)
-- `normal`  — multi-line human-friendly view with key fields
-- `full`    — `normal` plus tags/stage and inlined comments (if available)
-- `raw`     — JSON stringified work item/comment (useful for copy/paste)
+- `normal` — multi-line human-friendly view with key fields
+- `full` — `normal` plus tags/stage and inlined comments (if available)
+- `raw` — JSON stringified work item/comment (useful for copy/paste)
 
 Format precedence: CLI `--format` > per-command provided format (if implemented) > `config.humanDisplay` > default `concise`.
 
@@ -233,7 +240,7 @@ wl --format raw show WI-0J8L1JQ3H8ZQ2K6D
 
 #### Examples
 
-```bash
+````bash
 # Initialize project configuration (run this first)
 worklog init
 
@@ -318,26 +325,32 @@ Worklog includes a simple interactive terminal UI for browsing work items as a t
 ```bash
 wl tui            # open TUI showing all items
 wl tui --in-progress  # show only in-progress items
-```
+````
 
 See `TUI.md` for more details and controls.
 
 # Import updates from GitHub Issues (only items with worklog markers)
+
 worklog github import --repo owner/name --since 2024-01-01T00:00:00Z
 
 # Create new Worklog items from GitHub Issues and push markers back
+
 worklog github import --repo owner/name --create-new
 
 Note: GitHub syncs can be slow when there are many changes. For best performance, run imports and pushes regularly (some teams set up a cron job) to keep each sync small.
 
 # Enable auto-sync via config defaults
+
 # .worklog/config.defaults.yaml
+
 # autoSync: true
 
 # Using the short alias 'wl'
-wl list                       # Same as 'worklog list'
-wl create -t "Quick task"     # Same as 'worklog create -t "Quick task"'
-```
+
+wl list # Same as 'worklog list'
+wl create -t "Quick task" # Same as 'worklog create -t "Quick task"'
+
+````
 
 ### API Server (Optional)
 
@@ -347,7 +360,7 @@ Start the API server:
 
 ```bash
 npm start
-```
+````
 
 The server will run on `http://localhost:3000` by default. It automatically loads data from `.worklog/worklog-data.jsonl` if it exists.
 
@@ -361,6 +374,7 @@ npm start
 #### API Endpoints
 
 **Work Items:**
+
 - `GET /health` - Health check
 - `POST /items` - Create a work item
 - `GET /items` - List work items (with optional filters)
@@ -371,6 +385,7 @@ npm start
 - `GET /items/:id/descendants` - Get all descendants
 
 **Comments:**
+
 - `POST /items/:id/comments` - Create a comment on a work item
 - `GET /items/:id/comments` - Get all comments for a work item
 - `GET /comments/:commentId` - Get a specific comment
@@ -378,6 +393,7 @@ npm start
 - `DELETE /comments/:commentId` - Delete a comment
 
 **Data Management:**
+
 - `POST /export` - Export data to JSONL
 - `POST /import` - Import data from JSONL
 
@@ -432,7 +448,11 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
   "author": "Jane Doe",
   "comment": "This is a comment with **markdown** support!",
   "createdAt": "2024-01-01T00:00:00.000Z",
-  "references": ["WI-0J8L1JQ3H8ZQ2K6E", "src/api.ts", "https://example.com/docs"]
+  "references": [
+    "WI-0J8L1JQ3H8ZQ2K6E",
+    "src/api.ts",
+    "https://example.com/docs"
+  ]
 }
 ```
 
@@ -447,7 +467,7 @@ Work items and comments are stored in JSONL (JSON Lines) format, with each line 
 
 ## Plugins
 
-Worklog supports a pluggable command architecture that allows you to extend the CLI with custom commands without modifying the Worklog codebase. 
+Worklog supports a pluggable command architecture that allows you to extend the CLI with custom commands without modifying the Worklog codebase.
 
 ### Quick Example
 
@@ -456,9 +476,9 @@ Create `.worklog/plugins/hello.mjs`:
 ```javascript
 export default function register(ctx) {
   ctx.program
-    .command('hello')
-    .description('Say hello')
-    .option('-n, --name <name>', 'Name to greet', 'World')
+    .command("hello")
+    .description("Say hello")
+    .option("-n, --name <name>", "Name to greet", "World")
     .action((options) => {
       console.log(`Hello, ${options.name}!`);
     });

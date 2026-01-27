@@ -2,14 +2,35 @@
 
 IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
 
-### Why Worklog (wl)?
+## CRITICAL RULES
 
-- Agent-optimized planning with parent/child relationships, tags, and comments
-- Syncs via a dedicated git ref (`refs/worklog/data`)
-- Optional GitHub Issues mirroring
-- Optional git hook auto-sync
-- Lightweight CLI and JSON-friendly output
-- Prevents duplicate tracking systems and confusion
+- Use Worklog (wl), described below, for ALL task tracking, do NOT use markdown TODOs, task lists, or other tracking methods
+- Whenever you are provided with, or discover, a new work item create it in wl immediately
+- Whenever you are provided with or discover important context (specifications, designs, user-stories) ensure the information is added to the description of the relevant work item(s) OR create a new work item if none exist
+- Whenever you create a planning document (PRD, spec, design doc) add references to the document in the description of any work item that is directly related to the document
+- Work items cannot be closed until all child items are closed, all blocking dependencies resolved and a Producer has reviewed and approved the work
+- Never commit changes without associating them with a work item
+- Never commit changes without ensuring all tests and quality checks pass
+- Whenever a comment is made add a comment to impacted the work item(s) describing the changes, the files affected, and including the commit hash.
+- Never push changes until all work items associated with the changes are closed
+- If push fails, resolve and retry until it succeeds
+- When using backticks in arguments to shell commands, escape them properly to avoid errors
+
+### Important Rules
+
+- Use wl as a primary source of truth, only the source code is more authoritative
+- Always use `--json` flag for programmatic use
+- When new work items are discovered or prompted while working on an existing item create a new work item with `wl create`
+  - If the item must be completed before the current work item can be completed add it as a child of the current item (`wl create --parent <current-work-item-id>`)
+  - If the item is related to the current work item but not blocking its completion add a reference to the current item in the description (`discovered-from:<current-work-item-id>`)
+- Check `wl next` before asking "what should I work on?" and always offer the response as a next steps suggestion, with an explanation
+- Run `wl --help` and `wl <cmd> --help` to learn about the capabilities of WorkLog (wl) and discover available flags
+- Use work items to track all significant work, including bugs, features, tasks, epics, chores
+- Use clear, concise titles and detailed descriptions for all work items
+- Use parent/child relationships to track dependencies and subtasks
+- Use priorities to indicate the importance of work items
+- Use stages to track workflow progress
+- Do NOT clutter repo root with planning documents
 
 ### work-item Types
 
@@ -24,6 +45,7 @@ Track work-item types with `--issue-type`:
 ### Work Item Descriptions
 
 - Use clear, concise titles summarizing the work item.
+- Do not escape special characters
 - The description must provide sufficient context for understanding and implementing the work item.
 - At a minimum include:
   - A summary of the problem or feature.
@@ -171,27 +193,3 @@ Depending on your setup, you may have additional wl plugins installed. Check ava
 
 Run `wl --help` to see general help text and available commands.
 Run `wl <command> --help` to see help text and all available flags for any command.
-
-### Important Rules
-
-- Use wl for ALL task tracking, do NOT use markdown TODOs, task lists, or other tracking methods
-- Whenever committing code changes add a comment to the relevant work item(s) summarising the changes and the reason for them, include the commit hash.
-  - if there is still work remaining note this in the comment.
-- Use wl as a primary source of truth, only the source code is more authoritative
-- Always use `--json` flag for programmatic use
-- When new work items are discovered while working on an existing item create a new work item with `wl create`
-  - If the item must be completed before the current work item can be completed add it as a child of the current item (`wl create --parent <current-work-item-id>`)
-  - If the item is related to the current work item but not blocking its completion add a reference to the current item in the description (`discovered-from:<current-work-item-id>`)
-- Check `wl next` before asking "what should I work on?" and offer the response as a suggestion, with an explanation
-- Run `wl <cmd> --help` to discover available flags
-- Do NOT create markdown TODO lists
-- Do NOT use external issue trackers
-- Do NOT duplicate tracking systems
-- Do NOT clutter repo root with planning documents
-
-## CRITICAL RULES
-
-- Work is NOT complete, and thus work items should not be marked completed, until a PR has been raised, reviews passed, and code merged
-- NEVER stop before pushing - that leaves work stranded locally
-- If push fails, resolve and retry until it succeeds
-- When using backticks in strings that are to be passed as arguments to shell commands (e.g. wf, gh), escape them properly to avoid errors
