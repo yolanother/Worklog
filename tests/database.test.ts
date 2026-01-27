@@ -459,15 +459,15 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(oldest.id);
     });
 
-    it('should walk down tree from in-progress item to find leaf nodes', () => {
+    it('should select direct child under in-progress item', () => {
       const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
       const child = db.create({ title: 'Child', priority: 'high', status: 'open', parentId: parent.id });
       const grandchild = db.create({ title: 'Grandchild', priority: 'high', status: 'open', parentId: child.id });
       
       const result = db.findNextWorkItem();
-      // Should select the leaf node (grandchild) since parent is in-progress
-      expect(result.workItem?.id).toBe(grandchild.id);
-      expect(result.reason).toContain('leaf descendant');
+      // Should select the direct child since parent is in-progress
+      expect(result.workItem?.id).toBe(child.id);
+      expect(result.reason).toContain('child of deepest in-progress item');
     });
 
     it('should skip completed and deleted items', () => {
@@ -518,16 +518,16 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(searchItem.id);
     });
 
-    it('should return in-progress item if it has no suitable descendants', () => {
+    it('should return in-progress item if it has no suitable children', () => {
       const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
       db.create({ title: 'Completed child', priority: 'high', status: 'completed', parentId: parent.id });
       
       const result = db.findNextWorkItem();
       expect(result.workItem?.id).toBe(parent.id);
-      expect(result.reason).toContain('no open descendants');
+      expect(result.reason).toContain('no open children');
     });
 
-    it('should select highest priority leaf when multiple leaves exist', () => {
+    it('should select highest priority child when multiple children exist', () => {
       const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
       db.create({ title: 'Low leaf', priority: 'low', status: 'open', parentId: parent.id });
       const highLeaf = db.create({ title: 'High leaf', priority: 'high', status: 'open', parentId: parent.id });
@@ -536,7 +536,7 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(highLeaf.id);
     });
 
-    it('should apply assignee filter to leaf descendants', () => {
+    it('should apply assignee filter to children', () => {
       const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress', assignee: 'john' });
       db.create({ title: 'Child for jane', priority: 'high', status: 'open', parentId: parent.id, assignee: 'jane' });
       const johnChild = db.create({ title: 'Child for john', priority: 'low', status: 'open', parentId: parent.id, assignee: 'john' });
@@ -546,7 +546,7 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(johnChild.id);
     });
 
-    it('should apply search filter to leaf descendants', () => {
+    it('should apply search filter to children', () => {
       const parent = db.create({ title: 'Parent task', priority: 'high', status: 'in-progress' });
       db.create({ title: 'Regular child', priority: 'critical', status: 'open', parentId: parent.id });
       const bugChild = db.create({ title: 'Bug fix needed', priority: 'low', status: 'open', parentId: parent.id });
