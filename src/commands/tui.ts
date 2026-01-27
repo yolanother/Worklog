@@ -579,7 +579,6 @@ export default function register(ctx: PluginContext): void {
       const availableHeight = () => Math.max(10, (screen.height as number) - FOOTER_HEIGHT);
       const inputMaxHeight = () => Math.max(MIN_INPUT_HEIGHT, Math.floor(availableHeight() * 0.2));
       const paneHeight = () => Math.max(6, Math.floor(availableHeight() * 0.5));
-      let opencodeDialogMode: 'full' | 'compact' = 'full';
 
       function updateOpencodeInputLayout() {
         if (!opencodeText.getValue) return;
@@ -588,28 +587,16 @@ export default function register(ctx: PluginContext): void {
         const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 1), inputMaxHeight());
         opencodeDialog.height = desiredHeight;
         
-        if (opencodeDialogMode === 'compact') {
-          // In compact mode, remove textarea border and adjust positioning
-          (opencodeText as any).border = false;
-          opencodeText.top = 0;
-          opencodeText.left = 1;
-          opencodeText.width = '100%-2';
-          opencodeText.height = Math.max(1, desiredHeight - 1);
-          // Reset styles instead of deleting them
-          opencodeText.style = opencodeText.style || {};
-          opencodeText.style.border = {};
-          opencodeText.style.focus = {};
-        } else {
-          // In full mode, keep textarea border
-          opencodeText.top = 0;
-          opencodeText.left = 0;
-          opencodeText.width = '100%';
-          opencodeText.height = Math.max(1, desiredHeight - 1);
-          (opencodeText as any).border = { type: 'line' };
-          opencodeText.style = opencodeText.style || {};
-          opencodeText.style.border = { fg: 'gray' };
-          opencodeText.style.focus = { border: { fg: 'green' } };
-        }
+        // Always use compact mode settings
+        (opencodeText as any).border = false;
+        opencodeText.top = 0;
+        opencodeText.left = 1;
+        opencodeText.width = '100%-2';
+        opencodeText.height = Math.max(1, desiredHeight - 1);
+        // Reset styles instead of deleting them
+        opencodeText.style = opencodeText.style || {};
+        opencodeText.style.border = {};
+        opencodeText.style.focus = {};
         
         if (opencodePane) {
           opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
@@ -625,80 +612,56 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       }
 
-      async function openOpencodeDialog(withPromptMarker: boolean = false) {
-        if (withPromptMarker) {
-          opencodeDialogMode = 'compact';
-          opencodeOverlay.hide();
-          opencodeDialog.top = undefined as any;
-          opencodeDialog.left = 0;
-          opencodeDialog.bottom = FOOTER_HEIGHT;
-          opencodeDialog.width = '100%';
-          opencodeDialog.height = MIN_INPUT_HEIGHT;
-          opencodeDialog.label = ' prompt ';  // Use lowercase like response pane
-          opencodeDialog.border = { type: 'line' };
-          opencodeDialog.style = opencodeDialog.style || {};
-          opencodeDialog.style.border = { fg: 'white' };
-          suggestionHint.hide();
-          opencodeSend.show();
-          opencodeCancel.show();
-          opencodeSend.bottom = 0;
-          opencodeSend.right = 1;
-          opencodeCancel.top = 0;
-          opencodeCancel.right = 1;
-          // Remove textarea border in compact mode since dialog has the border
-          (opencodeText as any).border = false;
-          opencodeText.top = 0;
-          opencodeText.left = 1;
-          opencodeText.width = '100%-2';
-          opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
-          // Reset styles instead of deleting them
-          opencodeText.style = opencodeText.style || {};
-          opencodeText.style.border = {};
-          opencodeText.style.focus = {};
-        } else {
-          opencodeDialogMode = 'full';
-          opencodeOverlay.show();
-          opencodeDialog.top = 'center';
-          opencodeDialog.left = 'center';
-          opencodeDialog.bottom = undefined as any;
-          opencodeDialog.width = '80%';
-          opencodeDialog.height = '60%';
-          opencodeDialog.label = ' Run opencode ';
-          opencodeDialog.border = { type: 'line' };
-          suggestionHint.show();
-          opencodeSend.show();
-          opencodeCancel.show();
-          opencodeSend.bottom = 0;
-          opencodeSend.right = 1;
-          opencodeCancel.top = 0;
-          opencodeCancel.right = 1;
-          opencodeText.top = opencodeTextDefaults.top;
-          opencodeText.left = opencodeTextDefaults.left;
-          opencodeText.width = opencodeTextDefaults.width;
-          opencodeText.height = opencodeTextDefaults.height;
-          (opencodeText as any).border = opencodeTextDefaults.border;
-          opencodeText.style = opencodeText.style || {};
-          opencodeText.style.focus = { border: { fg: 'green' } };
+      async function openOpencodeDialog() {
+        opencodeOverlay.hide();
+        opencodeDialog.top = undefined as any;
+        opencodeDialog.left = 0;
+        opencodeDialog.bottom = FOOTER_HEIGHT;
+        opencodeDialog.width = '100%';
+        opencodeDialog.height = MIN_INPUT_HEIGHT;
+        // Force update the label
+        opencodeDialog.setLabel(' prompt ');
+        opencodeDialog.border = { type: 'line' };
+        opencodeDialog.style = opencodeDialog.style || {};
+        opencodeDialog.style.border = { fg: 'white' };
+        // Force re-render the border
+        if (opencodeDialog.border) {
+          opencodeDialog.border.type = 'line';
         }
+        suggestionHint.hide();
+        opencodeSend.show();
+        opencodeCancel.show();
+        opencodeSend.bottom = 0;
+        opencodeSend.right = 1;
+        opencodeCancel.top = 0;
+        opencodeCancel.right = 1;
+        // Remove textarea border since dialog has the border
+        (opencodeText as any).border = false;
+        opencodeText.top = 0;
+        opencodeText.left = 1;
+        opencodeText.width = '100%-2';
+        opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
+        // Reset styles instead of deleting them
+        opencodeText.style = opencodeText.style || {};
+        opencodeText.style.border = {};
+        opencodeText.style.focus = {};
+        
         opencodeDialog.show();
         opencodeDialog.setFront();
-        // Ensure close button is visible and on top in compact mode
-        if (withPromptMarker) {
-          opencodeCancel.setFront();
-        }
+        // Ensure close button is visible and on top
+        opencodeCancel.setFront();
+        
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
-        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
-        if (withPromptMarker) {
-          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
-        }
+        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
+        
         // Reset autocomplete state
         currentSuggestion = '';
         isCommandMode = false;
         userTypedText = '';
         suggestionHint.setContent('');
         opencodeText.focus();
-        if (typeof opencodeText.moveCursor === 'function' && withPromptMarker) {
+        if (typeof opencodeText.moveCursor === 'function') {
           opencodeText.moveCursor(2);
         }
         updateOpencodeInputLayout();
@@ -711,29 +674,12 @@ export default function register(ctx: PluginContext): void {
 
       function closeOpencodeDialog() {
         // In compact mode, don't hide the dialog - it stays as the input bar
-        if (opencodeDialogMode === 'compact') {
-          // Just clear the input and keep it open
-          try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
-          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
-          if (typeof opencodeText.moveCursor === 'function') {
-            opencodeText.moveCursor(2);
-          }
-          screen.render();
-          return;
+        // Just clear the input and keep it open
+        try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
+        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
+        if (typeof opencodeText.moveCursor === 'function') {
+          opencodeText.moveCursor(2);
         }
-        
-        // Full mode - close everything
-        opencodeDialog.hide();
-        opencodeOverlay.hide();
-        opencodeSend.show();
-        opencodeCancel.show();
-        suggestionHint.show();
-        opencodeDialogMode = 'full';
-        if (opencodePane) {
-          opencodePane.bottom = FOOTER_HEIGHT;
-          opencodePane.height = paneHeight();
-        }
-        list.focus();
         screen.render();
       }
 
@@ -1336,17 +1282,13 @@ export default function register(ctx: PluginContext): void {
           opencodePane.show();
           opencodePane.setFront();
           // In compact mode, adjust pane position to be above the input
-          if (opencodeDialogMode === 'compact') {
-            const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
-            opencodePane.bottom = currentHeight + FOOTER_HEIGHT;
-            opencodePane.height = paneHeight();
-          }
+          const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
+          opencodePane.bottom = currentHeight + FOOTER_HEIGHT;
+          opencodePane.height = paneHeight();
           return;
         }
 
-        const bottomOffset = opencodeDialogMode === 'compact' 
-          ? MIN_INPUT_HEIGHT + FOOTER_HEIGHT 
-          : FOOTER_HEIGHT;
+        const bottomOffset = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
 
         opencodePane = blessed.box({
           parent: screen,
@@ -1366,28 +1308,18 @@ export default function register(ctx: PluginContext): void {
           style: { border: { fg: 'magenta' } },
         });
 
-        // Create close button as part of the border/label area
-        // Note: We'll handle the close with click detection on the label area
+        // Create close button as a child of the pane, fixed at top
         opencodePaneClose = blessed.box({
-          parent: screen,  // Make it a sibling, not a child
-          top: 0,  // Will be positioned after pane is rendered
-          right: 2,
+          parent: opencodePane,
+          top: 0,
+          right: 1,
           height: 1,
           width: 3,
           content: '[x]',
           style: { fg: 'red', bold: true },
           mouse: true,
           clickable: true,
-        });
-        
-        // Position the close button in the title bar area
-        opencodePane.on('move', () => {
-          if (opencodePaneClose && opencodePane) {
-            const paneTop = typeof opencodePane.atop === 'number' ? opencodePane.atop : 0;
-            const paneRight = typeof opencodePane.aright === 'number' ? opencodePane.aright : 0;
-            opencodePaneClose.top = paneTop;
-            opencodePaneClose.right = paneRight + 2;
-          }
+          fixed: true,  // Try to keep it fixed
         });
         
         opencodePaneClose.on('click', () => {
@@ -1396,20 +1328,6 @@ export default function register(ctx: PluginContext): void {
         
         opencodePane.show();
         opencodePane.setFront();
-        opencodePaneClose.show();
-        opencodePaneClose.setFront();
-        
-        // Position the close button after pane is rendered
-        process.nextTick(() => {
-          if (opencodePaneClose && opencodePane) {
-            const paneTop = typeof opencodePane.atop === 'number' ? opencodePane.atop : 0;
-            const paneRight = typeof opencodePane.aright === 'number' ? opencodePane.aright : 0;
-            opencodePaneClose.top = paneTop;
-            opencodePaneClose.right = paneRight + 2;
-            screen.render();
-          }
-        });
-        
         opencodePane.focus();
       }
 
@@ -1432,7 +1350,7 @@ export default function register(ctx: PluginContext): void {
 
         // Use HTTP API to communicate with server
         try {
-          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => openOpencodeDialog(true));
+          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => openOpencodeDialog());
         } catch (err) {
           opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
           screen.render();
@@ -1448,17 +1366,12 @@ export default function register(ctx: PluginContext): void {
 
       opencodeCancel.on('click', () => {
         // In compact mode, close the whole opencode session
-        if (opencodeDialogMode === 'compact') {
-          opencodeDialog.hide();
-          if (opencodePane) {
-            opencodePane.hide();
-          }
-          list.focus();
-          screen.render();
-        } else {
-          showToast('Cancelled');
-          closeOpencodeDialog();
+        opencodeDialog.hide();
+        if (opencodePane) {
+          opencodePane.hide();
         }
+        list.focus();
+        screen.render();
       });
 
       // Accept Ctrl+S to send (keep for backward compatibility)
@@ -2121,7 +2034,7 @@ export default function register(ctx: PluginContext): void {
       // Open opencode prompt dialog (shortcut O)
       screen.key(['o', 'O'], async () => {
         if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
-          await openOpencodeDialog(true);
+          await openOpencodeDialog();
         }
       });
 
