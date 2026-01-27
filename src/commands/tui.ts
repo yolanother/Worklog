@@ -250,6 +250,57 @@ export default function register(ctx: PluginContext): void {
         mouse: true,
       });
 
+      const closeOverlay = blessed.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        mouse: true,
+        clickable: true,
+        style: { bg: 'black' },
+      });
+
+      const closeDialog = blessed.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '50%',
+        height: 10,
+        label: ' Close Work Item ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        mouse: true,
+        clickable: true,
+        style: { border: { fg: 'magenta' } },
+      });
+
+      const closeDialogText = blessed.box({
+        parent: closeDialog,
+        top: 1,
+        left: 2,
+        height: 2,
+        width: '100%-4',
+        content: 'Close selected item with stage:',
+        tags: false,
+      });
+
+      const closeDialogOptions = blessed.list({
+        parent: closeDialog,
+        top: 4,
+        left: 2,
+        width: '100%-4',
+        height: 4,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' },
+        },
+        items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
+      });
+
       const overlay = blessed.box({
         parent: screen,
         top: 0,
@@ -321,6 +372,9 @@ export default function register(ctx: PluginContext): void {
         '',
         'Preview:',
         '  P              Open parent in modal',
+        '',
+        'Close:',
+        '  X              Close selected item (in_review/done/deleted)',
         '',
         'Help:',
         '  ?              Toggle this help',
@@ -473,6 +527,29 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       }
 
+      function openCloseDialog() {
+        const item = getSelectedItem();
+        if (item) {
+          closeDialogText.setContent(`Close: ${item.title}\nID: ${item.id}`);
+        } else {
+          closeDialogText.setContent('Close selected item with stage:');
+        }
+        closeOverlay.show();
+        closeDialog.show();
+        closeOverlay.setFront();
+        closeDialog.setFront();
+        closeDialogOptions.select(0);
+        closeDialogOptions.focus();
+        screen.render();
+      }
+
+      function closeCloseDialog() {
+        closeDialog.hide();
+        closeOverlay.hide();
+        list.focus();
+        screen.render();
+      }
+
       function isInside(box: any, x: number, y: number): boolean {
         const lpos = box?.lpos;
         if (!lpos) return false;
@@ -489,7 +566,7 @@ export default function register(ctx: PluginContext): void {
         openDetailsForId(parentId);
       }
 
-      function refreshFromDatabase() {
+      function refreshFromDatabase(preferredIndex?: number) {
         const selected = getSelectedItem();
         const selectedId = selected?.id;
         const query: any = {};
@@ -507,7 +584,9 @@ export default function register(ctx: PluginContext): void {
         rebuildTree();
         const visible = buildVisible();
         let nextIndex = 0;
-        if (selectedId) {
+        if (typeof preferredIndex === 'number') {
+          nextIndex = Math.max(0, Math.min(preferredIndex, visible.length - 1));
+        } else if (selectedId) {
           const found = visible.findIndex(n => n.item.id === selectedId);
           if (found >= 0) nextIndex = found;
         }
@@ -580,6 +659,31 @@ export default function register(ctx: PluginContext): void {
         const result = copyToClipboard(item.id);
         if (result.success) showToast('ID copied');
         else showToast('Copy failed');
+      }
+
+      function closeSelectedItem(stage: 'in_review' | 'done' | 'deleted') {
+        const item = getSelectedItem();
+        if (!item) {
+          showToast('No item selected');
+          return;
+        }
+        const currentIndex = list.selected as number;
+        const nextIndex = Math.max(0, currentIndex - 1);
+        try {
+          const updates = stage === 'deleted'
+            ? { status: 'deleted' as const, stage: '' }
+            : { status: 'completed' as const, stage };
+          const updated = db.update(item.id, updates);
+          if (!updated) {
+            showToast('Close failed');
+            return;
+          }
+          if (stage === 'deleted') showToast('Closed (deleted)');
+          else showToast(stage === 'done' ? 'Closed (done)' : 'Closed (in_review)');
+          refreshFromDatabase(nextIndex);
+        } catch (err) {
+          showToast('Close failed');
+        }
       }
 
       let toastTimer: NodeJS.Timeout | null = null;
@@ -741,6 +845,10 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['escape'], () => {
+        if (!closeDialog.hidden) {
+          closeCloseDialog();
+          return;
+        }
         if (!detailModal.hidden) {
           closeDetails();
           return;
@@ -789,6 +897,13 @@ export default function register(ctx: PluginContext): void {
       // Open parent preview
       screen.key(['p', 'P'], () => {
         openParentPreview();
+      });
+
+      // Close selected item
+      screen.key(['x', 'X'], () => {
+        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden) {
+          openCloseDialog();
+        }
       });
 
       // Refresh from database
@@ -849,6 +964,25 @@ export default function register(ctx: PluginContext): void {
       // Close help with Esc or q when focused
       helpMenu.key(['escape', 'q'], () => {
         closeHelp();
+      });
+
+      closeOverlay.on('click', () => {
+        closeCloseDialog();
+      });
+
+      closeDialogOptions.on('select', (_el: any, idx: number) => {
+        if (idx === 0) closeSelectedItem('in_review');
+        if (idx === 1) closeSelectedItem('done');
+        if (idx === 2) closeSelectedItem('deleted');
+        closeCloseDialog();
+      });
+
+      closeDialog.key(['escape'], () => {
+        closeCloseDialog();
+      });
+
+      closeDialogOptions.key(['escape'], () => {
+        closeCloseDialog();
       });
 
       detailOverlay.on('click', () => {
