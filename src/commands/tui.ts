@@ -572,7 +572,6 @@ export default function register(ctx: PluginContext): void {
 
       // Active opencode pane/process tracking
       let opencodePane: any = null;
-      let opencodePaneClose: any = null;
 
       const MIN_INPUT_HEIGHT = 5;  // Increased to accommodate borders and content
       const FOOTER_HEIGHT = 1;
@@ -601,40 +600,23 @@ export default function register(ctx: PluginContext): void {
         if (opencodePane) {
           opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
           opencodePane.height = paneHeight();
-          // Update close button position if it exists
-          if (opencodePaneClose && opencodePaneClose.visible) {
-            const paneTop = typeof opencodePane.atop === 'number' ? opencodePane.atop : 0;
-            const paneRight = typeof opencodePane.aright === 'number' ? opencodePane.aright : 0;
-            opencodePaneClose.top = paneTop;
-            opencodePaneClose.right = paneRight + 2;
-          }
+          // No longer need to update close button position since it's in the label
         }
         screen.render();
       }
 
       async function openOpencodeDialog() {
-        opencodeOverlay.hide();
-        opencodeDialog.top = undefined as any;
-        opencodeDialog.left = 0;
+        // Always use compact mode at bottom
+        opencodeDialog.setLabel(' prompt [x] ');
         opencodeDialog.bottom = FOOTER_HEIGHT;
+        opencodeDialog.left = 0;
         opencodeDialog.width = '100%';
         opencodeDialog.height = MIN_INPUT_HEIGHT;
-        // Force update the label
-        opencodeDialog.setLabel(' prompt ');
-        opencodeDialog.border = { type: 'line' };
-        opencodeDialog.style = opencodeDialog.style || {};
-        opencodeDialog.style.border = { fg: 'white' };
-        // Force re-render the border
-        if (opencodeDialog.border) {
-          opencodeDialog.border.type = 'line';
-        }
+        
+        // Adjust button positioning for compact mode
         suggestionHint.hide();
-        opencodeSend.show();
-        opencodeCancel.show();
-        opencodeSend.bottom = 0;
-        opencodeSend.right = 1;
-        opencodeCancel.top = 0;
-        opencodeCancel.right = 1;
+        opencodeSend.hide();  // Hide the send button
+        opencodeCancel.hide();  // Hide the old cancel button since it's in the label now
         // Remove textarea border since dialog has the border
         (opencodeText as any).border = false;
         opencodeText.top = 1;  // Leave room for top border
@@ -686,9 +668,6 @@ export default function register(ctx: PluginContext): void {
       function closeOpencodePane() {
         if (opencodePane) {
           opencodePane.hide();
-        }
-        if (opencodePaneClose) {
-          opencodePaneClose.hide();
         }
         screen.render();
       }
@@ -866,7 +845,7 @@ export default function register(ctx: PluginContext): void {
               currentSessionId = sessionId;
               // Update pane label to include session ID
               if (pane.setLabel) {
-                pane.setLabel(` opencode - Session: ${sessionId} `);
+                pane.setLabel(` opencode - Session: ${sessionId} [x] `);
               }
               pane.pushLine('');
               pane.pushLine(`{gray-fg}> ${prompt}{/}`);
@@ -1296,7 +1275,7 @@ export default function register(ctx: PluginContext): void {
           left: 0,
           width: '100%',
           height: paneHeight(),
-          label: ` opencode `,
+          label: ` opencode [x] `,
           border: { type: 'line' },
           tags: true,
           scrollable: true,
@@ -1308,22 +1287,14 @@ export default function register(ctx: PluginContext): void {
           style: { border: { fg: 'magenta' } },
         });
 
-        // Create close button as a child of the pane, fixed at top
-        opencodePaneClose = blessed.box({
-          parent: opencodePane,
-          top: 0,
-          right: 1,
-          height: 1,
-          width: 3,
-          content: '[x]',
-          style: { fg: 'red', bold: true },
-          mouse: true,
-          clickable: true,
-          fixed: true,  // Try to keep it fixed
-        });
-        
-        opencodePaneClose.on('click', () => {
-          closeOpencodePane();
+        // Remove the old close button - it's now in the label
+        // Handle clicks on the pane to detect [x] clicks
+        opencodePane.on('click', (mouse: any) => {
+          // Check if click is on the [x] in the title bar
+          if (mouse && mouse.y === opencodePane.atop && 
+              mouse.x >= opencodePane.aleft + opencodePane.width - 5) {
+            closeOpencodePane();
+          }
         });
         
         opencodePane.show();
@@ -1364,14 +1335,20 @@ export default function register(ctx: PluginContext): void {
         runOpencode(prompt.replace(/^>\s?/, ''));
       });
 
-      opencodeCancel.on('click', () => {
-        // In compact mode, close the whole opencode session
-        opencodeDialog.hide();
-        if (opencodePane) {
-          opencodePane.hide();
+      // Handle clicks on the dialog to detect [x] clicks
+      opencodeDialog.on('click', (mouse: any) => {
+        // Check if click is on the [x] in the title bar
+        // The [x] is at the right side of the title
+        if (mouse && mouse.y === opencodeDialog.atop && 
+            mouse.x >= opencodeDialog.aleft + opencodeDialog.width - 5) {
+          // Close the entire opencode session
+          opencodeDialog.hide();
+          if (opencodePane) {
+            opencodePane.hide();
+          }
+          list.focus();
+          screen.render();
         }
-        list.focus();
-        screen.render();
       });
 
       // Accept Ctrl+S to send (keep for backward compatibility)
