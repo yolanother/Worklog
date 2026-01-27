@@ -400,15 +400,16 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'yellow' } },
       });
       
-      // Server status indicator
+      // Server status indicator (footer centered)
       const serverStatusBox = blessed.box({
-        parent: opencodeDialog,
-        top: 0,
-        right: 2,
-        width: 20,
+        parent: screen,
+        bottom: 0,
+        left: 'center',
+        width: 1,
         height: 1,
         content: '',
         tags: true,
+        align: 'center',
         style: { fg: 'white' }
       });
 
@@ -427,6 +428,13 @@ export default function register(ctx: PluginContext): void {
         border: { type: 'line' },
         style: { focus: { border: { fg: 'green' } } },
       });
+      const opencodeTextDefaults = {
+        top: 1,
+        left: 2,
+        width: '100%-4',
+        height: '100%-6',
+        border: { type: 'line' }
+      };
 
       // Command autocomplete support
       const AVAILABLE_COMMANDS = [
@@ -533,6 +541,7 @@ export default function register(ctx: PluginContext): void {
         // Update immediately on keypress for better responsiveness
         process.nextTick(() => {
           updateAutocomplete();
+          updateOpencodeInputLayout();
         });
       });
 
@@ -565,10 +574,84 @@ export default function register(ctx: PluginContext): void {
       let opencodePane: any = null;
       let opencodePaneClose: any = null;
 
+      const MIN_INPUT_HEIGHT = 4;
+      const FOOTER_HEIGHT = 1;
+      const availableHeight = () => Math.max(10, (screen.height as number) - FOOTER_HEIGHT);
+      const inputMaxHeight = () => Math.max(MIN_INPUT_HEIGHT, Math.floor(availableHeight() * 0.25));
+      const paneHeight = () => Math.max(6, Math.floor(availableHeight() * 0.5));
+      let opencodeDialogMode: 'full' | 'compact' = 'full';
+
+      function updateOpencodeInputLayout() {
+        if (opencodeDialogMode !== 'compact') {
+          return;
+        }
+        const value = opencodeText.getValue ? opencodeText.getValue() : '';
+        const lineCount = Math.max(1, value.split('\n').length);
+        const desiredHeight = Math.min(inputMaxHeight(), Math.max(MIN_INPUT_HEIGHT, lineCount + 2));
+        opencodeDialog.height = desiredHeight;
+        opencodeText.top = 0;
+        opencodeText.left = 0;
+        opencodeText.width = '100%';
+        opencodeText.height = Math.max(1, desiredHeight - 1);
+        (opencodeText as any).border = { type: 'line' };
+        opencodeText.style = opencodeText.style || {};
+        opencodeText.style.border = { fg: 'gray' };
+        opencodeText.style.focus = { border: { fg: 'green' } };
+        if (opencodePane) {
+          opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
+          opencodePane.height = paneHeight();
+        }
+        screen.render();
+      }
+
       async function openOpencodeDialog(withPromptMarker: boolean = false) {
-        opencodeOverlay.show();
+        if (withPromptMarker) {
+          opencodeDialogMode = 'compact';
+          opencodeOverlay.hide();
+          opencodeDialog.top = undefined as any;
+          opencodeDialog.left = 0;
+          opencodeDialog.bottom = FOOTER_HEIGHT;
+          opencodeDialog.width = '100%';
+          opencodeDialog.height = MIN_INPUT_HEIGHT;
+          opencodeDialog.label = '';
+          opencodeDialog.border = { type: 'line' };
+          suggestionHint.hide();
+          opencodeSend.show();
+          opencodeCancel.show();
+          opencodeSend.bottom = 0;
+          opencodeSend.right = 12;
+          opencodeCancel.bottom = 0;
+          opencodeCancel.right = 1;
+          opencodeText.width = '100%';
+          opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
+          opencodeText.style = opencodeText.style || {};
+          opencodeText.style.focus = { border: { fg: 'green' } };
+        } else {
+          opencodeDialogMode = 'full';
+          opencodeOverlay.show();
+          opencodeDialog.top = 'center';
+          opencodeDialog.left = 'center';
+          opencodeDialog.bottom = undefined as any;
+          opencodeDialog.width = '80%';
+          opencodeDialog.height = '60%';
+          opencodeDialog.label = ' Run opencode ';
+          opencodeDialog.border = { type: 'line' };
+          suggestionHint.show();
+          opencodeSend.show();
+          opencodeCancel.show();
+          opencodeSend.bottom = 0;
+          opencodeSend.right = 12;
+          opencodeCancel.bottom = 0;
+          opencodeCancel.right = 1;
+          opencodeText.top = opencodeTextDefaults.top;
+          opencodeText.left = opencodeTextDefaults.left;
+          opencodeText.width = opencodeTextDefaults.width;
+          opencodeText.height = opencodeTextDefaults.height;
+          (opencodeText as any).border = opencodeTextDefaults.border;
+          opencodeText.style = opencodeText.style || {};
+          opencodeText.style.focus = { border: { fg: 'green' } };
+        }
         opencodeDialog.show();
-        opencodeOverlay.setFront();
         opencodeDialog.setFront();
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
@@ -585,6 +668,7 @@ export default function register(ctx: PluginContext): void {
         if (typeof opencodeText.moveCursor === 'function' && withPromptMarker) {
           opencodeText.moveCursor(2);
         }
+        updateOpencodeInputLayout();
         
         // Start the server if not already running
         await startOpencodeServer();
@@ -593,8 +677,29 @@ export default function register(ctx: PluginContext): void {
       }
 
       function closeOpencodeDialog() {
+        // In compact mode, don't hide the dialog - it stays as the input bar
+        if (opencodeDialogMode === 'compact') {
+          // Just clear the input and keep it open
+          try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
+          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
+          if (typeof opencodeText.moveCursor === 'function') {
+            opencodeText.moveCursor(2);
+          }
+          screen.render();
+          return;
+        }
+        
+        // Full mode - close everything
         opencodeDialog.hide();
         opencodeOverlay.hide();
+        opencodeSend.show();
+        opencodeCancel.show();
+        suggestionHint.show();
+        opencodeDialogMode = 'full';
+        if (opencodePane) {
+          opencodePane.bottom = FOOTER_HEIGHT;
+          opencodePane.height = paneHeight();
+        }
         list.focus();
         screen.render();
       }
@@ -634,8 +739,10 @@ export default function register(ctx: PluginContext): void {
             statusColor = 'red';
             break;
         }
-        
-        serverStatusBox.setContent(`{${statusColor}-fg}${statusText}{/}`);
+        const taggedContent = `{${statusColor}-fg}${statusText}{/}`;
+        const plainLength = statusText.length;
+        serverStatusBox.setContent(taggedContent);
+        serverStatusBox.width = Math.max(1, plainLength + 2);
         screen.render();
       }
       
@@ -1184,15 +1291,25 @@ export default function register(ctx: PluginContext): void {
       function ensureOpencodePane() {
         if (opencodePane) {
           opencodePane.show();
+          opencodePane.setFront();
+          // In compact mode, adjust pane position to be above the input
+          if (opencodeDialogMode === 'compact') {
+            opencodePane.bottom = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
+            opencodePane.height = paneHeight();
+          }
           return;
         }
 
+        const bottomOffset = opencodeDialogMode === 'compact' 
+          ? MIN_INPUT_HEIGHT + FOOTER_HEIGHT 
+          : FOOTER_HEIGHT;
+
         opencodePane = blessed.box({
           parent: screen,
-          bottom: 0,
+          bottom: bottomOffset,
           left: 0,
           width: '100%',
-          height: '35%',
+          height: paneHeight(),
           label: ` opencode `,
           border: { type: 'line' },
           tags: true,
@@ -1218,6 +1335,8 @@ export default function register(ctx: PluginContext): void {
         opencodePaneClose.on('click', () => {
           closeOpencodePane();
         });
+        opencodePane.show();
+        opencodePane.setFront();
         opencodePane.focus();
       }
 
@@ -1234,11 +1353,13 @@ export default function register(ctx: PluginContext): void {
         }
 
         ensureOpencodePane();
+        opencodePane.show();
+        opencodePane.setFront();
         screen.render();
 
         // Use HTTP API to communicate with server
         try {
-          await sendPromptToServer(prompt, opencodePane, null, null, () => openOpencodeDialog(true));
+          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => openOpencodeDialog(true));
         } catch (err) {
           opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
           screen.render();
@@ -1259,6 +1380,9 @@ export default function register(ctx: PluginContext): void {
 
       // Accept Ctrl+S to send; Enter inserts newline
       opencodeText.key(['C-s'], function(this: any) {
+        if (applyCommandSuggestion(this)) {
+          return;
+        }
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
         runOpencode(prompt.replace(/^>\s?/, ''));
@@ -1279,6 +1403,7 @@ export default function register(ctx: PluginContext): void {
           if (this.moveCursor) {
             this.moveCursor(before.length + 1);
           }
+          updateOpencodeInputLayout();
           screen.render();
         }
       });
@@ -1906,7 +2031,7 @@ export default function register(ctx: PluginContext): void {
       // Open opencode prompt dialog (shortcut O)
       screen.key(['o', 'O'], async () => {
         if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
-          await openOpencodeDialog();
+          await openOpencodeDialog(true);
         }
       });
 
