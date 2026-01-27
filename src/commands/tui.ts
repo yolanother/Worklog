@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn } from 'child_process';
+import pty from 'node-pty';
 
 type Item = any;
 
@@ -520,39 +521,59 @@ export default function register(ctx: PluginContext): void {
         opencodePane.focus();
         screen.render();
 
-        const cmd = `opencode run ${shellEscape(prompt)}`;
+        // Use a pty for full terminal semantics
+        const cmd = 'opencode';
+        // Use the new --prompt flag instead of the "run" subcommand
+        const args = ['--prompt', prompt, '--print-logs=false', '--log-level=ERROR'];
+        let ptyProc: any;
         try {
-          // Keep stdin as a pipe so we can forward user input to the process for interactive commands
-          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
+          ptyProc = pty.spawn(cmd, args, {
+            name: 'xterm-256color',
+            cols: Math.max(80, screen.width || 80),
+            rows: Math.max(10, Math.floor((screen.height || 24) * 0.35)),
+            cwd: process.cwd(),
+            env: process.env,
+          });
         } catch (err) {
-          opencodePane.setContent(`Failed to spawn: ${String(err)}`);
+          opencodePane.setContent(`Failed to spawn pty: ${String(err)}`);
           screen.render();
           return;
         }
 
+        opencodeProc = ptyProc; // keep reference for kill
         let buf = '';
-        const append = (chunk: Buffer | string) => {
-          // filter out noisy initial log lines that start with INFO/TIMESTAMP if present
-          const s = String(chunk);
-          const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
-            // drop lines that look like "INFO 2026-... services=..." which are noise
-            if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
-            return l;
-          }).filter(Boolean);
-          if (lines.length === 0) return;
-          buf += lines.join('\n') + '\n';
+        let sawOutput = false;
+        const debugRaw = Boolean(process.env.WL_DEBUG_OPEN);
+        const append = (s: string) => {
+          sawOutput = true;
+          if (debugRaw) {
+            buf += s;
+          } else {
+            const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
+              if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
+              return l;
+            }).filter(Boolean);
+            if (lines.length === 0) return;
+            buf += lines.join('\n') + '\n';
+          }
           opencodePane.setContent(buf);
-          // auto-scroll to bottom
           try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
           screen.render();
         };
 
-        opencodeProc.stdout.on('data', (d: Buffer) => append(d));
-        opencodeProc.stderr.on('data', (d: Buffer) => append(d));
-        opencodeProc.on('close', (_code: number) => {
-          // intentionally do not display the exit code
-          opencodeProc = null;
+        // show a short toast that process started (helpful for debugging)
+        try { if (ptyProc.pid) showToast(`Started (pid ${ptyProc.pid})`); } catch (_) {}
+
+        // if no output after a short delay, notify user (command may be waiting for input)
+        const noOutputTimer = setTimeout(() => {
+          if (!sawOutput) showToast('No output yet — command may be waiting for input or running');
+        }, 2500);
+
+        ptyProc.onData((d: string) => {
+          try { append(d); } catch (_) {}
+          try { clearTimeout(noOutputTimer); } catch (_) {}
         });
+        ptyProc.onExit(() => { opencodeProc = null; try { clearTimeout(noOutputTimer); } catch (_) {} });
       }
 
       // Forward keypresses to interactive opencode process when the opencode pane is focused.
