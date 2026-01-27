@@ -1312,9 +1312,18 @@ export default function register(ctx: PluginContext): void {
           style: { border: { fg: 'magenta' } },
         });
 
-        // Add Escape key handler to close the response pane
+        // Add Escape key handler to close only the response pane.
+        // When Escape is pressed in the response pane we want to close
+        // the pane but leave the input dialog open so the user can edit
+        // or resubmit the prompt without re-opening the prompt dialog.
         opencodePane.key(['escape'], () => {
           closeOpencodePane();
+          // Return focus to the input textbox if it's visible so the
+          // user can continue typing. If the input dialog is in compact
+          // mode it will remain visible.
+          try {
+            opencodeText.focus();
+          } catch (_) {}
         });
         
         opencodePane.show();
@@ -1402,8 +1411,17 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
+      // Pressing Escape while the dialog (or any child) is focused should
+      // close both the input dialog and the response pane so the user returns
+      // to the main list. This mirrors the behaviour when Escape is pressed
+      // inside the textarea itself.
       opencodeDialog.key(['escape'], () => {
-        closeOpencodeDialog();
+        opencodeDialog.hide();
+        if (opencodePane) {
+          opencodePane.hide();
+        }
+        list.focus();
+        screen.render();
       });
 
       const helpMenu = blessed.box({
