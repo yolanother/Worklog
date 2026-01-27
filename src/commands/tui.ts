@@ -718,7 +718,7 @@ export default function register(ctx: PluginContext): void {
       // Store current session ID for server communication
       let currentSessionId: string | null = null;
       
-      // Function to communicate with OpenCode server via HTTP API
+      // Function to communicate with OpenCode server via HTTP API with SSE streaming
       async function sendPromptToServer(
         prompt: string, 
         pane: any, 
@@ -740,15 +740,16 @@ export default function register(ctx: PluginContext): void {
               pane.pushLine('');
               screen.render();
               
-              // Send the message to the session
+              // Use async prompt endpoint for better streaming
               const messageData = JSON.stringify({
                 parts: [{ type: 'text', text: prompt }]
               });
               
-              const options = {
+              // First, send the prompt asynchronously
+              const sendOptions = {
                 hostname: 'localhost',
                 port: opencodeServerPort,
-                path: `/session/${sessionId}/message`,
+                path: `/session/${sessionId}/prompt_async`,
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -756,69 +757,28 @@ export default function register(ctx: PluginContext): void {
                 }
               };
               
-              const req = http.request(options, (res) => {
-                let responseData = '';
-                
-                res.on('data', (chunk) => {
-                  responseData += chunk;
-                });
-                
-                res.on('end', () => {
-                  try {
-                    const response = JSON.parse(responseData);
-                    
-                    // Process the response parts
-                    if (response.parts) {
-                      for (const part of response.parts) {
-                        if (part.type === 'text' && part.text) {
-                          // Display text content
-                          const lines = part.text.split('\n');
-                          for (const line of lines) {
-                            pane.pushLine(line);
-                          }
-                        } else if (part.type === 'tool-use' && part.tool) {
-                          // Display tool usage
-                          pane.pushLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
-                          if (part.tool.description) {
-                            pane.pushLine(`  ${part.tool.description}`);
-                          }
-                        } else if (part.type === 'tool-result') {
-                          // Display tool results
-                          pane.pushLine('{green-fg}[Tool Result]{/}');
-                          if (part.content) {
-                            const resultLines = part.content.split('\n');
-                            for (const line of resultLines) {
-                              pane.pushLine(`  ${line}`);
-                            }
-                          }
-                        }
-                      }
-                    }
-                    
-                    // Check if the response indicates input is needed
-                    // This would need to be implemented based on server API
-                    // For now, we'll rely on CLI fallback for input handling
-                    
-                    pane.pushLine('');
-                    pane.pushLine('{green-fg}✓ Response completed{/}');
-                    screen.render();
-                    resolve();
-                  } catch (err) {
-                    pane.pushLine(`{red-fg}Error parsing response: ${err}{/}`);
-                    screen.render();
-                    reject(err);
-                  }
-                });
+              const sendReq = http.request(sendOptions, (res) => {
+                if (res.statusCode === 204) {
+                  // Success - now connect to SSE for streaming response
+                  connectToSSE(sessionId, pane, indicator, inputField, resolve, reject);
+                } else {
+                  let errorData = '';
+                  res.on('data', chunk => { errorData += chunk; });
+                  res.on('end', () => {
+                    pane.pushLine(`{red-fg}Error: ${errorData}{/}`);
+                    reject(new Error('Failed to send prompt'));
+                  });
+                }
               });
               
-              req.on('error', (err) => {
+              sendReq.on('error', (err) => {
                 pane.pushLine(`{red-fg}Request error: ${err}{/}`);
                 screen.render();
                 reject(err);
               });
               
-              req.write(messageData);
-              req.end();
+              sendReq.write(messageData);
+              sendReq.end();
             })
             .catch(err => {
               pane.pushLine(`{red-fg}Session error: ${err}{/}`);
@@ -826,6 +786,188 @@ export default function register(ctx: PluginContext): void {
               reject(err);
             });
         });
+      }
+      
+      // Connect to SSE for streaming responses
+      function connectToSSE(
+        sessionId: string,
+        pane: any,
+        indicator: any,
+        inputField: any,
+        resolve: Function,
+        reject: Function
+      ) {
+        const options = {
+          hostname: 'localhost',
+          port: opencodeServerPort,
+          path: '/event',
+          method: 'GET',
+          headers: {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          }
+        };
+        
+        const req = http.request(options, (res) => {
+          let buffer = '';
+          let waitingForInput = false;
+          
+          res.on('data', (chunk) => {
+            buffer += chunk.toString();
+            const lines = buffer.split('\n');
+            
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  
+                  // Handle different event types
+                  if (data.type === 'message.part' && data.properties) {
+                    const part = data.properties.part;
+                    if (part && part.sessionID === sessionId) {
+                      if (part.type === 'text' && part.text) {
+                        // Display text in real-time
+                        const textLines = part.text.split('\n');
+                        for (const textLine of textLines) {
+                          pane.pushLine(textLine);
+                        }
+                        screen.render();
+                      } else if (part.type === 'tool-use' && part.tool) {
+                        pane.pushLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
+                        if (part.tool.description) {
+                          pane.pushLine(`  ${part.tool.description}`);
+                        }
+                        screen.render();
+                      } else if (part.type === 'tool-result' && part.content) {
+                        pane.pushLine('{green-fg}[Tool Result]{/}');
+                        const resultLines = part.content.split('\n');
+                        for (const line of resultLines.slice(0, 10)) {
+                          pane.pushLine(`  ${line}`);
+                        }
+                        if (resultLines.length > 10) {
+                          pane.pushLine(`  ... (${resultLines.length - 10} more lines)`);
+                        }
+                        screen.render();
+                      } else if (part.type === 'permission-request') {
+                        // Handle permission requests (similar to input)
+                        waitingForInput = true;
+                        indicator.setContent('{yellow-fg}[!] Permission Required{/}');
+                        indicator.show();
+                        inputField.setLabel(' Permission Request ');
+                        inputField.show();
+                        inputField.focus();
+                        screen.render();
+                      }
+                    }
+                  } else if (data.type === 'message.finish' && data.properties) {
+                    if (data.properties.sessionID === sessionId) {
+                      pane.pushLine('');
+                      pane.pushLine('{green-fg}✓ Response completed{/}');
+                      screen.render();
+                      
+                      // Close SSE connection
+                      req.abort();
+                      resolve();
+                    }
+                  } else if (data.type === 'input.request' && data.properties) {
+                    // Handle input requests
+                    if (data.properties.sessionID === sessionId) {
+                      waitingForInput = true;
+                      const inputType = data.properties.type || 'text';
+                      const prompt = data.properties.prompt || 'Input required';
+                      
+                      pane.pushLine(`{yellow-fg}${prompt}{/}`);
+                      indicator.setContent('{yellow-fg}[!] Input Required{/}');
+                      indicator.show();
+                      
+                      if (inputType === 'boolean') {
+                        inputField.setLabel(' Yes/No Input ');
+                      } else if (inputType === 'password') {
+                        inputField.setLabel(' Password Input ');
+                      } else {
+                        inputField.setLabel(' Input Required ');
+                      }
+                      
+                      inputField.show();
+                      inputField.focus();
+                      screen.render();
+                      
+                      // Set up input handler
+                      inputField.once('submit', (value: string) => {
+                        // Send input response back to server
+                        sendInputResponse(sessionId, value);
+                        
+                        // Hide input UI
+                        waitingForInput = false;
+                        indicator.hide();
+                        inputField.hide();
+                        inputField.clearValue();
+                        pane.focus();
+                        
+                        // Show user input in pane
+                        pane.pushLine(`{cyan-fg}> ${value}{/}`);
+                        screen.render();
+                      });
+                    }
+                  }
+                } catch (err) {
+                  // Ignore parse errors for incomplete data
+                }
+              }
+            }
+          });
+          
+          res.on('end', () => {
+            pane.pushLine('{yellow-fg}Stream ended{/}');
+            screen.render();
+            resolve();
+          });
+          
+          res.on('error', (err) => {
+            pane.pushLine(`{red-fg}SSE error: ${err}{/}`);
+            screen.render();
+            reject(err);
+          });
+        });
+        
+        req.on('error', (err) => {
+          pane.pushLine(`{red-fg}SSE connection error: ${err}{/}`);
+          screen.render();
+          reject(err);
+        });
+        
+        req.end();
+      }
+      
+      // Send input response back to the server
+      function sendInputResponse(sessionId: string, input: string) {
+        const responseData = JSON.stringify({ input });
+        
+        const options = {
+          hostname: 'localhost',
+          port: opencodeServerPort,
+          path: `/session/${sessionId}/input`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(responseData)
+          }
+        };
+        
+        const req = http.request(options, (res) => {
+          // Response handled via SSE
+        });
+        
+        req.on('error', (err) => {
+          console.error('Failed to send input response:', err);
+        });
+        
+        req.write(responseData);
+        req.end();
       }
       
       // Helper function to create a new session
