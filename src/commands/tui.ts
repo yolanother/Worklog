@@ -301,6 +301,58 @@ export default function register(ctx: PluginContext): void {
         items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
       });
 
+      const updateOverlay = blessed.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        mouse: true,
+        clickable: true,
+        style: { bg: 'black' },
+      });
+
+      const updateDialog = blessed.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '50%',
+        height: 12,
+        label: ' Update Work Item ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        mouse: true,
+        clickable: true,
+        style: { border: { fg: 'magenta' } },
+      });
+
+      const updateDialogText = blessed.box({
+        parent: updateDialog,
+        top: 1,
+        left: 2,
+        height: 2,
+        width: '100%-4',
+        content: 'Update selected item stage:',
+        tags: false,
+      });
+
+      // Stages offered here — keep list conservative; this UI is intended to grow.
+      const updateDialogOptions = blessed.list({
+        parent: updateDialog,
+        top: 4,
+        left: 2,
+        width: '100%-4',
+        height: 6,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' },
+        },
+        items: ['idea', 'in_progress', 'in_review', 'done', 'blocked', 'Clear stage', 'Cancel'],
+      });
+
       const overlay = blessed.box({
         parent: screen,
         top: 0,
@@ -546,6 +598,29 @@ export default function register(ctx: PluginContext): void {
       function closeCloseDialog() {
         closeDialog.hide();
         closeOverlay.hide();
+        list.focus();
+        screen.render();
+      }
+
+      function openUpdateDialog() {
+        const item = getSelectedItem();
+        if (item) {
+          updateDialogText.setContent(`Update: ${item.title}\nID: ${item.id}`);
+        } else {
+          updateDialogText.setContent('Update selected item stage:');
+        }
+        updateOverlay.show();
+        updateDialog.show();
+        updateOverlay.setFront();
+        updateDialog.setFront();
+        updateDialogOptions.select(0);
+        updateDialogOptions.focus();
+        screen.render();
+      }
+
+      function closeUpdateDialog() {
+        updateDialog.hide();
+        updateOverlay.hide();
         list.focus();
         screen.render();
       }
@@ -906,6 +981,13 @@ export default function register(ctx: PluginContext): void {
         }
       });
 
+      // Update selected item (quick edit) - shortcut U
+      screen.key(['u', 'U'], () => {
+        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+          openUpdateDialog();
+        }
+      });
+
       // Refresh from database
       screen.key(['r', 'R'], () => {
         refreshFromDatabase();
@@ -975,6 +1057,37 @@ export default function register(ctx: PluginContext): void {
         if (idx === 1) closeSelectedItem('done');
         if (idx === 2) closeSelectedItem('deleted');
         closeCloseDialog();
+      });
+
+      updateDialogOptions.on('select', (_el: any, idx: number) => {
+        const item = getSelectedItem();
+        if (!item) {
+          showToast('No item selected');
+          closeUpdateDialog();
+          return;
+        }
+        try {
+          if (idx === 0) db.update(item.id, { stage: 'idea' });
+          else if (idx === 1) db.update(item.id, { stage: 'in_progress' });
+          else if (idx === 2) db.update(item.id, { stage: 'in_review' });
+          else if (idx === 3) db.update(item.id, { stage: 'done' });
+          else if (idx === 4) db.update(item.id, { stage: 'blocked' });
+          else if (idx === 5) db.update(item.id, { stage: '' });
+          else if (idx === 6) { /* Cancel */ }
+          showToast('Updated');
+          refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
+        } catch (err) {
+          showToast('Update failed');
+        }
+        closeUpdateDialog();
+      });
+
+      updateDialog.key(['escape'], () => {
+        closeUpdateDialog();
+      });
+
+      updateDialogOptions.key(['escape'], () => {
+        closeUpdateDialog();
       });
 
       closeDialog.key(['escape'], () => {
