@@ -10,8 +10,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn } from 'child_process';
-import pty from 'node-pty';
-import contrib from 'blessed-contrib';
 
 type Item = any;
 
@@ -24,8 +22,7 @@ export default function register(ctx: PluginContext): void {
     .option('--in-progress', 'Show only in-progress items')
     .option('--all', 'Include completed/deleted items in the list')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .option('--prompt <prompt>', 'If provided open opencode and immediately submit this prompt')
-    .action((options: { inProgress?: boolean; prefix?: string; all?: boolean; prompt?: string }) => {
+    .action((options: { inProgress?: boolean; prefix?: string; all?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
 
@@ -441,8 +438,6 @@ export default function register(ctx: PluginContext): void {
       // Active opencode pane/process tracking
       let opencodePane: any = null;
       let opencodeProc: any = null;
-      // optional resize handler attached while opencode PTY is running
-      let opencodeResizeHandler: (() => void) | null = null;
 
       function shellEscape(s: string) {
         return `'${s.replace(/'/g, "'\"'\"'")}'`;
@@ -476,9 +471,6 @@ export default function register(ctx: PluginContext): void {
         } catch (err) {
           // ignore
         }
-        try {
-          if (opencodeResizeHandler) { screen.removeListener('resize', opencodeResizeHandler); opencodeResizeHandler = null; }
-        } catch (_) {}
         if (opencodePane) {
           opencodePane.hide();
           opencodePane = null;
@@ -491,142 +483,76 @@ export default function register(ctx: PluginContext): void {
           showToast('Empty prompt');
           return;
         }
-        // create a terminal widget across bottom using blessed-contrib
-        opencodePane = contrib.terminal({
+        // create pane across bottom
+        opencodePane = blessed.box({
           parent: screen,
           bottom: 0,
           left: 0,
           width: '100%',
           height: '35%',
-          label: ' opencode ',
+          label: ` opencode `,
           border: { type: 'line' },
+          tags: true,
           scrollable: true,
+          alwaysScroll: true,
           keys: true,
+          vi: true,
           mouse: true,
           clickable: true,
+          style: { border: { fg: 'magenta' } },
+          content: '',
         });
 
-        // add a small clickable close box on top-right of the terminal box
         const paneClose = blessed.box({
-          parent: screen,
-          top: screen.height ? screen.height - Math.max(1, Math.floor((screen.height || 24) * 0.35)) - 1 : '100%-36',
-          right: 2,
+          parent: opencodePane,
+          top: 0,
+          right: 1,
           height: 1,
           width: 3,
           content: '[x]',
           style: { fg: 'red' },
           mouse: true,
         });
-        paneClose.on('click', () => closeOpencodePane());
+        paneClose.on('click', () => {
+          closeOpencodePane();
+        });
 
-        try { opencodePane.focus(); } catch (_) {}
+        opencodePane.focus();
         screen.render();
 
-        // Use a pty for full terminal semantics
-        const cmd = 'opencode';
-        // Use the new --prompt flag instead of the "run" subcommand
-        const args = ['--prompt', prompt, '--print-logs=false', '--log-level=ERROR'];
-        let ptyProc: any;
+        const cmd = `opencode run ${shellEscape(prompt)}`;
         try {
-          ptyProc = pty.spawn(cmd, args, {
-            name: 'xterm-256color',
-            cols: Math.max(80, screen.width || 80),
-            rows: Math.max(10, Math.floor((screen.height || 24) * 0.35)),
-            cwd: process.cwd(),
-            env: process.env,
-          });
+          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
         } catch (err) {
-          opencodePane.setContent(`Failed to spawn pty: ${String(err)}`);
+          opencodePane.setContent(`Failed to spawn: ${String(err)}`);
           screen.render();
           return;
         }
 
-        opencodeProc = ptyProc; // keep reference for kill
-        // install resize handler so PTY geometry stays in sync with the UI
-        opencodeResizeHandler = () => {
-          try {
-            const cols = Math.max(80, (screen.width as number) || 80);
-            const rows = Math.max(10, Math.floor(((screen.height as number) || 24) * 0.35));
-            try { ptyProc.resize(cols, rows); } catch (_) {}
-          } catch (_) {}
-        };
-        screen.on('resize', opencodeResizeHandler);
-        // ensure initial size is correct
-        try { opencodeResizeHandler(); } catch (_) {}
         let buf = '';
-        let sawOutput = false;
-        const debugRaw = Boolean(process.env.WL_DEBUG_OPEN);
-        const append = (s: string) => {
-          sawOutput = true;
-          // log raw bytes for offline debugging
-          try {
-            const rawLogPath = path.join(worklogDir, 'opencode-raw.log');
-            const header = `${new Date().toISOString()} PID=${ptyProc.pid} CHUNK_START\n`;
-            fs.appendFileSync(rawLogPath, header + s + '\n', 'utf8');
-          } catch (_) {}
-          // write into the contrib terminal which understands ANSI sequences
-          try { (opencodePane as any).write(s); } catch (_) {}
+        const append = (chunk: Buffer | string) => {
+          // filter out noisy initial log lines that start with INFO/TIMESTAMP if present
+          const s = String(chunk);
+          const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
+            // drop lines that look like "INFO 2026-... services=..." which are noise
+            if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
+            return l;
+          }).filter(Boolean);
+          if (lines.length === 0) return;
+          buf += lines.join('\n') + '\n';
+          opencodePane.setContent(buf);
+          // auto-scroll to bottom
+          try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
+          screen.render();
         };
 
-        // show a short toast that process started (helpful for debugging)
-        try { if (ptyProc.pid) showToast(`Started (pid ${ptyProc.pid})`); } catch (_) {}
-
-        // if no output after a short delay, notify user (command may be waiting for input)
-        const noOutputTimer = setTimeout(() => {
-          if (!sawOutput) showToast('No output yet — command may be waiting for input or running');
-        }, 2500);
-
-        ptyProc.onData((d: string) => {
-          try { append(d); } catch (_) {}
-          try { clearTimeout(noOutputTimer); } catch (_) {}
-        });
-        ptyProc.onExit(() => {
+        opencodeProc.stdout.on('data', (d: Buffer) => append(d));
+        opencodeProc.stderr.on('data', (d: Buffer) => append(d));
+        opencodeProc.on('close', (_code: number) => {
+          // intentionally do not display the exit code
           opencodeProc = null;
-          try { clearTimeout(noOutputTimer); } catch (_) {}
-          try {
-            if (opencodeResizeHandler) { screen.removeListener('resize', opencodeResizeHandler); opencodeResizeHandler = null; }
-          } catch (_) {}
         });
       }
-
-      // Forward keypresses to interactive opencode process when the opencode pane is focused.
-      screen.on('keypress', (ch: any, key: any) => {
-        if (!opencodeProc || !opencodePane) return;
-        // Only forward when the opencode pane or its children are focused
-        const focused = screen.focused;
-        if (!focused) return;
-        // blessed elements have a .parent chain; check if focused is inside opencodePane
-        let node: any = focused;
-        let inside = false;
-        while (node) {
-          if (node === opencodePane) { inside = true; break; }
-          node = node.parent;
-        }
-        if (!inside) return;
-
-          try {
-            if (key && key.ctrl && key.name === 'd') {
-              // Ctrl-D -> EOF for a pty: write EOT (0x04)
-              try { opencodeProc.write('\x04'); } catch (_) {}
-              return;
-            }
-            if (key && key.name === 'backspace') {
-              try { opencodeProc.write('\x7f'); } catch (_) {}
-              return;
-            }
-            if (key && key.full === 'enter') {
-              try { opencodeProc.write('\n'); } catch (_) {}
-              return;
-            }
-            if (typeof ch === 'string' && ch.length > 0) {
-              try { opencodeProc.write(ch); } catch (_) {}
-              return;
-            }
-          // handle other control sequences if present
-        } catch (err) {
-          // ignore write errors
-        }
-      });
 
       // Opencode dialog controls
       opencodeSend.on('click', () => {
@@ -767,11 +693,9 @@ export default function register(ctx: PluginContext): void {
         detail.setScroll(0);
       }
 
-        // Note: ANSI stripping was removed per request. Keep the function stub
-        // in case we want to re-enable filtering later.
-        function stripAnsi(_value: string): string {
-          return _value;
-        }
+      function stripAnsi(value: string): string {
+        return value.replace(/\u001b\[[0-9;]*m/g, '');
+      }
 
       function stripTags(value: string): string {
         return value.replace(/{[^}]+}/g, '');
@@ -1067,19 +991,6 @@ export default function register(ctx: PluginContext): void {
       // Initial render
       renderListAndDetail(0);
 
-      // If --prompt was provided at startup open and immediately submit it
-      if (options.prompt && typeof options.prompt === 'string' && options.prompt.trim() !== '') {
-        try {
-          openOpencodeDialog();
-          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(options.prompt); } catch (_) {}
-          // small delay to ensure UI is in a stable state before spawning
-          setTimeout(() => {
-            closeOpencodeDialog();
-            runOpencode(options.prompt as string);
-          }, 100);
-        } catch (_) {}
-      }
-
       // Event handlers
       list.on('select', (_el: any, idx: number) => {
         const visible = buildVisible();
@@ -1211,13 +1122,9 @@ export default function register(ctx: PluginContext): void {
         savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
       });
 
-      // Quit keys: q and Ctrl-C usually quit; when an interactive opencode process
-      // is running prefer to forward SIGINT to it instead of quitting the app.
+      // Quit keys: q and Ctrl-C always quit; Escape should close the help overlay
+      // when it's open instead of exiting the whole TUI.
       screen.key(['q', 'C-c'], () => {
-        if (opencodeProc) {
-          try { opencodeProc.kill('SIGINT'); } catch (_) {}
-          return;
-        }
         // Persist state before exiting
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         screen.destroy();
