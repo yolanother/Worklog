@@ -446,60 +446,72 @@ export default function register(ctx: PluginContext): void {
       let currentSuggestion = '';
       let isCommandMode = false;
       let userTypedText = '';
-
-      // Create a text element to show the suggestion below the input
-      const suggestionHint = blessed.text({
-        parent: opencodeDialog,
-        top: '100%-4',
-        left: 2,
-        width: '100%-4',
-        height: 1,
-        tags: true,
-        style: {
-          fg: 'gray'
-        },
-        content: ''
-      });
+      let originalValue = '';
 
       function updateAutocomplete() {
         const value = opencodeText.getValue ? opencodeText.getValue() : '';
-        userTypedText = value;
         const lines = value.split('\n');
         const firstLine = lines[0];
         
         // Check if we're in command mode (first line starts with '/')
-        if (firstLine.startsWith('/') && lines.length === 1) {
+        if (firstLine.startsWith('/') && lines.length === 1 && !firstLine.includes(' ')) {
           isCommandMode = true;
+          userTypedText = firstLine;
           const input = firstLine.toLowerCase();
           
           // Find the best matching command
           const matches = AVAILABLE_COMMANDS.filter(cmd => 
-            cmd.toLowerCase().startsWith(input)
+            cmd.toLowerCase().startsWith(input) && cmd.toLowerCase() !== input
           );
           
-          if (matches.length > 0 && matches[0] !== input) {
+          if (matches.length > 0) {
             currentSuggestion = matches[0];
-            // Show suggestion as hint text below the input
-            suggestionHint.setContent(`{gray-fg}↳ ${currentSuggestion}{/gray-fg}`);
+            // Display inline ghost text
+            const ghostText = currentSuggestion.slice(userTypedText.length);
+            const displayValue = userTypedText + chalk.gray(ghostText);
+            
+            // Set the display value with ghost text
+            opencodeText.setContent(displayValue);
+            
+            // Restore cursor position to end of user input
+            if (opencodeText.moveCursor) {
+              opencodeText.moveCursor(userTypedText.length);
+            }
           } else {
             currentSuggestion = '';
-            suggestionHint.setContent('');
+            opencodeText.setContent(userTypedText);
           }
         } else {
           isCommandMode = false;
           currentSuggestion = '';
-          suggestionHint.setContent('');
+          userTypedText = value;
         }
         screen.render();
       }
 
-      // Hook into textarea input to update autocomplete
-      opencodeText.on('keypress', function(_ch: any, _key: any) {
-        // Update immediately on keypress for better responsiveness
+      // Track actual user input separately
+      let isUpdating = false;
+      
+      opencodeText.on('keypress', function(ch: any, key: any) {
+        if (isUpdating) return;
+        
+        // Store the actual typed value before autocomplete modifies it
         process.nextTick(() => {
+          if (!isCommandMode || !currentSuggestion) {
+            userTypedText = opencodeText.getValue ? opencodeText.getValue() : '';
+          }
           updateAutocomplete();
         });
       });
+
+      // Override getValue to return only user-typed text when in command mode
+      const originalGetValue = opencodeText.getValue;
+      opencodeText.getValue = function() {
+        if (isCommandMode && userTypedText) {
+          return userTypedText;
+        }
+        return originalGetValue ? originalGetValue.call(this) : '';
+      };
 
       const opencodeSend = blessed.box({
         parent: opencodeDialog,
@@ -546,7 +558,6 @@ export default function register(ctx: PluginContext): void {
         currentSuggestion = '';
         isCommandMode = false;
         userTypedText = '';
-        suggestionHint.setContent('');
         opencodeText.focus();
         screen.render();
       }
@@ -673,7 +684,9 @@ export default function register(ctx: PluginContext): void {
       opencodeText.key(['enter'], function(this: any) {
         if (isCommandMode && currentSuggestion) {
           // Accept the suggestion and add a space
+          isUpdating = true;
           this.setValue(currentSuggestion + ' ');
+          userTypedText = currentSuggestion + ' ';
           // Move cursor to end
           if (this.moveCursor) {
             this.moveCursor(currentSuggestion.length + 1);
@@ -681,15 +694,16 @@ export default function register(ctx: PluginContext): void {
           // Clear suggestion
           currentSuggestion = '';
           isCommandMode = false;
-          suggestionHint.setContent('');
+          isUpdating = false;
           screen.render();
         } else {
           // Default behavior - insert newline
-          const value = this.getValue ? this.getValue() : '';
+          const value = userTypedText || '';
           const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
           const before = value.substring(0, pos);
           const after = value.substring(pos);
-          this.setValue(before + '\n' + after);
+          userTypedText = before + '\n' + after;
+          this.setValue(userTypedText);
           // Move cursor to start of new line
           if (this.moveCursor) {
             this.moveCursor(before.length + 1);
