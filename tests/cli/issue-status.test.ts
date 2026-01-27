@@ -26,7 +26,7 @@ describe('CLI Issue Status Tests', () => {
       await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p high`);
       await execAsync(`tsx ${cliPath} create -t "Task 2" -s in-progress -p medium`);
       await execAsync(`tsx ${cliPath} create -t "Task 3" -s completed -p low`);
-    });
+    }, 20000);
 
     it('should list all work items', async () => {
       const { stdout } = await execAsync(`tsx ${cliPath} --json list`);

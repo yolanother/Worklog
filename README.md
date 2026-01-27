@@ -47,8 +47,7 @@ This will make the `worklog` and `wl` commands available globally.
 ## QUICKSTART
 
 ```bash
-wl init     # Initialize your project to use Worklog, including adding instructions to your AGENTS.md file
-wl onboard  # Generate or update agent instructions and documentation
+wl init     # Initialize your project to use Worklog (installs AGENTS.md when consented)
 ```
 
 That's it. Just use your agents as you normally would. They will start using Worklog to plan and track their work. You can use the CLI to review the state of the project and add or edit work-items manually if you so desire (use `wl help`). You can also use `wl github import` and `wl github push` to bi-directionally sync work-items with Github issues, giving you and your communit a convenient way to interact if you don't like CLIs.
@@ -107,28 +106,11 @@ Issue ID prefix: MP
 
 This will create issues with IDs like `MP-0J8L1JQ3H8ZQ2K6D`, `MP-0J8L1JQ3H8ZQ2K6E`, etc.
 
-### Onboarding Projects to Worklog
+### Agent onboarding (AGENTS.md)
 
-After initializing Worklog in a project, you can use the `onboard` command to generate standardized documentation for agents and contributors:
+AGENTS.md (the repository-facing onboarding/instructions file) is installed or updated by `wl init` when you consent during initialization. `wl init` is the canonical setup command: it writes config, attempts to install hooks, and can add the Worklog-aware AGENTS.md template into your repository.
 
-```bash
-wl onboard                 # Generate AGENTS.md for the project
-wl onboard --copilot       # Also generate GitHub Copilot instructions
-wl onboard --force         # Overwrite existing files
-wl onboard --dry-run       # Preview what would be created
-```
-
-The `onboard` command creates:
-
-1. **AGENTS.md** - Complete instructions for AI agents to use Worklog for task tracking, including:
-   - Critical rules for work item tracking
-   - Work item types, priorities, and workflow stages
-   - Command examples and best practices
-   - Team collaboration guidelines
-
-2. **.github/copilot-instructions.md** (with `--copilot` flag) - Concise instructions for GitHub Copilot integration
-
-This command is idempotent - running it multiple times without changes produces the same result. Use `--force` to update existing files with the latest templates.
+If you prefer to manage onboarding files manually, create an `AGENTS.md` in your project root with guidance for agents and contributors (the `templates/AGENTS.md` in the Worklog package is a good starting point). If you want concise Copilot guidance, add a `.github/copilot-instructions.md` file pointing at your AGENTS.md and key commands.
 
 ### Configuration Override System
 

@@ -26,6 +26,11 @@ export default function register(ctx: PluginContext): void {
     .action((options: { inProgress?: boolean; prefix?: string; all?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
+      const isVerbose = !!program.opts().verbose;
+      const debugLog = (message: string) => {
+        if (!isVerbose) return;
+        console.error(`[tui:opencode] ${message}`);
+      };
 
       const query: any = {};
       if (options.inProgress) query.status = 'in-progress';
@@ -622,15 +627,18 @@ export default function register(ctx: PluginContext): void {
           }, (res) => {
             const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
             res.resume();
+            debugLog(`health status=${res.statusCode ?? 'unknown'} ok=${ok}`);
             resolve(ok);
           });
 
           req.on('timeout', () => {
             req.destroy();
+            debugLog('health check timed out');
             resolve(false);
           });
 
           req.on('error', () => {
+            debugLog('health check error');
             resolve(false);
           });
 
@@ -654,9 +662,24 @@ export default function register(ctx: PluginContext): void {
         
         try {
           // Start the API server
+          debugLog(`starting opencode server port=${OPENCODE_SERVER_PORT}`);
           opencodeServerProc = spawn('opencode', ['serve', '--port', String(OPENCODE_SERVER_PORT)], {
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: false
+          });
+
+          if (opencodeServerProc.stdout) {
+            opencodeServerProc.stdout.on('data', (chunk) => {
+              debugLog(`server stdout: ${chunk.toString().trim()}`);
+            });
+          }
+          if (opencodeServerProc.stderr) {
+            opencodeServerProc.stderr.on('data', (chunk) => {
+              debugLog(`server stderr: ${chunk.toString().trim()}`);
+            });
+          }
+          opencodeServerProc.on('exit', (code, signal) => {
+            debugLog(`server exit code=${code ?? 'null'} signal=${signal ?? 'null'}`);
           });
           
           opencodeServerPort = OPENCODE_SERVER_PORT;
@@ -717,6 +740,7 @@ export default function register(ctx: PluginContext): void {
         inputField: any
       ): Promise<void> {
         const serverUrl = `http://localhost:${opencodeServerPort}`;
+        debugLog(`send prompt length=${prompt.length}`);
         
         return new Promise((resolve, reject) => {
           // First, create or reuse a session
@@ -729,7 +753,10 @@ export default function register(ctx: PluginContext): void {
               currentSessionId = sessionId;
               pane.pushLine(`{cyan-fg}Session: ${sessionId}{/}`);
               pane.pushLine('');
+              pane.pushLine(`{gray-fg}> ${prompt}{/}`);
+              pane.pushLine('');
               screen.render();
+              debugLog(`session id=${sessionId}`);
               
               // Use async prompt endpoint for better streaming
               const messageData = JSON.stringify({
@@ -749,13 +776,15 @@ export default function register(ctx: PluginContext): void {
               };
               
               const sendReq = http.request(sendOptions, (res) => {
+                debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
                 if (res.statusCode === 204) {
                   // Success - now connect to SSE for streaming response
-                  connectToSSE(sessionId, pane, indicator, inputField, resolve, reject);
+                  connectToSSE(sessionId, prompt, pane, indicator, inputField, resolve, reject);
                 } else {
                   let errorData = '';
                   res.on('data', chunk => { errorData += chunk; });
                   res.on('end', () => {
+                    debugLog(`prompt_async error response length=${errorData.length}`);
                     pane.pushLine(`{red-fg}Error: ${errorData}{/}`);
                     reject(new Error('Failed to send prompt'));
                   });
@@ -763,6 +792,7 @@ export default function register(ctx: PluginContext): void {
               });
               
               sendReq.on('error', (err) => {
+                debugLog(`prompt_async request error: ${String(err)}`);
                 pane.pushLine(`{red-fg}Request error: ${err}{/}`);
                 screen.render();
                 reject(err);
@@ -782,12 +812,39 @@ export default function register(ctx: PluginContext): void {
       // Connect to SSE for streaming responses
       function connectToSSE(
         sessionId: string,
+        prompt: string,
         pane: any,
         indicator: any,
         inputField: any,
         resolve: Function,
         reject: Function
       ) {
+        const getSessionId = (value: any) => {
+          return value?.sessionID || value?.sessionId || value?.session_id;
+        };
+        const partTextById = new Map<string, string>();
+        const messageRoleById = new Map<string, string>();
+        let lastUserMessageId: string | null = null;
+        let streamText = pane.getContent ? pane.getContent() : '';
+        let sseClosed = false;
+        const appendText = (text: string) => {
+          streamText += text;
+        };
+        const appendLine = (line: string) => {
+          if (streamText && !streamText.endsWith('\n')) {
+            streamText += '\n';
+          }
+          streamText += line;
+        };
+        const updatePane = () => {
+          if (pane.setContent) {
+            pane.setContent(streamText);
+          }
+          if (typeof pane.setScrollPerc === 'function') {
+            pane.setScrollPerc(100);
+          }
+          screen.render();
+        };
         const options = {
           hostname: 'localhost',
           port: opencodeServerPort,
@@ -799,50 +856,86 @@ export default function register(ctx: PluginContext): void {
             'Connection': 'keep-alive'
           }
         };
+        debugLog(`sse connect session=${sessionId}`);
         
         const req = http.request(options, (res) => {
+          debugLog(`sse status=${res.statusCode ?? 'unknown'}`);
           let buffer = '';
           let waitingForInput = false;
           
           res.on('data', (chunk) => {
             buffer += chunk.toString();
+            debugLog(`sse chunk bytes=${chunk.length}`);
             const lines = buffer.split('\n');
             
             // Keep the last incomplete line in the buffer
             buffer = lines.pop() || '';
             
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
+              if (line.startsWith('data:')) {
                 try {
-                  const data = JSON.parse(line.slice(6));
+                  const payload = line.slice(5).trimStart();
+                  if (!payload) {
+                    continue;
+                  }
+                  const payloadPreview = payload.length > 200 ? `${payload.slice(0, 200)}...` : payload;
+                  debugLog(`sse payload length=${payload.length} preview=${payloadPreview}`);
+                  const data = JSON.parse(payload);
+                  const dataType = data?.type || 'unknown';
+                  debugLog(`sse data type=${dataType}`);
                   
                   // Handle different event types
-                  if (data.type === 'message.part' && data.properties) {
+                  const isMessagePart = data.type === 'message.part' || data.type === 'message.part.updated' || data.type === 'message.part.created';
+                  if (isMessagePart && data.properties) {
                     const part = data.properties.part;
-                    if (part && part.sessionID === sessionId) {
+                    const partSessionId = getSessionId(part);
+                    const eventSessionId = partSessionId || getSessionId(data.properties) || getSessionId(data);
+                    if (part && eventSessionId === sessionId) {
+                      const role = messageRoleById.get(part.messageID);
+                      const isUserMessage = role === 'user' || (lastUserMessageId !== null && part.messageID === lastUserMessageId);
+                      const promptMatches = prompt && part.text && part.text.trim() === prompt.trim();
+                      if (isUserMessage || promptMatches) {
+                        debugLog(`sse message.part skipped user prompt role=${role ?? 'unknown'} messageID=${part.messageID}`);
+                        partTextById.set(part.id || 'unknown', part.text || '');
+                        continue;
+                      }
                       if (part.type === 'text' && part.text) {
-                        // Display text in real-time
-                        const textLines = part.text.split('\n');
-                        for (const textLine of textLines) {
-                          pane.pushLine(textLine);
+                        // Display text in real-time (append only new diff)
+                        const partId = part.id || 'unknown';
+                        const prevText = partTextById.get(partId) || '';
+                        if (part.text.startsWith(prevText)) {
+                          const diff = part.text.slice(prevText.length);
+                          if (diff) {
+                            appendText(diff);
+                            updatePane();
+                          }
+                          debugLog(`sse text diff chars=${diff.length}`);
+                        } else if (!prevText.startsWith(part.text)) {
+                          appendLine(part.text);
+                          updatePane();
+                          debugLog(`sse text reset chars=${part.text.length}`);
+                        } else {
+                          debugLog(`sse text unchanged chars=${part.text.length}`);
                         }
-                        screen.render();
+                        partTextById.set(partId, part.text);
                       } else if (part.type === 'tool-use' && part.tool) {
-                        pane.pushLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
+                        appendLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
                         if (part.tool.description) {
-                          pane.pushLine(`  ${part.tool.description}`);
+                          appendLine(`  ${part.tool.description}`);
                         }
-                        screen.render();
+                        updatePane();
+                        debugLog(`sse tool use=${part.tool.name}`);
                       } else if (part.type === 'tool-result' && part.content) {
-                        pane.pushLine('{green-fg}[Tool Result]{/}');
+                        appendLine('{green-fg}[Tool Result]{/}');
                         const resultLines = part.content.split('\n');
                         for (const line of resultLines.slice(0, 10)) {
-                          pane.pushLine(`  ${line}`);
+                          appendLine(`  ${line}`);
                         }
                         if (resultLines.length > 10) {
-                          pane.pushLine(`  ... (${resultLines.length - 10} more lines)`);
+                          appendLine(`  ... (${resultLines.length - 10} more lines)`);
                         }
-                        screen.render();
+                        updatePane();
+                        debugLog(`sse tool result lines=${resultLines.length}`);
                       } else if (part.type === 'permission-request') {
                         // Handle permission requests (similar to input)
                         waitingForInput = true;
@@ -851,27 +944,51 @@ export default function register(ctx: PluginContext): void {
                         inputField.setLabel(' Permission Request ');
                         inputField.show();
                         inputField.focus();
-                        screen.render();
+                        updatePane();
+                        debugLog('sse permission request');
                       }
+                    } else {
+                      debugLog(`sse message.part ignored session=${eventSessionId ?? 'unknown'}`);
+                    }
+                  } else if (data.type === 'message.updated' && data.properties?.info) {
+                    const info = data.properties.info;
+                    const messageId = info.id;
+                    const messageRole = info.role;
+                    if (messageId && messageRole) {
+                      messageRoleById.set(messageId, messageRole);
+                      if (messageRole === 'user') {
+                        lastUserMessageId = messageId;
+                      }
+                      debugLog(`sse message updated role=${messageRole} id=${messageId}`);
                     }
                   } else if (data.type === 'message.finish' && data.properties) {
-                    if (data.properties.sessionID === sessionId) {
-                      pane.pushLine('');
-                      pane.pushLine('{green-fg}✓ Response completed{/}');
-                      screen.render();
+                    const finishSessionId = getSessionId(data.properties) || getSessionId(data);
+                    if (finishSessionId === sessionId) {
+                      debugLog('sse message finish');
                       
                       // Close SSE connection
+                      sseClosed = true;
+                      req.abort();
+                      resolve();
+                    }
+                  } else if (data.type === 'session.status' && data.properties) {
+                    const statusSessionId = getSessionId(data.properties) || getSessionId(data);
+                    const statusType = data.properties.status?.type;
+                    if (statusSessionId === sessionId && statusType === 'idle') {
+                      debugLog('sse session idle');
+                      sseClosed = true;
                       req.abort();
                       resolve();
                     }
                   } else if (data.type === 'input.request' && data.properties) {
                     // Handle input requests
-                    if (data.properties.sessionID === sessionId) {
+                    const inputSessionId = getSessionId(data.properties) || getSessionId(data);
+                    if (inputSessionId === sessionId) {
                       waitingForInput = true;
                       const inputType = data.properties.type || 'text';
                       const prompt = data.properties.prompt || 'Input required';
                       
-                      pane.pushLine(`{yellow-fg}${prompt}{/}`);
+                      appendLine(`{yellow-fg}${prompt}{/}`);
                       indicator.setContent('{yellow-fg}[!] Input Required{/}');
                       indicator.show();
                       
@@ -885,7 +1002,8 @@ export default function register(ctx: PluginContext): void {
                       
                       inputField.show();
                       inputField.focus();
-                      screen.render();
+                      updatePane();
+                      debugLog(`sse input request type=${inputType}`);
                       
                       // Set up input handler
                       inputField.once('submit', (value: string) => {
@@ -900,12 +1018,13 @@ export default function register(ctx: PluginContext): void {
                         pane.focus();
                         
                         // Show user input in pane
-                        pane.pushLine(`{cyan-fg}> ${value}{/}`);
-                        screen.render();
+                        appendLine(`{cyan-fg}> ${value}{/}`);
+                        updatePane();
                       });
                     }
                   }
                 } catch (err) {
+                  debugLog(`sse parse error: ${String(err)}`);
                   // Ignore parse errors for incomplete data
                 }
               }
@@ -913,21 +1032,43 @@ export default function register(ctx: PluginContext): void {
           });
           
           res.on('end', () => {
-            pane.pushLine('{yellow-fg}Stream ended{/}');
-            screen.render();
+            if (sseClosed) {
+              debugLog('sse ended after close');
+              resolve();
+              return;
+            }
+            appendLine('{yellow-fg}Stream ended{/}');
+            updatePane();
+            debugLog('sse ended');
             resolve();
           });
           
           res.on('error', (err) => {
-            pane.pushLine(`{red-fg}SSE error: ${err}{/}`);
-            screen.render();
+            const errMessage = String(err);
+            const errCode = (err as any)?.code;
+            if (sseClosed || errMessage.includes('aborted') || errCode === 'ECONNRESET') {
+              debugLog(`sse response closed: ${errMessage}`);
+              resolve();
+              return;
+            }
+            debugLog(`sse response error: ${errMessage}`);
+            appendLine(`{red-fg}SSE error: ${err}{/}`);
+            updatePane();
             reject(err);
           });
         });
         
         req.on('error', (err) => {
-          pane.pushLine(`{red-fg}SSE connection error: ${err}{/}`);
-          screen.render();
+          const errMessage = String(err);
+          const errCode = (err as any)?.code;
+          if (sseClosed || errMessage.includes('aborted') || errCode === 'ECONNRESET') {
+            debugLog(`sse connection closed: ${errMessage}`);
+            resolve();
+            return;
+          }
+          debugLog(`sse connection error: ${errMessage}`);
+          appendLine(`{red-fg}SSE connection error: ${err}{/}`);
+          updatePane();
           reject(err);
         });
         
@@ -937,6 +1078,7 @@ export default function register(ctx: PluginContext): void {
       // Send input response back to the server
       function sendInputResponse(sessionId: string, input: string) {
         const responseData = JSON.stringify({ input });
+        debugLog(`send input response length=${input.length}`);
         
         const options = {
           hostname: 'localhost',
@@ -951,9 +1093,11 @@ export default function register(ctx: PluginContext): void {
         
         const req = http.request(options, (res) => {
           // Response handled via SSE
+          debugLog(`input response status=${res.statusCode ?? 'unknown'}`);
         });
         
         req.on('error', (err) => {
+          debugLog(`input response error: ${String(err)}`);
           console.error('Failed to send input response:', err);
         });
         
@@ -967,6 +1111,7 @@ export default function register(ctx: PluginContext): void {
           const sessionData = JSON.stringify({
             title: 'TUI Session ' + new Date().toISOString()
           });
+          debugLog('create session');
           
           const options = {
             hostname: 'localhost',
@@ -981,6 +1126,7 @@ export default function register(ctx: PluginContext): void {
           
           const req = http.request(options, (res) => {
             let responseData = '';
+            debugLog(`create session status=${res.statusCode ?? 'unknown'}`);
             
             res.on('data', (chunk) => {
               responseData += chunk;
@@ -989,8 +1135,10 @@ export default function register(ctx: PluginContext): void {
             res.on('end', () => {
               try {
                 const session = JSON.parse(responseData);
+                debugLog(`create session response length=${responseData.length}`);
                 resolve(session.id);
               } catch (err) {
+                debugLog(`create session parse error: ${String(err)}`);
                 reject(new Error('Failed to parse session response: ' + err));
               }
             });
