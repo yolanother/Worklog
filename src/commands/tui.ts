@@ -592,10 +592,23 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 1;
         opencodeText.width = '100%-2';
         opencodeText.height = Math.max(1, desiredHeight - 2);  // Leave room for both borders
-        // Reset styles instead of deleting them
-        opencodeText.style = opencodeText.style || {};
-        opencodeText.style.border = {};
-        opencodeText.style.focus = {};
+        // Reset styles by clearing properties without replacing the style object
+        if (!opencodeText.style) {
+          opencodeText.style = {};
+        }
+        // Clear border and focus styles without replacing the entire style object
+        if (opencodeText.style.border) {
+          Object.keys(opencodeText.style.border).forEach(key => {
+            delete opencodeText.style.border[key];
+          });
+        }
+        if (opencodeText.style.focus) {
+          if (opencodeText.style.focus.border) {
+            Object.keys(opencodeText.style.focus.border).forEach(key => {
+              delete opencodeText.style.focus.border[key];
+            });
+          }
+        }
         
         if (opencodePane) {
           opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
@@ -607,9 +620,10 @@ export default function register(ctx: PluginContext): void {
 
       async function openOpencodeDialog() {
         // Always use compact mode at bottom
-        opencodeDialog.setLabel(' prompt [x] ');
+        opencodeDialog.setLabel(' prompt [esc] ');
+        opencodeDialog.top = undefined;  // Clear the center positioning
+        opencodeDialog.left = 0;  // Clear the center positioning
         opencodeDialog.bottom = FOOTER_HEIGHT;
-        opencodeDialog.left = 0;
         opencodeDialog.width = '100%';
         opencodeDialog.height = MIN_INPUT_HEIGHT;
         
@@ -623,15 +637,26 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 1;
         opencodeText.width = '100%-2';
         opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 2);  // Leave room for both borders
-        // Reset styles instead of deleting them
-        opencodeText.style = opencodeText.style || {};
-        opencodeText.style.border = {};
-        opencodeText.style.focus = {};
+        // Reset styles by clearing properties without replacing the style object
+        if (!opencodeText.style) {
+          opencodeText.style = {};
+        }
+        // Clear border and focus styles without replacing the entire style object
+        if (opencodeText.style.border) {
+          Object.keys(opencodeText.style.border).forEach(key => {
+            delete opencodeText.style.border[key];
+          });
+        }
+        if (opencodeText.style.focus) {
+          if (opencodeText.style.focus.border) {
+            Object.keys(opencodeText.style.focus.border).forEach(key => {
+              delete opencodeText.style.focus.border[key];
+            });
+          }
+        }
         
         opencodeDialog.show();
         opencodeDialog.setFront();
-        // Ensure close button is visible and on top
-        opencodeCancel.setFront();
         
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
@@ -845,7 +870,7 @@ export default function register(ctx: PluginContext): void {
               currentSessionId = sessionId;
               // Update pane label to include session ID
               if (pane.setLabel) {
-                pane.setLabel(` opencode - Session: ${sessionId} [x] `);
+                pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
               }
               pane.pushLine('');
               pane.pushLine(`{gray-fg}> ${prompt}{/}`);
@@ -1275,7 +1300,7 @@ export default function register(ctx: PluginContext): void {
           left: 0,
           width: '100%',
           height: paneHeight(),
-          label: ` opencode [x] `,
+          label: ` opencode [esc] `,
           border: { type: 'line' },
           tags: true,
           scrollable: true,
@@ -1287,14 +1312,9 @@ export default function register(ctx: PluginContext): void {
           style: { border: { fg: 'magenta' } },
         });
 
-        // Remove the old close button - it's now in the label
-        // Handle clicks on the pane to detect [x] clicks
-        opencodePane.on('click', (mouse: any) => {
-          // Check if click is on the [x] in the title bar
-          if (mouse && mouse.y === opencodePane.atop && 
-              mouse.x >= opencodePane.aleft + opencodePane.width - 5) {
-            closeOpencodePane();
-          }
+        // Add Escape key handler to close the response pane
+        opencodePane.key(['escape'], () => {
+          closeOpencodePane();
         });
         
         opencodePane.show();
@@ -1335,20 +1355,14 @@ export default function register(ctx: PluginContext): void {
         runOpencode(prompt.replace(/^>\s?/, ''));
       });
 
-      // Handle clicks on the dialog to detect [x] clicks
-      opencodeDialog.on('click', (mouse: any) => {
-        // Check if click is on the [x] in the title bar
-        // The [x] is at the right side of the title
-        if (mouse && mouse.y === opencodeDialog.atop && 
-            mouse.x >= opencodeDialog.aleft + opencodeDialog.width - 5) {
-          // Close the entire opencode session
-          opencodeDialog.hide();
-          if (opencodePane) {
-            opencodePane.hide();
-          }
-          list.focus();
-          screen.render();
+      // Add Escape key handler to close the opencode dialog
+      opencodeText.key(['escape'], function(this: any) {
+        opencodeDialog.hide();
+        if (opencodePane) {
+          opencodePane.hide();
         }
+        list.focus();
+        screen.render();
       });
 
       // Accept Ctrl+S to send (keep for backward compatibility)
