@@ -9,16 +9,64 @@ Overview
 - The TUI presents a tree view of work items on the left and a details pane on the right.
 - It can show all items, or be limited to in-progress items via `--in-progress`.
 - The details pane uses the same human formatter as the CLI so what you see in the TUI matches `wl show --format full`.
+- Integrated OpenCode AI assistant for intelligent work item management and coding assistance.
 
 Controls
 --------
 
+### Navigation
 - Arrow Up / Down — move selection
 - Right / Enter — expand node
 - Left — collapse node (or collapse parent)
 - Space — toggle expand/collapse
 - Mouse — click to select and scroll
 - q / Esc / Ctrl-C — quit
+
+### Work Item Actions
+- n — create new work item
+- e — edit selected item
+- c — add comment to selected item
+- d — delete selected item
+- r — refresh/reload items
+- / — search items
+- h — toggle help menu
+
+### OpenCode AI Integration
+- **O** (capital O) — open OpenCode AI assistant dialog
+  - Ctrl+S — send prompt
+  - Enter — accept autocomplete or add newline
+  - Escape — close dialog
+- When OpenCode is active:
+  - Response appears in bottom pane
+  - Input fields appear when agent needs information
+  - q or click [x] to close response pane
+
+OpenCode Features
+-----------------
+
+### Auto-start Server
+The OpenCode server automatically starts when you press O. Server status indicators:
+- `[-]` — Server stopped
+- `[~]` — Server starting  
+- `[OK] Port: 9999` — Server running
+- `[X]` — Server error
+
+### Slash Commands
+Type `/` in the OpenCode dialog to see available commands:
+- `/help` — Get help with OpenCode
+- `/edit` — Edit files with AI assistance
+- `/create` — Create new files
+- `/test` — Generate or run tests
+- `/fix` — Fix issues in code
+- Plus 20+ more commands
+
+### Interactive Sessions
+- Sessions persist across multiple prompts
+- Real-time streaming responses
+- Interactive input when agents need clarification
+- Tool usage highlighted in colors
+
+For detailed OpenCode documentation, see `docs/opencode-tui.md`.
 
 Usage
 -----

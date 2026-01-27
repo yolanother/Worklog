@@ -7,6 +7,8 @@ A simple experimental issue tracker for AI agents. This is a lightweight worklog
 - **Persistent Database**: SQLite-backed storage that persists across CLI/API executions
 - **API**: REST API built with Express
 - **CLI**: Command-line interface for quick operations
+- **Interactive TUI**: Terminal User Interface with tree view and keyboard navigation
+- **OpenCode Integration**: Built-in AI assistant with real-time streaming and interactive input
 - **Pluggable Commands**: Extend the CLI with custom commands via plugins (see [Plugin Guide](PLUGIN_GUIDE.md))
 - **Git-Friendly**: Data stored in JSONL format for easy Git syncing and collaboration
 - **Auto-Refresh**: Database automatically refreshes from JSONL when file is updated (e.g., after git pull)
@@ -320,14 +322,36 @@ worklog gh push --repo owner/name
 
 # Interactive TUI
 
-Worklog includes a simple interactive terminal UI for browsing work items as a tree. Run:
+Worklog includes a powerful interactive terminal UI for browsing work items as a tree and interacting with AI assistance. Run:
 
 ```bash
 wl tui            # open TUI showing all items
 wl tui --in-progress  # show only in-progress items
 ````
 
-See `TUI.md` for more details and controls.
+## Key Features
+
+### Work Item Management
+- Browse work items in a hierarchical tree view
+- Create, edit, and close work items
+- Add comments and view details
+- Navigate with keyboard shortcuts or mouse
+
+### OpenCode AI Integration
+Press `O` (capital O) to access the built-in OpenCode AI assistant:
+
+- **Auto-start Server**: OpenCode server starts automatically when needed
+- **Slash Commands**: Type `/` for autocomplete of 28+ commands
+- **Real-time Streaming**: See responses as they're generated
+- **Interactive Input**: Respond to agent questions during execution
+- **Session Persistence**: Maintain context across multiple prompts
+
+Quick OpenCode example:
+```
+Press O → Type "What work items need attention?" → Press Ctrl+S
+```
+
+See `TUI.md` for detailed controls and `docs/opencode-tui.md` for OpenCode features.
 
 # Import updates from GitHub Issues (only items with worklog markers)
 
