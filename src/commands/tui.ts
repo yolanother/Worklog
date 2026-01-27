@@ -542,11 +542,6 @@ export default function register(ctx: PluginContext): void {
 
       // Active opencode pane/process tracking
       let opencodePane: any = null;
-      let opencodeProc: any = null;
-
-      function shellEscape(s: string) {
-        return `'${s.replace(/'/g, "'\"'\"'")}'`;
-      }
 
       async function openOpencodeDialog() {
         opencodeOverlay.show();
@@ -577,14 +572,6 @@ export default function register(ctx: PluginContext): void {
       }
 
       function closeOpencodePane() {
-        try {
-          if (opencodeProc) {
-            opencodeProc.kill();
-            opencodeProc = null;
-          }
-        } catch (err) {
-          // ignore
-        }
         if (opencodePane) {
           opencodePane.hide();
           opencodePane = null;
@@ -663,7 +650,8 @@ export default function register(ctx: PluginContext): void {
         showToast('Starting OpenCode server...');
         
         try {
-          opencodeServerProc = spawn('opencode', ['serve', '--port', String(OPENCODE_SERVER_PORT)], {
+          // Use 'opencode web' instead of 'opencode serve'
+          opencodeServerProc = spawn('opencode', ['web', '--port', String(OPENCODE_SERVER_PORT)], {
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: false
           });
@@ -671,9 +659,9 @@ export default function register(ctx: PluginContext): void {
           opencodeServerPort = OPENCODE_SERVER_PORT;
           
           // Give the server time to start
-          let retries = 10;
+          let retries = 20; // More retries as web server takes longer
           while (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 1000));
             const isUp = await checkOpencodeServer(OPENCODE_SERVER_PORT);
             if (isUp) {
               opencodeServerStatus = 'running';
@@ -1017,6 +1005,12 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         
+        // Check server is running
+        if (opencodeServerStatus !== 'running' || opencodeServerPort === 0) {
+          showToast('OpenCode server not running');
+          return;
+        }
+        
         // create pane across bottom
         opencodePane = blessed.box({
           parent: screen,
@@ -1087,143 +1081,13 @@ export default function register(ctx: PluginContext): void {
         opencodePane.focus();
         screen.render();
         
-        // Use server API if available, otherwise fall back to CLI
-        if (opencodeServerStatus === 'running' && opencodeServerPort > 0) {
-          // Use HTTP API to communicate with server
-          try {
-            await sendPromptToServer(prompt, opencodePane, inputIndicator, inputField);
-            return;
-          } catch (err) {
-            opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
-            opencodePane.pushLine('{yellow-fg}Falling back to CLI mode...{/yellow-fg}');
-            screen.render();
-          }
-        }
-        
-        // Fall back to CLI mode
-        const cmd = `opencode run ${shellEscape(prompt)}`;
-        
+        // Use HTTP API to communicate with server
         try {
-          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
+          await sendPromptToServer(prompt, opencodePane, inputIndicator, inputField);
         } catch (err) {
-          opencodePane.setContent(`Failed to spawn: ${String(err)}`);
+          opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
           screen.render();
-          return;
         }
-        
-        let buf = '';
-        let waitingForInput = false;
-        let inputBuffer = '';
-        
-        const processOutput = (chunk: Buffer | string) => {
-          const s = String(chunk);
-          
-          // Check for various input request patterns
-          const inputPatterns = [
-            '[INPUT_REQUEST]',
-            '[INPUT_REQUIRED]',
-            'Enter your response:',
-            'Please provide input:',
-            'Your answer:',
-            'Type your response:',
-            '(y/n)',
-            '(yes/no)',
-            '[Y/n]',
-            'Press Enter to continue',
-            'waiting for input',
-            'awaiting response'
-          ];
-          
-          const hasInputRequest = inputPatterns.some(pattern => 
-            s.toLowerCase().includes(pattern.toLowerCase())
-          );
-          
-          if (hasInputRequest && !waitingForInput) {
-            waitingForInput = true;
-            
-            // Extract the question/prompt if possible
-            const lines = s.split(/\r?\n/).filter(Boolean);
-            const lastLine = lines[lines.length - 1] || '';
-            
-            inputIndicator.setContent('{yellow-fg}[!] Input Required{/}');
-            inputIndicator.show();
-            
-            // Set label based on the type of input requested
-            if (s.toLowerCase().includes('(y/n)') || s.toLowerCase().includes('[y/n]')) {
-              inputField.setLabel(' Yes/No Input ');
-            } else if (s.toLowerCase().includes('password')) {
-              inputField.setLabel(' Password Input ');
-            } else {
-              inputField.setLabel(' Input Required ');
-            }
-            
-            inputField.show();
-            inputField.focus();
-            screen.render();
-            
-            // Still show the output that contains the prompt
-            buf += s;
-            opencodePane.setContent(buf);
-            try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
-            screen.render();
-            return;
-          }
-          
-          // Filter out noisy log lines
-          const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
-            if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
-            return l;
-          }).filter(Boolean);
-          
-          if (lines.length === 0) return;
-          buf += lines.join('\n') + '\n';
-          opencodePane.setContent(buf);
-          
-          // Auto-scroll to bottom
-          try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
-          screen.render();
-        };
-        
-        // Handle input submission
-        inputField.on('submit', (value: string) => {
-          if (waitingForInput && opencodeProc && opencodeProc.stdin) {
-            inputBuffer = value || '';
-            opencodeProc.stdin.write(inputBuffer + '\n');
-            
-            // Add user input to display
-            buf += `{cyan-fg}> ${inputBuffer}{/}\n`;
-            opencodePane.setContent(buf);
-            
-            // Hide input UI
-            waitingForInput = false;
-            inputIndicator.hide();
-            inputField.hide();
-            inputField.clearValue();
-            opencodePane.focus();
-            screen.render();
-          }
-        });
-        
-        // Handle escape key in input field
-        inputField.key(['escape'], () => {
-          if (waitingForInput) {
-            waitingForInput = false;
-            inputIndicator.hide();
-            inputField.hide();
-            inputField.clearValue();
-            opencodePane.focus();
-            screen.render();
-          }
-        });
-
-        opencodeProc.stdout.on('data', (d: Buffer) => processOutput(d));
-        opencodeProc.stderr.on('data', (d: Buffer) => processOutput(d));
-        opencodeProc.on('close', (_code: number) => {
-          // Clean up input UI on close
-          inputIndicator.hide();
-          inputField.hide();
-          opencodeProc = null;
-        });
       }
 
       // Opencode dialog controls

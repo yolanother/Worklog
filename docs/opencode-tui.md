@@ -7,7 +7,7 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 ## Features
 
 ### 1. Quick Access
-- Press `O` (capital O) from anywhere in the TUI to open the OpenCode dialog
+- Press `o` (lowercase o) from anywhere in the TUI to open the OpenCode dialog
 - The dialog provides a text area for entering prompts and commands
 
 ### 2. Auto-start Server
@@ -15,9 +15,9 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 - Server status is displayed in the dialog header:
   - `[-]` - Server stopped
   - `[~]` - Server starting
-  - `[OK] Port: 9999` - Server running
+  - `[OK] Port: 51625` - Server running
   - `[X]` - Server error
-- Default port: 9999 (configurable via `OPENCODE_SERVER_PORT` environment variable)
+- Default port: 51625 (configurable via `OPENCODE_SERVER_PORT` environment variable)
 
 ### 3. Slash Command Autocomplete
 - Type `/` to see available slash commands
@@ -55,7 +55,7 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 
 ### Starting a Conversation
 
-1. Press `O` to open the OpenCode dialog
+1. Press `o` to open the OpenCode dialog
 2. Wait for the server status to show `[OK]`
 3. Type your prompt or slash command
 4. Press `Ctrl+S` to send (or click the Send button)
@@ -103,16 +103,16 @@ Focus on performance and readability.
 
 ### Environment Variables
 
-- `OPENCODE_SERVER_PORT` - Override the default server port (9999)
+- `OPENCODE_SERVER_PORT` - Override the default server port (51625)
 - `OPENCODE_SERVER_PASSWORD` - Protect server with basic auth
 - `OPENCODE_SERVER_USERNAME` - Username for basic auth (default: "opencode")
 
 ### Server Management
 
 The server is managed automatically, but you can also:
-- Start manually: `opencode serve --port 9999`
-- Check if running: `lsof -i :9999`
-- View server API docs: http://localhost:9999/doc
+- Start manually: `opencode web --port 51625`
+- Check if running: `lsof -i :51625`
+- View server API docs: http://localhost:51625/doc
 
 ## Technical Details
 
@@ -125,7 +125,7 @@ The server is managed automatically, but you can also:
   - `POST /session/{id}/input` - Send user input
 
 ### Error Handling
-- Automatic fallback to CLI mode if server is unavailable
+- Server starts automatically when opening dialog (API-only mode)
 - Connection errors displayed in red
 - Graceful degradation for network issues
 
@@ -139,13 +139,13 @@ The server is managed automatically, but you can also:
 ## Troubleshooting
 
 ### Server Won't Start
-- Check if port 9999 is already in use: `lsof -i :9999`
+- Check if port 51625 is already in use: `lsof -i :51625`
 - Try a different port: `export OPENCODE_SERVER_PORT=4096`
 - Ensure OpenCode is installed: `which opencode`
 
 ### No Response
 - Check server status indicator in dialog header
-- Verify server is running: `ps aux | grep "opencode serve"`
+- Verify server is running: `ps aux | grep "opencode web"`
 - Check for errors in response pane
 
 ### Input Not Working
