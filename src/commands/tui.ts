@@ -447,7 +447,7 @@ export default function register(ctx: PluginContext): void {
         parent: opencodeText,
         top: 0,
         left: 0,
-        width: 'shrink',
+        width: '100%',  // Use full width to ensure text isn't cut off
         height: 1,
         tags: true,
         hidden: true,
@@ -478,11 +478,11 @@ export default function register(ctx: PluginContext): void {
           if (matches.length > 0 && matches[0] !== input) {
             currentSuggestion = matches[0];
             const displayText = currentSuggestion.slice(input.length);
-            autocompleteSuggestion.setContent(displayText);
+            // Pad the suggestion to position it correctly after the typed text
+            const padding = ' '.repeat(input.length);
+            autocompleteSuggestion.setContent(padding + displayText);
             
-            // Position the suggestion after the current input (same line)
-            const inputLength = input.length;
-            autocompleteSuggestion.left = inputLength;
+            // Show the suggestion overlay
             autocompleteSuggestion.show();
           } else {
             currentSuggestion = '';
