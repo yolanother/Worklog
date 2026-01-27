@@ -10,7 +10,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn, ChildProcess } from 'child_process';
-import * as net from 'net';
 import * as http from 'http';
 
 type Item = any;
@@ -614,24 +613,28 @@ export default function register(ctx: PluginContext): void {
       
       async function checkOpencodeServer(port: number): Promise<boolean> {
         return new Promise((resolve) => {
-          const client = new net.Socket();
-          const timeout = setTimeout(() => {
-            client.destroy();
-            resolve(false);
-          }, 1000);
-          
-          client.on('connect', () => {
-            clearTimeout(timeout);
-            client.end();
-            resolve(true);
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port,
+            path: '/global/health',
+            method: 'GET',
+            timeout: 1000,
+          }, (res) => {
+            const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
+            res.resume();
+            resolve(ok);
           });
-          
-          client.on('error', () => {
-            clearTimeout(timeout);
+
+          req.on('timeout', () => {
+            req.destroy();
             resolve(false);
           });
-          
-          client.connect(port, '127.0.0.1');
+
+          req.on('error', () => {
+            resolve(false);
+          });
+
+          req.end();
         });
       }
       
@@ -650,8 +653,8 @@ export default function register(ctx: PluginContext): void {
         showToast('Starting OpenCode server...');
         
         try {
-          // Use 'opencode web' instead of 'opencode serve'
-          opencodeServerProc = spawn('opencode', ['web', '--port', String(OPENCODE_SERVER_PORT)], {
+          // Start the API server
+          opencodeServerProc = spawn('opencode', ['serve', '--port', String(OPENCODE_SERVER_PORT)], {
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: false
           });
@@ -659,9 +662,9 @@ export default function register(ctx: PluginContext): void {
           opencodeServerPort = OPENCODE_SERVER_PORT;
           
           // Give the server time to start
-          let retries = 20; // More retries as web server takes longer
+          let retries = 10;
           while (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
             const isUp = await checkOpencodeServer(OPENCODE_SERVER_PORT);
             if (isUp) {
               opencodeServerStatus = 'running';

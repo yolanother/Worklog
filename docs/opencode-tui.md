@@ -56,7 +56,7 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 ### Starting a Conversation
 
 1. Press `o` to open the OpenCode dialog
-2. Wait for the server status to show `[OK]`
+2. Wait for the server status to show `[OK]` (server health uses `/global/health`)
 3. Type your prompt or slash command
 4. Press `Ctrl+S` to send (or click the Send button)
 5. The response will appear in a pane at the bottom of the screen
@@ -110,7 +110,7 @@ Focus on performance and readability.
 ### Server Management
 
 The server is managed automatically, but you can also:
-- Start manually: `opencode web --port 51625`
+- Start manually: `opencode serve --port 51625`
 - Check if running: `lsof -i :51625`
 - View server API docs: http://localhost:51625/doc
 
@@ -145,7 +145,7 @@ The server is managed automatically, but you can also:
 
 ### No Response
 - Check server status indicator in dialog header
-- Verify server is running: `ps aux | grep "opencode web"`
+- Verify server is running: `ps aux | grep "opencode serve"`
 - Check for errors in response pane
 
 ### Input Not Working
