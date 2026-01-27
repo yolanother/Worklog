@@ -80,6 +80,10 @@ export default function register(ctx: PluginContext): void {
 
       try {
         const githubConfig = resolveGithubConfig({ repo: options.repo, labelPrefix: options.labelPrefix });
+        const repoUrl = `https://github.com/${githubConfig.repo}/issues`;
+        if (!isJsonMode) {
+          console.log(`Pushing to ${repoUrl}`);
+        }
         const items = db.getAll();
         const comments = db.getAllComments();
 
@@ -189,6 +193,10 @@ export default function register(ctx: PluginContext): void {
 
       try {
         const githubConfig = resolveGithubConfig({ repo: options.repo, labelPrefix: options.labelPrefix });
+        const repoUrl = `https://github.com/${githubConfig.repo}/issues`;
+        if (!isJsonMode) {
+          console.log(`Importing from ${repoUrl}`);
+        }
         const items = db.getAll();
         const createNew = resolveGithubImportCreateNew({ createNew: options.createNew });
         const { updatedItems, createdItems, issues, updatedIds, mergedItems, conflictDetails, markersFound } = importIssuesToWorkItems(items, githubConfig, {
