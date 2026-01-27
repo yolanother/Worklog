@@ -425,6 +425,8 @@ export default function register(ctx: PluginContext): void {
         vi: false,
         mouse: true,
         clickable: true,
+        scrollable: true,     // Enable scrolling
+        alwaysScroll: true,   // Always show scrollbar when needed
         border: { type: 'line' },
         style: { focus: { border: { fg: 'green' } } },
       });
@@ -573,25 +575,27 @@ export default function register(ctx: PluginContext): void {
       // Active opencode pane/process tracking
       let opencodePane: any = null;
 
-      const MIN_INPUT_HEIGHT = 5;  // Increased to accommodate borders and content
+      const MIN_INPUT_HEIGHT = 3;  // Minimum height for input dialog (single line + borders)
+      const MAX_INPUT_LINES = 7;   // Maximum visible lines of input text
       const FOOTER_HEIGHT = 1;
       const availableHeight = () => Math.max(10, (screen.height as number) - FOOTER_HEIGHT);
-      const inputMaxHeight = () => Math.max(MIN_INPUT_HEIGHT, Math.floor(availableHeight() * 0.2));
+      const inputMaxHeight = () => Math.min(MAX_INPUT_LINES + 2, Math.floor(availableHeight() * 0.3)); // +2 for borders
       const paneHeight = () => Math.max(6, Math.floor(availableHeight() * 0.5));
 
       function updateOpencodeInputLayout() {
         if (!opencodeText.getValue) return;
         const value = opencodeText.getValue();
         const lines = value.split('\n').length;
-        const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 1), inputMaxHeight());
+        // Dialog height = content lines + 2 for borders
+        const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
         opencodeDialog.height = desiredHeight;
         
         // Always use compact mode settings
         (opencodeText as any).border = false;
-        opencodeText.top = 1;  // Leave room for top border
-        opencodeText.left = 1;
-        opencodeText.width = '100%-2';
-        opencodeText.height = Math.max(1, desiredHeight - 2);  // Leave room for both borders
+        opencodeText.top = 0;  // Position at top of dialog interior
+        opencodeText.left = 0;  // Position at left of dialog interior
+        opencodeText.width = '100%-2';  // Leave 1 char padding on each side
+        opencodeText.height = desiredHeight - 2;  // Height minus top and bottom borders
         // Reset styles by clearing properties without replacing the style object
         if (!opencodeText.style) {
           opencodeText.style = {};
@@ -633,10 +637,10 @@ export default function register(ctx: PluginContext): void {
         opencodeCancel.hide();  // Hide the old cancel button since it's in the label now
         // Remove textarea border since dialog has the border
         (opencodeText as any).border = false;
-        opencodeText.top = 1;  // Leave room for top border
-        opencodeText.left = 1;
-        opencodeText.width = '100%-2';
-        opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 2);  // Leave room for both borders
+        opencodeText.top = 0;  // Position at top of dialog interior
+        opencodeText.left = 0;  // Position at left of dialog interior  
+        opencodeText.width = '100%-2';  // Leave 1 char padding on each side
+        opencodeText.height = MIN_INPUT_HEIGHT - 2;  // Height minus borders
         // Reset styles by clearing properties without replacing the style object
         if (!opencodeText.style) {
           opencodeText.style = {};
@@ -675,6 +679,9 @@ export default function register(ctx: PluginContext): void {
         
         // Start the server if not already running
         await startOpencodeServer();
+        
+        // Open the response pane automatically
+        ensureOpencodePane();
         
         screen.render();
       }
