@@ -31,6 +31,7 @@ export default function register(ctx: PluginContext): void {
     .action((id: string, options: UpdateOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
+      const normalizedId = utils.normalizeCliId(id, options.prefix) || id;
       const updates: UpdateWorkItemInput = {};
       if (options.title) updates.title = options.title;
       if (options.description) updates.description = options.description;
@@ -48,9 +49,9 @@ export default function register(ctx: PluginContext): void {
       if (options.deletedBy !== undefined) updates.deletedBy = options.deletedBy;
       if (options.deleteReason !== undefined) updates.deleteReason = options.deleteReason;
       
-      const item = db.update(id, updates);
+      const item = db.update(normalizedId, updates);
       if (!item) {
-        output.error(`Work item not found: ${id}`, { success: false, error: `Work item not found: ${id}` });
+        output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
         process.exit(1);
       }
       
