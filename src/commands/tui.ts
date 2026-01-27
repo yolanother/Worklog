@@ -262,6 +262,11 @@ export default function register(ctx: PluginContext): void {
         'Focus:',
         '  Tab            Cycle focus panes',
         '',
+        'Filters:',
+        '  I              Show in-progress only',
+        '  A              Show open items',
+        '  B              Show blocked only',
+        '',
         'Refresh:',
         '  R              Reload items from database',
         '',
@@ -328,6 +333,33 @@ export default function register(ctx: PluginContext): void {
         const nextVisible = options.all
           ? items.slice()
           : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+        if (nextVisible.length === 0) {
+          list.setItems([]);
+          detail.setContent('');
+          screen.render();
+          return;
+        }
+        rebuildTree();
+        const visible = buildVisible();
+        let nextIndex = 0;
+        if (selectedId) {
+          const found = visible.findIndex(n => n.item.id === selectedId);
+          if (found >= 0) nextIndex = found;
+        }
+        renderListAndDetail(nextIndex);
+      }
+
+      function setFilterNext(filter: 'in-progress' | 'open' | 'blocked') {
+        options.inProgress = false;
+        options.all = false;
+        showClosed = false;
+        const selected = getSelectedItem();
+        const selectedId = selected?.id;
+        const query: any = {};
+        if (filter === 'in-progress') query.status = 'in-progress';
+        if (filter === 'blocked') query.status = 'blocked';
+        items = db.list(query);
+        const nextVisible = items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
         if (nextVisible.length === 0) {
           list.setItems([]);
           detail.setContent('');
@@ -543,6 +575,19 @@ export default function register(ctx: PluginContext): void {
       // Refresh from database
       screen.key(['r', 'R'], () => {
         refreshFromDatabase();
+      });
+
+      // Filter shortcuts
+      screen.key(['i', 'I'], () => {
+        setFilterNext('in-progress');
+      });
+
+      screen.key(['a', 'A'], () => {
+        setFilterNext('open');
+      });
+
+      screen.key(['b', 'B'], () => {
+        setFilterNext('blocked');
       });
 
       // Click footer to open help
