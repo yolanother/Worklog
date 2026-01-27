@@ -512,7 +512,6 @@ export default function register(ctx: PluginContext): void {
           style: { fg: 'red' },
           mouse: true,
         });
-
         paneClose.on('click', () => {
           closeOpencodePane();
         });
@@ -1124,8 +1123,21 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['escape'], () => {
+        // Close any active overlays/panes in reverse-open order
         if (!closeDialog.hidden) {
           closeCloseDialog();
+          return;
+        }
+        if (!updateDialog.hidden) {
+          closeUpdateDialog();
+          return;
+        }
+        if (!opencodeDialog.hidden) {
+          closeOpencodeDialog();
+          return;
+        }
+        if (opencodePane) {
+          closeOpencodePane();
           return;
         }
         if (!detailModal.hidden) {
