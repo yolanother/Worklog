@@ -318,7 +318,7 @@ export default function register(ctx: PluginContext): void {
         top: 'center',
         left: 'center',
         width: '50%',
-        height: 12,
+        height: 14,
         label: ' Update Work Item ',
         border: { type: 'line' },
         hidden: true,
@@ -344,13 +344,13 @@ export default function register(ctx: PluginContext): void {
         top: 4,
         left: 2,
         width: '100%-4',
-        height: 6,
+        height: 8,
         keys: true,
         mouse: true,
         style: {
           selected: { bg: 'blue' },
         },
-        items: ['idea', 'in_progress', 'in_review', 'done', 'blocked', 'Clear stage', 'Cancel'],
+        items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
       });
 
       const overlay = blessed.box({
@@ -1068,13 +1068,14 @@ export default function register(ctx: PluginContext): void {
         }
         try {
           if (idx === 0) db.update(item.id, { stage: 'idea' });
-          else if (idx === 1) db.update(item.id, { stage: 'in_progress' });
-          else if (idx === 2) db.update(item.id, { stage: 'in_review' });
-          else if (idx === 3) db.update(item.id, { stage: 'done' });
-          else if (idx === 4) db.update(item.id, { stage: 'blocked' });
-          else if (idx === 5) db.update(item.id, { stage: '' });
-          else if (idx === 6) { /* Cancel */ }
-          showToast('Updated');
+          else if (idx === 1) db.update(item.id, { stage: 'prd_complete' });
+          else if (idx === 2) db.update(item.id, { stage: 'plan_complete' });
+          else if (idx === 3) db.update(item.id, { stage: 'in_progress' });
+          else if (idx === 4) db.update(item.id, { stage: 'in_review' });
+          else if (idx === 5) db.update(item.id, { stage: 'done' });
+          else if (idx === 6) db.update(item.id, { stage: 'blocked' });
+          else if (idx === 7) { /* Cancel - no action */ }
+          if (idx !== 7) showToast('Updated');
           refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
         } catch (err) {
           showToast('Update failed');
