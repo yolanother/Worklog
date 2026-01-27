@@ -491,10 +491,9 @@ export default function register(ctx: PluginContext): void {
 
       function applyCommandSuggestion(target: any) {
         if (isCommandMode && currentSuggestion) {
-          const prefix = target.getValue && target.getValue().startsWith('> ') ? '> ' : '';
-          target.setValue(prefix + currentSuggestion + ' ');
+          target.setValue(currentSuggestion + ' ');
           if (target.moveCursor) {
-            target.moveCursor(prefix.length + currentSuggestion.length + 1);
+            target.moveCursor(currentSuggestion.length + 1);
           }
           currentSuggestion = '';
           isCommandMode = false;
@@ -510,7 +509,7 @@ export default function register(ctx: PluginContext): void {
         userTypedText = value;
         const lines = value.split('\n');
         const firstLine = lines[0];
-        const commandLine = firstLine.replace(/^>\s?/, '');
+        const commandLine = firstLine;
         
         // Check if we're in command mode (first line starts with '/')
         if (commandLine.startsWith('/') && lines.length === 1) {
@@ -664,7 +663,7 @@ export default function register(ctx: PluginContext): void {
         
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
-        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
+        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
         
         // Reset autocomplete state
         currentSuggestion = '';
@@ -672,9 +671,7 @@ export default function register(ctx: PluginContext): void {
         userTypedText = '';
         suggestionHint.setContent('');
         opencodeText.focus();
-        if (typeof opencodeText.moveCursor === 'function') {
-          opencodeText.moveCursor(2);
-        }
+        // Don't move cursor since there's no prompt anymore
         updateOpencodeInputLayout();
         
         // Start the server if not already running
@@ -690,10 +687,7 @@ export default function register(ctx: PluginContext): void {
         // In compact mode, don't hide the dialog - it stays as the input bar
         // Just clear the input and keep it open
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
-        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
-        if (typeof opencodeText.moveCursor === 'function') {
-          opencodeText.moveCursor(2);
-        }
+        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
         screen.render();
       }
 
@@ -880,7 +874,7 @@ export default function register(ctx: PluginContext): void {
                 pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
               }
               pane.pushLine('');
-              pane.pushLine(`{gray-fg}> ${prompt}{/}`);
+              pane.pushLine(`{gray-fg}${prompt}{/}`);
               pane.pushLine('');
               // Ensure we scroll to the bottom after adding content
               if (pane.setScrollPerc) {
@@ -915,9 +909,11 @@ export default function register(ctx: PluginContext): void {
                   let errorData = '';
                   res.on('data', chunk => { errorData += chunk; });
                   res.on('end', () => {
-                    debugLog(`prompt_async error response length=${errorData.length}`);
-                    pane.pushLine(`{red-fg}Error: ${errorData}{/}`);
-                    reject(new Error('Failed to send prompt'));
+                    debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
+                    const errorMsg = errorData || `HTTP ${res.statusCode} error`;
+                    pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
+                    screen.render();
+                    reject(new Error(`Failed to send prompt: ${errorMsg}`));
                   });
                 }
               });
@@ -1205,8 +1201,8 @@ export default function register(ctx: PluginContext): void {
             return;
           }
           debugLog(`sse connection error: ${errMessage}`);
-          appendLine(`{red-fg}SSE connection error: ${err}{/}`);
-          updatePane();
+          pane.pushLine(`{red-fg}Connection error: ${errMessage}{/}`);
+          screen.render();
           reject(err);
         });
         
@@ -1368,7 +1364,7 @@ export default function register(ctx: PluginContext): void {
       opencodeSend.on('click', () => {
         const prompt = opencodeText.getValue ? opencodeText.getValue() : '';
         closeOpencodeDialog();
-        runOpencode(prompt.replace(/^>\s?/, ''));
+        runOpencode(prompt);
       });
 
       // Add Escape key handler to close the opencode dialog
@@ -1388,7 +1384,7 @@ export default function register(ctx: PluginContext): void {
         }
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
-        runOpencode(prompt.replace(/^>\s?/, ''));
+        runOpencode(prompt);
       });
 
       // Accept Enter to send, Ctrl+Enter for newline
@@ -1399,7 +1395,7 @@ export default function register(ctx: PluginContext): void {
         // Send the message
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
-        runOpencode(prompt.replace(/^>\s?/, ''));
+        runOpencode(prompt);
       });
 
       // Ctrl+Enter inserts newline
@@ -1414,7 +1410,17 @@ export default function register(ctx: PluginContext): void {
         if (this.moveCursor) {
           this.moveCursor(before.length + 1);
         }
+        // Update layout first, then ensure cursor is visible
         updateOpencodeInputLayout();
+        // Ensure the textarea scrolls to show the cursor
+        if (this.setScrollPerc && this.getScrollHeight) {
+          const scrollHeight = this.getScrollHeight();
+          const cursorLine = (before.match(/\n/g) || []).length + 1;
+          if (scrollHeight > 0) {
+            const scrollPerc = Math.min(100, (cursorLine / scrollHeight) * 100);
+            this.setScrollPerc(scrollPerc);
+          }
+        }
         screen.render();
       });
 
