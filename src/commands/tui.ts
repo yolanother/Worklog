@@ -560,14 +560,14 @@ export default function register(ctx: PluginContext): void {
 
       const opencodeCancel = blessed.box({
         parent: opencodeDialog,
-        bottom: 0,
+        top: 0,
         right: 1,
         height: 1,
-        width: 10,
-        content: '[ Cancel ]',
+        width: 3,
+        content: '[x]',
+        style: { fg: 'red' },
         mouse: true,
         clickable: true,
-        style: { fg: 'white', bg: 'red' },
       });
 
       // Active opencode pane/process tracking
@@ -613,14 +613,14 @@ export default function register(ctx: PluginContext): void {
           opencodeDialog.bottom = FOOTER_HEIGHT;
           opencodeDialog.width = '100%';
           opencodeDialog.height = MIN_INPUT_HEIGHT;
-          opencodeDialog.label = '';
+          opencodeDialog.label = ' Prompt ';
           opencodeDialog.border = { type: 'line' };
           suggestionHint.hide();
           opencodeSend.show();
           opencodeCancel.show();
           opencodeSend.bottom = 0;
-          opencodeSend.right = 12;
-          opencodeCancel.bottom = 0;
+          opencodeSend.right = 1;
+          opencodeCancel.top = 0;
           opencodeCancel.right = 1;
           opencodeText.width = '100%';
           opencodeText.height = Math.max(1, MIN_INPUT_HEIGHT - 1);
@@ -640,8 +640,8 @@ export default function register(ctx: PluginContext): void {
           opencodeSend.show();
           opencodeCancel.show();
           opencodeSend.bottom = 0;
-          opencodeSend.right = 12;
-          opencodeCancel.bottom = 0;
+          opencodeSend.right = 1;
+          opencodeCancel.top = 0;
           opencodeCancel.right = 1;
           opencodeText.top = opencodeTextDefaults.top;
           opencodeText.left = opencodeTextDefaults.left;
@@ -1374,11 +1374,21 @@ export default function register(ctx: PluginContext): void {
       });
 
       opencodeCancel.on('click', () => {
-        showToast('Cancelled');
-        closeOpencodeDialog();
+        // In compact mode, close the whole opencode session
+        if (opencodeDialogMode === 'compact') {
+          opencodeDialog.hide();
+          if (opencodePane) {
+            opencodePane.hide();
+          }
+          list.focus();
+          screen.render();
+        } else {
+          showToast('Cancelled');
+          closeOpencodeDialog();
+        }
       });
 
-      // Accept Ctrl+S to send; Enter inserts newline
+      // Accept Ctrl+S to send (keep for backward compatibility)
       opencodeText.key(['C-s'], function(this: any) {
         if (applyCommandSuggestion(this)) {
           return;
@@ -1388,24 +1398,31 @@ export default function register(ctx: PluginContext): void {
         runOpencode(prompt.replace(/^>\s?/, ''));
       });
 
-      // Custom Enter handling for command autocomplete
+      // Accept Enter to send, Ctrl+Enter for newline
       opencodeText.key(['enter'], function(this: any) {
         if (applyCommandSuggestion(this)) {
           return;
-        } else {
-          // Default behavior - insert newline
-          const value = this.getValue ? this.getValue() : '';
-          const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
-          const before = value.substring(0, pos);
-          const after = value.substring(pos);
-          this.setValue(before + '\n' + after);
-          // Move cursor to start of new line
-          if (this.moveCursor) {
-            this.moveCursor(before.length + 1);
-          }
-          updateOpencodeInputLayout();
-          screen.render();
         }
+        // Send the message
+        const prompt = this.getValue ? this.getValue() : '';
+        closeOpencodeDialog();
+        runOpencode(prompt.replace(/^>\s?/, ''));
+      });
+
+      // Ctrl+Enter inserts newline
+      opencodeText.key(['C-enter'], function(this: any) {
+        // Insert newline
+        const value = this.getValue ? this.getValue() : '';
+        const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
+        const before = value.substring(0, pos);
+        const after = value.substring(pos);
+        this.setValue(before + '\n' + after);
+        // Move cursor to start of new line
+        if (this.moveCursor) {
+          this.moveCursor(before.length + 1);
+        }
+        updateOpencodeInputLayout();
+        screen.render();
       });
 
       opencodeDialog.key(['escape'], () => {
