@@ -11,6 +11,7 @@ import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn, ChildProcess } from 'child_process';
 import * as net from 'net';
+import * as http from 'http';
 
 type Item = any;
 
@@ -714,11 +715,166 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      function runOpencode(prompt: string) {
+      // Store current session ID for server communication
+      let currentSessionId: string | null = null;
+      
+      // Function to communicate with OpenCode server via HTTP API
+      async function sendPromptToServer(
+        prompt: string, 
+        pane: any, 
+        indicator: any, 
+        inputField: any
+      ): Promise<void> {
+        const serverUrl = `http://localhost:${opencodeServerPort}`;
+        
+        return new Promise((resolve, reject) => {
+          // First, create or reuse a session
+          const sessionPromise = currentSessionId 
+            ? Promise.resolve(currentSessionId)
+            : createSession(serverUrl);
+            
+          sessionPromise
+            .then(sessionId => {
+              currentSessionId = sessionId;
+              pane.pushLine(`{cyan-fg}Session: ${sessionId}{/}`);
+              pane.pushLine('');
+              screen.render();
+              
+              // Send the message to the session
+              const messageData = JSON.stringify({
+                parts: [{ type: 'text', text: prompt }]
+              });
+              
+              const options = {
+                hostname: 'localhost',
+                port: opencodeServerPort,
+                path: `/session/${sessionId}/message`,
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(messageData)
+                }
+              };
+              
+              const req = http.request(options, (res) => {
+                let responseData = '';
+                
+                res.on('data', (chunk) => {
+                  responseData += chunk;
+                });
+                
+                res.on('end', () => {
+                  try {
+                    const response = JSON.parse(responseData);
+                    
+                    // Process the response parts
+                    if (response.parts) {
+                      for (const part of response.parts) {
+                        if (part.type === 'text' && part.text) {
+                          // Display text content
+                          const lines = part.text.split('\n');
+                          for (const line of lines) {
+                            pane.pushLine(line);
+                          }
+                        } else if (part.type === 'tool-use' && part.tool) {
+                          // Display tool usage
+                          pane.pushLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
+                          if (part.tool.description) {
+                            pane.pushLine(`  ${part.tool.description}`);
+                          }
+                        } else if (part.type === 'tool-result') {
+                          // Display tool results
+                          pane.pushLine('{green-fg}[Tool Result]{/}');
+                          if (part.content) {
+                            const resultLines = part.content.split('\n');
+                            for (const line of resultLines) {
+                              pane.pushLine(`  ${line}`);
+                            }
+                          }
+                        }
+                      }
+                    }
+                    
+                    // Check if the response indicates input is needed
+                    // This would need to be implemented based on server API
+                    // For now, we'll rely on CLI fallback for input handling
+                    
+                    pane.pushLine('');
+                    pane.pushLine('{green-fg}✓ Response completed{/}');
+                    screen.render();
+                    resolve();
+                  } catch (err) {
+                    pane.pushLine(`{red-fg}Error parsing response: ${err}{/}`);
+                    screen.render();
+                    reject(err);
+                  }
+                });
+              });
+              
+              req.on('error', (err) => {
+                pane.pushLine(`{red-fg}Request error: ${err}{/}`);
+                screen.render();
+                reject(err);
+              });
+              
+              req.write(messageData);
+              req.end();
+            })
+            .catch(err => {
+              pane.pushLine(`{red-fg}Session error: ${err}{/}`);
+              screen.render();
+              reject(err);
+            });
+        });
+      }
+      
+      // Helper function to create a new session
+      function createSession(serverUrl: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+          const sessionData = JSON.stringify({
+            title: 'TUI Session ' + new Date().toISOString()
+          });
+          
+          const options = {
+            hostname: 'localhost',
+            port: opencodeServerPort,
+            path: '/session',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(sessionData)
+            }
+          };
+          
+          const req = http.request(options, (res) => {
+            let responseData = '';
+            
+            res.on('data', (chunk) => {
+              responseData += chunk;
+            });
+            
+            res.on('end', () => {
+              try {
+                const session = JSON.parse(responseData);
+                resolve(session.id);
+              } catch (err) {
+                reject(new Error('Failed to parse session response: ' + err));
+              }
+            });
+          });
+          
+          req.on('error', reject);
+          req.write(sessionData);
+          req.end();
+        });
+      }
+      
+      async function runOpencode(prompt: string) {
         if (!prompt || prompt.trim() === '') {
           showToast('Empty prompt');
           return;
         }
+        
         // create pane across bottom
         opencodePane = blessed.box({
           parent: screen,
@@ -752,40 +908,178 @@ export default function register(ctx: PluginContext): void {
         paneClose.on('click', () => {
           closeOpencodePane();
         });
+        
+        // Add input indicator
+        const inputIndicator = blessed.box({
+          parent: opencodePane,
+          bottom: 1,
+          left: 1,
+          height: 1,
+          width: 20,
+          content: '',
+          tags: true,
+          hidden: true,
+          style: { fg: 'yellow' }
+        });
+        
+        // Add input field for user responses
+        const inputField = blessed.textbox({
+          parent: opencodePane,
+          bottom: 0,
+          left: 0,
+          width: '100%-2',
+          height: 3,
+          border: { type: 'line' },
+          label: ' Input Required ',
+          hidden: true,
+          inputOnFocus: true,
+          keys: true,
+          vi: false,
+          mouse: true,
+          style: { 
+            border: { fg: 'yellow' },
+            focus: { border: { fg: 'green' } }
+          }
+        });
 
         opencodePane.focus();
         screen.render();
-
+        
+        // Use server API if available, otherwise fall back to CLI
+        if (opencodeServerStatus === 'running' && opencodeServerPort > 0) {
+          // Use HTTP API to communicate with server
+          try {
+            await sendPromptToServer(prompt, opencodePane, inputIndicator, inputField);
+            return;
+          } catch (err) {
+            opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
+            opencodePane.pushLine('{yellow-fg}Falling back to CLI mode...{/yellow-fg}');
+            screen.render();
+          }
+        }
+        
+        // Fall back to CLI mode
         const cmd = `opencode run ${shellEscape(prompt)}`;
+        
         try {
-          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
+          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
         } catch (err) {
           opencodePane.setContent(`Failed to spawn: ${String(err)}`);
           screen.render();
           return;
         }
-
+        
         let buf = '';
-        const append = (chunk: Buffer | string) => {
-          // filter out noisy initial log lines that start with INFO/TIMESTAMP if present
+        let waitingForInput = false;
+        let inputBuffer = '';
+        
+        const processOutput = (chunk: Buffer | string) => {
           const s = String(chunk);
+          
+          // Check for various input request patterns
+          const inputPatterns = [
+            '[INPUT_REQUEST]',
+            '[INPUT_REQUIRED]',
+            'Enter your response:',
+            'Please provide input:',
+            'Your answer:',
+            'Type your response:',
+            '(y/n)',
+            '(yes/no)',
+            '[Y/n]',
+            'Press Enter to continue',
+            'waiting for input',
+            'awaiting response'
+          ];
+          
+          const hasInputRequest = inputPatterns.some(pattern => 
+            s.toLowerCase().includes(pattern.toLowerCase())
+          );
+          
+          if (hasInputRequest && !waitingForInput) {
+            waitingForInput = true;
+            
+            // Extract the question/prompt if possible
+            const lines = s.split(/\r?\n/).filter(Boolean);
+            const lastLine = lines[lines.length - 1] || '';
+            
+            inputIndicator.setContent('{yellow-fg}[!] Input Required{/}');
+            inputIndicator.show();
+            
+            // Set label based on the type of input requested
+            if (s.toLowerCase().includes('(y/n)') || s.toLowerCase().includes('[y/n]')) {
+              inputField.setLabel(' Yes/No Input ');
+            } else if (s.toLowerCase().includes('password')) {
+              inputField.setLabel(' Password Input ');
+            } else {
+              inputField.setLabel(' Input Required ');
+            }
+            
+            inputField.show();
+            inputField.focus();
+            screen.render();
+            
+            // Still show the output that contains the prompt
+            buf += s;
+            opencodePane.setContent(buf);
+            try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
+            screen.render();
+            return;
+          }
+          
+          // Filter out noisy log lines
           const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
-            // drop lines that look like "INFO 2026-... services=..." which are noise
             if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
             return l;
           }).filter(Boolean);
+          
           if (lines.length === 0) return;
           buf += lines.join('\n') + '\n';
           opencodePane.setContent(buf);
-          // auto-scroll to bottom
+          
+          // Auto-scroll to bottom
           try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
           screen.render();
         };
+        
+        // Handle input submission
+        inputField.on('submit', (value: string) => {
+          if (waitingForInput && opencodeProc && opencodeProc.stdin) {
+            inputBuffer = value || '';
+            opencodeProc.stdin.write(inputBuffer + '\n');
+            
+            // Add user input to display
+            buf += `{cyan-fg}> ${inputBuffer}{/}\n`;
+            opencodePane.setContent(buf);
+            
+            // Hide input UI
+            waitingForInput = false;
+            inputIndicator.hide();
+            inputField.hide();
+            inputField.clearValue();
+            opencodePane.focus();
+            screen.render();
+          }
+        });
+        
+        // Handle escape key in input field
+        inputField.key(['escape'], () => {
+          if (waitingForInput) {
+            waitingForInput = false;
+            inputIndicator.hide();
+            inputField.hide();
+            inputField.clearValue();
+            opencodePane.focus();
+            screen.render();
+          }
+        });
 
-        opencodeProc.stdout.on('data', (d: Buffer) => append(d));
-        opencodeProc.stderr.on('data', (d: Buffer) => append(d));
+        opencodeProc.stdout.on('data', (d: Buffer) => processOutput(d));
+        opencodeProc.stderr.on('data', (d: Buffer) => processOutput(d));
         opencodeProc.on('close', (_code: number) => {
-          // intentionally do not display the exit code
+          // Clean up input UI on close
+          inputIndicator.hide();
+          inputField.hide();
           opencodeProc = null;
         });
       }
