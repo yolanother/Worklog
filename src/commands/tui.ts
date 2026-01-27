@@ -440,6 +440,8 @@ export default function register(ctx: PluginContext): void {
       // Active opencode pane/process tracking
       let opencodePane: any = null;
       let opencodeProc: any = null;
+      // optional resize handler attached while opencode PTY is running
+      let opencodeResizeHandler: (() => void) | null = null;
 
       function shellEscape(s: string) {
         return `'${s.replace(/'/g, "'\"'\"'")}'`;
@@ -473,6 +475,9 @@ export default function register(ctx: PluginContext): void {
         } catch (err) {
           // ignore
         }
+        try {
+          if (opencodeResizeHandler) { screen.removeListener('resize', opencodeResizeHandler); opencodeResizeHandler = null; }
+        } catch (_) {}
         if (opencodePane) {
           opencodePane.hide();
           opencodePane = null;
@@ -542,6 +547,17 @@ export default function register(ctx: PluginContext): void {
         }
 
         opencodeProc = ptyProc; // keep reference for kill
+        // install resize handler so PTY geometry stays in sync with the UI
+        opencodeResizeHandler = () => {
+          try {
+            const cols = Math.max(80, (screen.width as number) || 80);
+            const rows = Math.max(10, Math.floor(((screen.height as number) || 24) * 0.35));
+            try { ptyProc.resize(cols, rows); } catch (_) {}
+          } catch (_) {}
+        };
+        screen.on('resize', opencodeResizeHandler);
+        // ensure initial size is correct
+        try { opencodeResizeHandler(); } catch (_) {}
         let buf = '';
         let sawOutput = false;
         const debugRaw = Boolean(process.env.WL_DEBUG_OPEN);
@@ -576,7 +592,13 @@ export default function register(ctx: PluginContext): void {
           try { append(d); } catch (_) {}
           try { clearTimeout(noOutputTimer); } catch (_) {}
         });
-        ptyProc.onExit(() => { opencodeProc = null; try { clearTimeout(noOutputTimer); } catch (_) {} });
+        ptyProc.onExit(() => {
+          opencodeProc = null;
+          try { clearTimeout(noOutputTimer); } catch (_) {}
+          try {
+            if (opencodeResizeHandler) { screen.removeListener('resize', opencodeResizeHandler); opencodeResizeHandler = null; }
+          } catch (_) {}
+        });
       }
 
       // Forward keypresses to interactive opencode process when the opencode pane is focused.
