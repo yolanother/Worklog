@@ -378,12 +378,13 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
+      // Larger dialog and textbox for multi-line prompts
       const opencodeDialog = blessed.box({
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '60%',
-        height: 8,
+        width: '80%',
+        height: '60%',
         label: ' Run opencode ',
         border: { type: 'line' },
         hidden: true,
@@ -393,14 +394,16 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'yellow' } },
       });
 
-      const opencodeText = blessed.textbox({
+      // Use a textarea so multi-line input works and Enter inserts newlines
+      const opencodeText = blessed.textarea({
         parent: opencodeDialog,
         top: 1,
         left: 2,
         width: '100%-4',
-        height: 3,
-        input: true,
+        height: '100%-6',
+        inputOnFocus: true,
         keys: true,
+        vi: false,
         mouse: true,
         clickable: true,
         border: { type: 'line' },
@@ -444,7 +447,9 @@ export default function register(ctx: PluginContext): void {
         opencodeDialog.show();
         opencodeOverlay.setFront();
         opencodeDialog.setFront();
-        opencodeText.clearValue?.();
+        // Clear previous contents and focus textbox so typed characters appear
+        try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
+        try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
         opencodeText.focus();
         screen.render();
       }
@@ -553,8 +558,8 @@ export default function register(ctx: PluginContext): void {
         closeOpencodeDialog();
       });
 
-      opencodeText.key(['enter'], function(this: any) {
-        // `this` is the textbox
+      // Accept Ctrl+S to send; Enter inserts newline
+      opencodeText.key(['C-s'], function(this: any) {
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
         runOpencode(prompt);
