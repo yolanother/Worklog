@@ -11,6 +11,7 @@ import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn } from 'child_process';
 import pty from 'node-pty';
+import contrib from 'blessed-contrib';
 
 type Item = any;
 
@@ -490,41 +491,35 @@ export default function register(ctx: PluginContext): void {
           showToast('Empty prompt');
           return;
         }
-        // create pane across bottom
-        opencodePane = blessed.box({
+        // create a terminal widget across bottom using blessed-contrib
+        opencodePane = contrib.terminal({
           parent: screen,
           bottom: 0,
           left: 0,
           width: '100%',
           height: '35%',
-          label: ` opencode `,
+          label: ' opencode ',
           border: { type: 'line' },
-          tags: true,
           scrollable: true,
-          alwaysScroll: true,
           keys: true,
-          vi: true,
           mouse: true,
           clickable: true,
-          style: { border: { fg: 'magenta' } },
-          content: '',
         });
 
+        // add a small clickable close box on top-right of the terminal box
         const paneClose = blessed.box({
-          parent: opencodePane,
-          top: 0,
-          right: 1,
+          parent: screen,
+          top: screen.height ? screen.height - Math.max(1, Math.floor((screen.height || 24) * 0.35)) - 1 : '100%-36',
+          right: 2,
           height: 1,
           width: 3,
           content: '[x]',
           style: { fg: 'red' },
           mouse: true,
         });
-        paneClose.on('click', () => {
-          closeOpencodePane();
-        });
+        paneClose.on('click', () => closeOpencodePane());
 
-        opencodePane.focus();
+        try { opencodePane.focus(); } catch (_) {}
         screen.render();
 
         // Use a pty for full terminal semantics
@@ -563,21 +558,14 @@ export default function register(ctx: PluginContext): void {
         const debugRaw = Boolean(process.env.WL_DEBUG_OPEN);
         const append = (s: string) => {
           sawOutput = true;
-          if (debugRaw) {
-            buf += s;
-          } else {
-            // For debugging: append raw output (including ANSI sequences) to the pane
-            // and also log the raw bytes to a file so we can inspect them later.
-            try {
-              const rawLogPath = path.join(worklogDir, 'opencode-raw.log');
-              const header = `${new Date().toISOString()} PID=${ptyProc.pid} CHUNK_START\n`;
-              fs.appendFileSync(rawLogPath, header + s + '\n', 'utf8');
-            } catch (_) {}
-            buf += s;
-          }
-          opencodePane.setContent(buf);
-          try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
-          screen.render();
+          // log raw bytes for offline debugging
+          try {
+            const rawLogPath = path.join(worklogDir, 'opencode-raw.log');
+            const header = `${new Date().toISOString()} PID=${ptyProc.pid} CHUNK_START\n`;
+            fs.appendFileSync(rawLogPath, header + s + '\n', 'utf8');
+          } catch (_) {}
+          // write into the contrib terminal which understands ANSI sequences
+          try { (opencodePane as any).write(s); } catch (_) {}
         };
 
         // show a short toast that process started (helpful for debugging)
