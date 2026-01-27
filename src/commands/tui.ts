@@ -416,7 +416,8 @@ export default function register(ctx: PluginContext): void {
         right: 12,
         height: 1,
         width: 10,
-        content: '[ Send ]',
+        tags: true,
+        content: '[ {underline}S{/underline}end ]',
         mouse: true,
         clickable: true,
         style: { fg: 'white', bg: 'green' },
@@ -530,7 +531,15 @@ export default function register(ctx: PluginContext): void {
 
         let buf = '';
         const append = (chunk: Buffer | string) => {
-          buf += String(chunk);
+          // filter out noisy initial log lines that start with INFO/TIMESTAMP if present
+          const s = String(chunk);
+          const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
+            // drop lines that look like "INFO 2026-... services=..." which are noise
+            if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
+            return l;
+          }).filter(Boolean);
+          if (lines.length === 0) return;
+          buf += lines.join('\n') + '\n';
           opencodePane.setContent(buf);
           // auto-scroll to bottom
           try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
@@ -539,8 +548,8 @@ export default function register(ctx: PluginContext): void {
 
         opencodeProc.stdout.on('data', (d: Buffer) => append(d));
         opencodeProc.stderr.on('data', (d: Buffer) => append(d));
-        opencodeProc.on('close', (code: number) => {
-          append(`\nProcess exited with code ${code}\n`);
+        opencodeProc.on('close', (_code: number) => {
+          // intentionally do not display the exit code
           opencodeProc = null;
         });
       }
