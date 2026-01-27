@@ -9,7 +9,8 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
-import { spawnSync, spawn } from 'child_process';
+import { spawnSync, spawn, ChildProcess } from 'child_process';
+import * as net from 'net';
 
 type Item = any;
 
@@ -393,6 +394,18 @@ export default function register(ctx: PluginContext): void {
         clickable: true,
         style: { border: { fg: 'yellow' } },
       });
+      
+      // Server status indicator
+      const serverStatusBox = blessed.box({
+        parent: opencodeDialog,
+        top: 0,
+        right: 2,
+        width: 20,
+        height: 1,
+        content: '',
+        tags: true,
+        style: { fg: 'white' }
+      });
 
       // Use a textarea so multi-line input works and Enter inserts newlines
       const opencodeText = blessed.textarea({
@@ -534,7 +547,7 @@ export default function register(ctx: PluginContext): void {
         return `'${s.replace(/'/g, "'\"'\"'")}'`;
       }
 
-      function openOpencodeDialog() {
+      async function openOpencodeDialog() {
         opencodeOverlay.show();
         opencodeDialog.show();
         opencodeOverlay.setFront();
@@ -548,6 +561,10 @@ export default function register(ctx: PluginContext): void {
         userTypedText = '';
         suggestionHint.setContent('');
         opencodeText.focus();
+        
+        // Start the server if not already running
+        await startOpencodeServer();
+        
         screen.render();
       }
 
@@ -571,6 +588,129 @@ export default function register(ctx: PluginContext): void {
           opencodePane.hide();
           opencodePane = null;
           screen.render();
+        }
+      }
+
+      // OpenCode server management
+      let opencodeServerProc: ChildProcess | null = null;
+      let opencodeServerPort = 0;
+      let opencodeServerStatus: 'stopped' | 'starting' | 'running' | 'error' = 'stopped';
+      const OPENCODE_SERVER_PORT = parseInt(process.env.OPENCODE_SERVER_PORT || '9999', 10);
+      
+      function updateServerStatus() {
+        let statusText = '';
+        let statusColor = 'white';
+        
+        switch (opencodeServerStatus) {
+          case 'stopped':
+            statusText = '⚫ Server stopped';
+            statusColor = 'gray';
+            break;
+          case 'starting':
+            statusText = '🟡 Starting server...';
+            statusColor = 'yellow';
+            break;
+          case 'running':
+            statusText = `🟢 Server: ${opencodeServerPort}`;
+            statusColor = 'green';
+            break;
+          case 'error':
+            statusText = '🔴 Server error';
+            statusColor = 'red';
+            break;
+        }
+        
+        serverStatusBox.setContent(`{${statusColor}-fg}${statusText}{/}`);
+        screen.render();
+      }
+      
+      async function checkOpencodeServer(port: number): Promise<boolean> {
+        return new Promise((resolve) => {
+          const client = new net.Socket();
+          const timeout = setTimeout(() => {
+            client.destroy();
+            resolve(false);
+          }, 1000);
+          
+          client.on('connect', () => {
+            clearTimeout(timeout);
+            client.end();
+            resolve(true);
+          });
+          
+          client.on('error', () => {
+            clearTimeout(timeout);
+            resolve(false);
+          });
+          
+          client.connect(port, '127.0.0.1');
+        });
+      }
+      
+      async function startOpencodeServer(): Promise<boolean> {
+        // Check if server is already running on the configured port
+        const isRunning = await checkOpencodeServer(OPENCODE_SERVER_PORT);
+        if (isRunning) {
+          opencodeServerStatus = 'running';
+          opencodeServerPort = OPENCODE_SERVER_PORT;
+          updateServerStatus();
+          return true;
+        }
+        
+        opencodeServerStatus = 'starting';
+        updateServerStatus();
+        showToast('Starting OpenCode server...');
+        
+        try {
+          opencodeServerProc = spawn('opencode', ['serve', '--port', String(OPENCODE_SERVER_PORT)], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            detached: false
+          });
+          
+          opencodeServerPort = OPENCODE_SERVER_PORT;
+          
+          // Give the server time to start
+          let retries = 10;
+          while (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const isUp = await checkOpencodeServer(OPENCODE_SERVER_PORT);
+            if (isUp) {
+              opencodeServerStatus = 'running';
+              updateServerStatus();
+              showToast('OpenCode server started');
+              return true;
+            }
+            retries--;
+          }
+          
+          // Server didn't start in time
+          opencodeServerStatus = 'error';
+          updateServerStatus();
+          showToast('OpenCode server failed to start');
+          if (opencodeServerProc) {
+            opencodeServerProc.kill();
+            opencodeServerProc = null;
+          }
+          return false;
+          
+        } catch (err) {
+          opencodeServerStatus = 'error';
+          updateServerStatus();
+          showToast(`Failed to start OpenCode server: ${String(err)}`);
+          return false;
+        }
+      }
+      
+      function stopOpencodeServer() {
+        if (opencodeServerProc) {
+          try {
+            opencodeServerProc.kill();
+            opencodeServerProc = null;
+            opencodeServerStatus = 'stopped';
+            updateServerStatus();
+          } catch (err) {
+            // ignore
+          }
         }
       }
 
@@ -1252,6 +1392,8 @@ export default function register(ctx: PluginContext): void {
       screen.key(['q', 'C-c'], () => {
         // Persist state before exiting
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
+        // Stop the OpenCode server if we started it
+        stopOpencodeServer();
         screen.destroy();
         process.exit(0);
       });
@@ -1284,6 +1426,8 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
+        // Stop the OpenCode server if we started it
+        stopOpencodeServer();
         screen.destroy();
         process.exit(0);
       });
@@ -1315,9 +1459,9 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Open opencode prompt dialog (shortcut O)
-      screen.key(['o', 'O'], () => {
+      screen.key(['o', 'O'], async () => {
         if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
-          openOpencodeDialog();
+          await openOpencodeDialog();
         }
       });
 
