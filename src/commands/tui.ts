@@ -594,24 +594,24 @@ export default function register(ctx: PluginContext): void {
         }
         if (!inside) return;
 
-        try {
-          if (key && key.ctrl && key.name === 'd') {
-            // Ctrl-D -> EOF
-            try { opencodeProc.stdin.end(); } catch (_) {}
-            return;
-          }
-          if (key && key.name === 'backspace') {
-            opencodeProc.stdin.write('\x7f');
-            return;
-          }
-          if (key && key.full === 'enter') {
-            opencodeProc.stdin.write('\n');
-            return;
-          }
-          if (typeof ch === 'string' && ch.length > 0) {
-            opencodeProc.stdin.write(ch);
-            return;
-          }
+          try {
+            if (key && key.ctrl && key.name === 'd') {
+              // Ctrl-D -> EOF for a pty: write EOT (0x04)
+              try { opencodeProc.write('\x04'); } catch (_) {}
+              return;
+            }
+            if (key && key.name === 'backspace') {
+              try { opencodeProc.write('\x7f'); } catch (_) {}
+              return;
+            }
+            if (key && key.full === 'enter') {
+              try { opencodeProc.write('\n'); } catch (_) {}
+              return;
+            }
+            if (typeof ch === 'string' && ch.length > 0) {
+              try { opencodeProc.write(ch); } catch (_) {}
+              return;
+            }
           // handle other control sequences if present
         } catch (err) {
           // ignore write errors
@@ -1276,19 +1276,6 @@ export default function register(ctx: PluginContext): void {
       screen.key(['o', 'O'], () => {
         if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
           openOpencodeDialog();
-          // If a --prompt option was provided, immediately submit it
-          try {
-            if (options.prompt && typeof options.prompt === 'string' && options.prompt.trim() !== '') {
-              const p = options.prompt as string;
-              // pre-fill the textarea for visibility
-              try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(p); } catch (_) {}
-              // submit after a short delay to allow the dialog to render
-              setTimeout(() => {
-                closeOpencodeDialog();
-                runOpencode(p);
-              }, 80);
-            }
-          } catch (_) {}
         }
       });
 
