@@ -479,16 +479,33 @@ export default function register(ctx: PluginContext): void {
         content: ''
       });
 
+      function applyCommandSuggestion(target: any) {
+        if (isCommandMode && currentSuggestion) {
+          const prefix = target.getValue && target.getValue().startsWith('> ') ? '> ' : '';
+          target.setValue(prefix + currentSuggestion + ' ');
+          if (target.moveCursor) {
+            target.moveCursor(prefix.length + currentSuggestion.length + 1);
+          }
+          currentSuggestion = '';
+          isCommandMode = false;
+          suggestionHint.setContent('');
+          screen.render();
+          return true;
+        }
+        return false;
+      }
+
       function updateAutocomplete() {
         const value = opencodeText.getValue ? opencodeText.getValue() : '';
         userTypedText = value;
         const lines = value.split('\n');
         const firstLine = lines[0];
+        const commandLine = firstLine.replace(/^>\s?/, '');
         
         // Check if we're in command mode (first line starts with '/')
-        if (firstLine.startsWith('/') && lines.length === 1) {
+        if (commandLine.startsWith('/') && lines.length === 1) {
           isCommandMode = true;
-          const input = firstLine.toLowerCase();
+          const input = commandLine.toLowerCase();
           
           // Find the best matching command
           const matches = AVAILABLE_COMMANDS.filter(cmd => 
@@ -546,8 +563,9 @@ export default function register(ctx: PluginContext): void {
 
       // Active opencode pane/process tracking
       let opencodePane: any = null;
+      let opencodePaneClose: any = null;
 
-      async function openOpencodeDialog() {
+      async function openOpencodeDialog(withPromptMarker: boolean = false) {
         opencodeOverlay.show();
         opencodeDialog.show();
         opencodeOverlay.setFront();
@@ -555,12 +573,18 @@ export default function register(ctx: PluginContext): void {
         // Clear previous contents and focus textbox so typed characters appear
         try { if (typeof opencodeText.clearValue === 'function') opencodeText.clearValue(); } catch (_) {}
         try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(''); } catch (_) {}
+        if (withPromptMarker) {
+          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue('> '); } catch (_) {}
+        }
         // Reset autocomplete state
         currentSuggestion = '';
         isCommandMode = false;
         userTypedText = '';
         suggestionHint.setContent('');
         opencodeText.focus();
+        if (typeof opencodeText.moveCursor === 'function' && withPromptMarker) {
+          opencodeText.moveCursor(2);
+        }
         
         // Start the server if not already running
         await startOpencodeServer();
@@ -578,7 +602,6 @@ export default function register(ctx: PluginContext): void {
       function closeOpencodePane() {
         if (opencodePane) {
           opencodePane.hide();
-          opencodePane = null;
           screen.render();
         }
       }
@@ -737,7 +760,8 @@ export default function register(ctx: PluginContext): void {
         prompt: string, 
         pane: any, 
         indicator: any, 
-        inputField: any
+        inputField: any,
+        onComplete?: () => void
       ): Promise<void> {
         const serverUrl = `http://localhost:${opencodeServerPort}`;
         debugLog(`send prompt length=${prompt.length}`);
@@ -779,7 +803,7 @@ export default function register(ctx: PluginContext): void {
                 debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
                 if (res.statusCode === 204) {
                   // Success - now connect to SSE for streaming response
-                  connectToSSE(sessionId, prompt, pane, indicator, inputField, resolve, reject);
+                  connectToSSE(sessionId, prompt, pane, indicator, inputField, resolve, reject, onComplete);
                 } else {
                   let errorData = '';
                   res.on('data', chunk => { errorData += chunk; });
@@ -817,7 +841,8 @@ export default function register(ctx: PluginContext): void {
         indicator: any,
         inputField: any,
         resolve: Function,
-        reject: Function
+        reject: Function,
+        onComplete?: () => void
       ) {
         const getSessionId = (value: any) => {
           return value?.sessionID || value?.sessionId || value?.session_id;
@@ -969,6 +994,9 @@ export default function register(ctx: PluginContext): void {
                       // Close SSE connection
                       sseClosed = true;
                       req.abort();
+                      if (onComplete) {
+                        onComplete();
+                      }
                       resolve();
                     }
                   } else if (data.type === 'session.status' && data.properties) {
@@ -978,6 +1006,9 @@ export default function register(ctx: PluginContext): void {
                       debugLog('sse session idle');
                       sseClosed = true;
                       req.abort();
+                      if (onComplete) {
+                        onComplete();
+                      }
                       resolve();
                     }
                   } else if (data.type === 'input.request' && data.properties) {
@@ -1150,19 +1181,12 @@ export default function register(ctx: PluginContext): void {
         });
       }
       
-      async function runOpencode(prompt: string) {
-        if (!prompt || prompt.trim() === '') {
-          showToast('Empty prompt');
+      function ensureOpencodePane() {
+        if (opencodePane) {
+          opencodePane.show();
           return;
         }
-        
-        // Check server is running
-        if (opencodeServerStatus !== 'running' || opencodeServerPort === 0) {
-          showToast('OpenCode server not running');
-          return;
-        }
-        
-        // create pane across bottom
+
         opencodePane = blessed.box({
           parent: screen,
           bottom: 0,
@@ -1179,10 +1203,9 @@ export default function register(ctx: PluginContext): void {
           mouse: true,
           clickable: true,
           style: { border: { fg: 'magenta' } },
-          content: '',
         });
 
-        const paneClose = blessed.box({
+        opencodePaneClose = blessed.box({
           parent: opencodePane,
           top: 0,
           right: 1,
@@ -1192,49 +1215,30 @@ export default function register(ctx: PluginContext): void {
           style: { fg: 'red' },
           mouse: true,
         });
-        paneClose.on('click', () => {
+        opencodePaneClose.on('click', () => {
           closeOpencodePane();
         });
-        
-        // Add input indicator
-        const inputIndicator = blessed.box({
-          parent: opencodePane,
-          bottom: 1,
-          left: 1,
-          height: 1,
-          width: 20,
-          content: '',
-          tags: true,
-          hidden: true,
-          style: { fg: 'yellow' }
-        });
-        
-        // Add input field for user responses
-        const inputField = blessed.textbox({
-          parent: opencodePane,
-          bottom: 0,
-          left: 0,
-          width: '100%-2',
-          height: 3,
-          border: { type: 'line' },
-          label: ' Input Required ',
-          hidden: true,
-          inputOnFocus: true,
-          keys: true,
-          vi: false,
-          mouse: true,
-          style: { 
-            border: { fg: 'yellow' },
-            focus: { border: { fg: 'green' } }
-          }
-        });
-
         opencodePane.focus();
+      }
+
+      async function runOpencode(prompt: string) {
+        if (!prompt || prompt.trim() === '') {
+          showToast('Empty prompt');
+          return;
+        }
+
+        // Check server is running
+        if (opencodeServerStatus !== 'running' || opencodeServerPort === 0) {
+          showToast('OpenCode server not running');
+          return;
+        }
+
+        ensureOpencodePane();
         screen.render();
-        
+
         // Use HTTP API to communicate with server
         try {
-          await sendPromptToServer(prompt, opencodePane, inputIndicator, inputField);
+          await sendPromptToServer(prompt, opencodePane, null, null, () => openOpencodeDialog(true));
         } catch (err) {
           opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
           screen.render();
@@ -1245,7 +1249,7 @@ export default function register(ctx: PluginContext): void {
       opencodeSend.on('click', () => {
         const prompt = opencodeText.getValue ? opencodeText.getValue() : '';
         closeOpencodeDialog();
-        runOpencode(prompt);
+        runOpencode(prompt.replace(/^>\s?/, ''));
       });
 
       opencodeCancel.on('click', () => {
@@ -1257,23 +1261,13 @@ export default function register(ctx: PluginContext): void {
       opencodeText.key(['C-s'], function(this: any) {
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
-        runOpencode(prompt);
+        runOpencode(prompt.replace(/^>\s?/, ''));
       });
 
       // Custom Enter handling for command autocomplete
       opencodeText.key(['enter'], function(this: any) {
-        if (isCommandMode && currentSuggestion) {
-          // Accept the suggestion and add a space
-          this.setValue(currentSuggestion + ' ');
-          // Move cursor to end
-          if (this.moveCursor) {
-            this.moveCursor(currentSuggestion.length + 1);
-          }
-          // Clear suggestion
-          currentSuggestion = '';
-          isCommandMode = false;
-          suggestionHint.setContent('');
-          screen.render();
+        if (applyCommandSuggestion(this)) {
+          return;
         } else {
           // Default behavior - insert newline
           const value = this.getValue ? this.getValue() : '';
