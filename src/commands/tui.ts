@@ -23,7 +23,8 @@ export default function register(ctx: PluginContext): void {
     .option('--in-progress', 'Show only in-progress items')
     .option('--all', 'Include completed/deleted items in the list')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options: { inProgress?: boolean; prefix?: string; all?: boolean }) => {
+    .option('--prompt <prompt>', 'If provided open opencode and immediately submit this prompt')
+    .action((options: { inProgress?: boolean; prefix?: string; all?: boolean; prompt?: string }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
 
@@ -549,12 +550,14 @@ export default function register(ctx: PluginContext): void {
           if (debugRaw) {
             buf += s;
           } else {
-            const lines = s.split(/\r?\n/).filter(Boolean).map(l => {
-              if (/^INFO\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(l)) return null;
-              return l;
-            }).filter(Boolean);
-            if (lines.length === 0) return;
-            buf += lines.join('\n') + '\n';
+            // For debugging: append raw output (including ANSI sequences) to the pane
+            // and also log the raw bytes to a file so we can inspect them later.
+            try {
+              const rawLogPath = path.join(worklogDir, 'opencode-raw.log');
+              const header = `${new Date().toISOString()} PID=${ptyProc.pid} CHUNK_START\n`;
+              fs.appendFileSync(rawLogPath, header + s + '\n', 'utf8');
+            } catch (_) {}
+            buf += s;
           }
           opencodePane.setContent(buf);
           try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
@@ -754,9 +757,11 @@ export default function register(ctx: PluginContext): void {
         detail.setScroll(0);
       }
 
-      function stripAnsi(value: string): string {
-        return value.replace(/\u001b\[[0-9;]*m/g, '');
-      }
+        // Note: ANSI stripping was removed per request. Keep the function stub
+        // in case we want to re-enable filtering later.
+        function stripAnsi(_value: string): string {
+          return _value;
+        }
 
       function stripTags(value: string): string {
         return value.replace(/{[^}]+}/g, '');
@@ -1052,6 +1057,19 @@ export default function register(ctx: PluginContext): void {
       // Initial render
       renderListAndDetail(0);
 
+      // If --prompt was provided at startup open and immediately submit it
+      if (options.prompt && typeof options.prompt === 'string' && options.prompt.trim() !== '') {
+        try {
+          openOpencodeDialog();
+          try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(options.prompt); } catch (_) {}
+          // small delay to ensure UI is in a stable state before spawning
+          setTimeout(() => {
+            closeOpencodeDialog();
+            runOpencode(options.prompt as string);
+          }, 100);
+        } catch (_) {}
+      }
+
       // Event handlers
       list.on('select', (_el: any, idx: number) => {
         const visible = buildVisible();
@@ -1258,6 +1276,19 @@ export default function register(ctx: PluginContext): void {
       screen.key(['o', 'O'], () => {
         if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
           openOpencodeDialog();
+          // If a --prompt option was provided, immediately submit it
+          try {
+            if (options.prompt && typeof options.prompt === 'string' && options.prompt.trim() !== '') {
+              const p = options.prompt as string;
+              // pre-fill the textarea for visibility
+              try { if (typeof opencodeText.setValue === 'function') opencodeText.setValue(p); } catch (_) {}
+              // submit after a short delay to allow the dialog to render
+              setTimeout(() => {
+                closeOpencodeDialog();
+                runOpencode(p);
+              }, 80);
+            }
+          } catch (_) {}
         }
       });
 
