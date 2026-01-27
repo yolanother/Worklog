@@ -1056,6 +1056,7 @@ export default function register(ctx: PluginContext): void {
         if (idx === 0) closeSelectedItem('in_review');
         if (idx === 1) closeSelectedItem('done');
         if (idx === 2) closeSelectedItem('deleted');
+        if (idx === 3) showToast('Cancelled');
         closeCloseDialog();
       });
 
@@ -1076,6 +1077,7 @@ export default function register(ctx: PluginContext): void {
           else if (idx === 6) db.update(item.id, { stage: 'blocked' });
           else if (idx === 7) { /* Cancel - no action */ }
           if (idx !== 7) showToast('Updated');
+          else showToast('Cancelled');
           refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
         } catch (err) {
           showToast('Update failed');
