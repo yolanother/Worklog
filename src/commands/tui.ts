@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
-import { spawnSync } from 'child_process';
+import { spawnSync, spawn } from 'child_process';
 
 type Item = any;
 
@@ -363,6 +363,205 @@ export default function register(ctx: PluginContext): void {
         mouse: true,
         clickable: true,
         style: { bg: 'black' },
+      });
+
+      // Opencode prompt dialog
+      const opencodeOverlay = blessed.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        mouse: true,
+        clickable: true,
+        style: { bg: 'black' },
+      });
+
+      const opencodeDialog = blessed.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '60%',
+        height: 8,
+        label: ' Run opencode ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        mouse: true,
+        clickable: true,
+        style: { border: { fg: 'yellow' } },
+      });
+
+      const opencodeText = blessed.textbox({
+        parent: opencodeDialog,
+        top: 1,
+        left: 2,
+        width: '100%-4',
+        height: 3,
+        input: true,
+        keys: true,
+        mouse: true,
+        clickable: true,
+        border: { type: 'line' },
+        style: { focus: { border: { fg: 'green' } } },
+      });
+
+      const opencodeSend = blessed.box({
+        parent: opencodeDialog,
+        bottom: 0,
+        right: 12,
+        height: 1,
+        width: 10,
+        content: '[ Send ]',
+        mouse: true,
+        clickable: true,
+        style: { fg: 'white', bg: 'green' },
+      });
+
+      const opencodeCancel = blessed.box({
+        parent: opencodeDialog,
+        bottom: 0,
+        right: 1,
+        height: 1,
+        width: 10,
+        content: '[ Cancel ]',
+        mouse: true,
+        clickable: true,
+        style: { fg: 'white', bg: 'red' },
+      });
+
+      // Active opencode pane/process tracking
+      let opencodePane: any = null;
+      let opencodeProc: any = null;
+
+      function shellEscape(s: string) {
+        return `'${s.replace(/'/g, "'\"'\"'")}'`;
+      }
+
+      function openOpencodeDialog() {
+        opencodeOverlay.show();
+        opencodeDialog.show();
+        opencodeOverlay.setFront();
+        opencodeDialog.setFront();
+        opencodeText.clearValue?.();
+        opencodeText.focus();
+        screen.render();
+      }
+
+      function closeOpencodeDialog() {
+        opencodeDialog.hide();
+        opencodeOverlay.hide();
+        list.focus();
+        screen.render();
+      }
+
+      function closeOpencodePane() {
+        try {
+          if (opencodeProc) {
+            opencodeProc.kill();
+            opencodeProc = null;
+          }
+        } catch (err) {
+          // ignore
+        }
+        if (opencodePane) {
+          opencodePane.hide();
+          opencodePane = null;
+          screen.render();
+        }
+      }
+
+      function runOpencode(prompt: string) {
+        if (!prompt || prompt.trim() === '') {
+          showToast('Empty prompt');
+          return;
+        }
+        // create pane across bottom
+        opencodePane = blessed.box({
+          parent: screen,
+          bottom: 0,
+          left: 0,
+          width: '100%',
+          height: '35%',
+          label: ` opencode `,
+          border: { type: 'line' },
+          tags: true,
+          scrollable: true,
+          alwaysScroll: true,
+          keys: true,
+          vi: true,
+          mouse: true,
+          clickable: true,
+          style: { border: { fg: 'magenta' } },
+          content: '',
+        });
+
+        const paneClose = blessed.box({
+          parent: opencodePane,
+          top: 0,
+          right: 1,
+          height: 1,
+          width: 3,
+          content: '[x]',
+          style: { fg: 'red' },
+          mouse: true,
+        });
+
+        paneClose.on('click', () => {
+          closeOpencodePane();
+        });
+
+        opencodePane.focus();
+        screen.render();
+
+        const cmd = `opencode run ${shellEscape(prompt)}`;
+        try {
+          opencodeProc = spawn('bash', ['-lc', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (err) {
+          opencodePane.setContent(`Failed to spawn: ${String(err)}`);
+          screen.render();
+          return;
+        }
+
+        let buf = '';
+        const append = (chunk: Buffer | string) => {
+          buf += String(chunk);
+          opencodePane.setContent(buf);
+          // auto-scroll to bottom
+          try { opencodePane.setScroll(opencodePane.getScrollHeight()); } catch (_) {}
+          screen.render();
+        };
+
+        opencodeProc.stdout.on('data', (d: Buffer) => append(d));
+        opencodeProc.stderr.on('data', (d: Buffer) => append(d));
+        opencodeProc.on('close', (code: number) => {
+          append(`\nProcess exited with code ${code}\n`);
+          opencodeProc = null;
+        });
+      }
+
+      // Opencode dialog controls
+      opencodeSend.on('click', () => {
+        const prompt = opencodeText.getValue ? opencodeText.getValue() : '';
+        closeOpencodeDialog();
+        runOpencode(prompt);
+      });
+
+      opencodeCancel.on('click', () => {
+        showToast('Cancelled');
+        closeOpencodeDialog();
+      });
+
+      opencodeText.key(['enter'], function(this: any) {
+        // `this` is the textbox
+        const prompt = this.getValue ? this.getValue() : '';
+        closeOpencodeDialog();
+        runOpencode(prompt);
+      });
+
+      opencodeDialog.key(['escape'], () => {
+        closeOpencodeDialog();
       });
 
       const helpMenu = blessed.box({
@@ -962,6 +1161,13 @@ export default function register(ctx: PluginContext): void {
       screen.key(['?'], () => {
         if (helpMenu.hidden) openHelp();
         else closeHelp();
+      });
+
+      // Open opencode prompt dialog (shortcut O)
+      screen.key(['o', 'O'], () => {
+        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+          openOpencodeDialog();
+        }
       });
 
       // Copy selected ID
