@@ -543,11 +543,15 @@ export default function register(ctx: PluginContext): void {
         if (_key && _key.name === 'linefeed') {
           debugLog('Detected linefeed (Ctrl+Enter)');
           
-          // The textarea has already inserted the newline, so we just need to handle the resize
+          // The textarea has already inserted the newline
+          // We need to force a complete redraw
           const value = this.getValue ? this.getValue() : '';
           const lines = value.split('\n').length;
           const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
           
+          debugLog(`Lines: ${lines}, desiredHeight: ${desiredHeight}`);
+          
+          // Update heights FIRST
           opencodeDialog.height = desiredHeight;
           opencodeText.height = desiredHeight - 2;
           
@@ -556,22 +560,22 @@ export default function register(ctx: PluginContext): void {
             opencodePane.height = paneHeight();
           }
           
-          // HACK: Add and remove a character to force refresh
-          const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
-          const testValue = value + '.';
-          this.setValue(testValue);
+          // Force complete redraw by temporarily clearing and restoring value
+          const savedPos = this.getCaretPosition ? this.getCaretPosition() : value.length;
+          this.clearValue();
           screen.render();
           this.setValue(value);
           if (this.moveCursor) {
-            this.moveCursor(pos);
+            this.moveCursor(savedPos);
           }
           
-          // Scroll to bottom
+          // Scroll to bottom to show cursor
           if (this.setScrollPerc) {
             this.setScrollPerc(100);
           }
           
           screen.render();
+          debugLog('After linefeed handling - rendered');
           return;
         }
         
