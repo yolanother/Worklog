@@ -1457,66 +1457,56 @@ export default function register(ctx: PluginContext): void {
 
       // Ctrl+Enter inserts newline
       opencodeText.key(['C-enter'], function(this: any) {
-        // Insert newline
+        // Get current value and cursor position
         const value = this.getValue ? this.getValue() : '';
         const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
         const before = value.substring(0, pos);
         const after = value.substring(pos);
+        
+        // Create new value with newline inserted
         const newValue = before + '\n' + after;
-        
-        // Update layout first to expand the box if needed
-        const oldHeight = opencodeDialog.height;
-        updateOpencodeInputLayout();
-        const newHeight = opencodeDialog.height;
-        const heightChanged = newHeight !== oldHeight;
-        
-        // Set the new value AFTER updating layout
-        // This ensures the textarea has the right dimensions when setting content
-        this.setValue(newValue);
-        
-        // Move cursor to start of new line
         const newCursorPos = before.length + 1;
+        
+        // Calculate if we need to expand the dialog
+        const lines = newValue.split('\n').length;
+        const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
+        const oldHeight = opencodeDialog.height;
+        const needsExpansion = desiredHeight > oldHeight;
+        
+        // Expand dialog if needed
+        if (needsExpansion) {
+          opencodeDialog.height = desiredHeight;
+          opencodeText.height = desiredHeight - 2;
+          
+          if (opencodePane) {
+            opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
+            opencodePane.height = paneHeight();
+          }
+          
+          // WORKAROUND: After expanding, we need to force blessed to redraw the textarea content
+          // We do this by clearing and re-setting the value
+          this.setValue('');
+          screen.render();
+          this.setValue(newValue);
+        } else {
+          // No expansion needed, just set the value normally
+          this.setValue(newValue);
+        }
+        
+        // Move cursor to the correct position
         if (this.moveCursor) {
           this.moveCursor(newCursorPos);
         }
         
-        // Calculate viewport and scrolling
-        const totalLines = newValue.split('\n').length;
-        const visibleHeight = newHeight - 2; // Minus borders
-        const cursorLine = (before.match(/\n/g) || []).length + 1; // 1-based line number
+        // Handle scrolling if content exceeds visible area
+        const visibleLines = (opencodeText.height as number) || 1;
+        const cursorLine = (before.match(/\n/g) || []).length + 1; // 1-based
         
-        // Always ensure we can see the cursor line
-        // If height changed, we need to recalculate the viewport
-        if (this.setScroll) {
-          // Keep cursor line visible in the viewport
-          // If cursor is below visible area, scroll down
-          // If cursor is above visible area (shouldn't happen), scroll up
-          const currentScroll = this.getScroll ? this.getScroll() : 0;
-          let newScroll = currentScroll;
-          
-          if (cursorLine > currentScroll + visibleHeight) {
-            // Cursor is below visible area, scroll down
-            newScroll = cursorLine - visibleHeight;
-          } else if (cursorLine <= currentScroll) {
-            // Cursor is above visible area, scroll up
-            newScroll = cursorLine - 1;
-          }
-          
-          // For small content that fits entirely, don't scroll
-          if (totalLines <= visibleHeight) {
-            newScroll = 0;
-          }
-          
-          this.setScroll(Math.max(0, newScroll));
+        if (this.setScroll && cursorLine > visibleLines) {
+          this.setScroll(cursorLine - visibleLines);
         }
         
-        // If the textarea needs to re-render its content
-        // Force a re-render by triggering the blessed internal update
-        if (this._updateCursor) {
-          this._updateCursor(true);
-        }
-        
-        // Force focus back to ensure cursor is visible
+        // Ensure focus and render
         this.focus();
         screen.render();
       });
