@@ -5,7 +5,7 @@ const handlers: Record<string, Function> = {};
 
 // Minimal blessed mock that gives us a textarea widget and records event handlers
 const blessedMock = {
-  screen: vi.fn(() => ({ render: vi.fn(), destroy: vi.fn(), key: vi.fn(), on: vi.fn(), once: vi.fn(), off: vi.fn() })),
+  screen: vi.fn(() => ({ render: vi.fn(), destroy: vi.fn(), key: vi.fn(), on: vi.fn(), once: vi.fn(), off: vi.fn(), height: 40, width: 120 })),
   textarea: vi.fn((opts: any) => {
     const style = opts?.style || { focus: { border: { fg: 'green' } }, border: { fg: 'white' }, bold: true };
     const widget: any = {
@@ -21,13 +21,52 @@ const blessedMock = {
       on: (ev: string, h: Function) => { handlers[ev] = h; },
       once: vi.fn(),
       off: vi.fn(),
+      key: vi.fn((keys: any, h: Function) => { handlers['key'] = h; }),
+      moveCursor: vi.fn(),
     };
     // expose last created widget for test inspection
     (blessedMock as any)._lastTextarea = widget;
     return widget;
   }),
-  box: vi.fn((opts: any) => ({ style: opts?.style || {}, show: vi.fn(), hide: vi.fn(), on: vi.fn() })),
-  list: vi.fn((opts: any) => ({ style: opts?.style || {}, setItems: vi.fn(), on: vi.fn() })),
+  box: vi.fn((opts: any) => {
+    const widget: any = {
+      style: opts?.style || {},
+      show: vi.fn(),
+      hide: vi.fn(),
+      on: vi.fn((ev: string, h: Function) => { handlers[ev] = h; }),
+      key: vi.fn((keys: any, h: Function) => { handlers['key'] = h; }),
+      setContent: vi.fn(),
+      setLabel: vi.fn(),
+      setFront: vi.fn(),
+      pushLine: vi.fn(),
+      setScroll: vi.fn(),
+      setScrollPerc: vi.fn(),
+      getScroll: vi.fn(() => 0),
+      getContent: vi.fn(() => ''),
+      setValue: vi.fn(),
+      clearValue: vi.fn(),
+      focus: vi.fn(),
+      destroy: vi.fn(),
+    };
+    return widget;
+  }),
+  list: vi.fn((opts: any) => {
+    const state: any = { items: [], selected: 0 };
+    return {
+      style: opts?.style || {},
+      setItems: vi.fn((items: string[]) => { state.items = items; }),
+      on: vi.fn((ev: string, h: Function) => { handlers[ev] = h; }),
+      select: vi.fn((idx: number) => { state.selected = idx; }),
+      focus: vi.fn(),
+      key: vi.fn(),
+      getScroll: vi.fn(() => 0),
+      getContent: vi.fn(() => state.items.join('\n')),
+      get selected() { return state.selected; },
+      set selected(v: number) { state.selected = v; }
+    };
+  }),
+  text: vi.fn((opts: any) => ({ style: opts?.style || {}, setContent: vi.fn(), hide: vi.fn(), show: vi.fn(), setFront: vi.fn(), setLabel: vi.fn(), setScrollPerc: vi.fn() })),
+  textbox: vi.fn((opts: any) => ({ style: opts?.style || {}, setValue: vi.fn(), getValue: vi.fn(() => ''), on: vi.fn(), focus: vi.fn(), hide: vi.fn(), show: vi.fn(), key: vi.fn() })),
 };
 
 // We'll inject our mock into the require cache for 'blessed' right before
@@ -61,19 +100,17 @@ describe('TUI integration: style preservation', () => {
       }),
     };
 
-    // Inject our mocked blessed into node's module cache so that importing
-    // the module under test will receive it. We must do this via require
-    // cache because the module uses ESM import which in the test environment
-    // will read from the CJS cache mapping.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const blessedPath = require.resolve('blessed');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require.cache[blessedPath] = { exports: blessedMock } as any;
-    // Now import the module under test after patching the cache
-    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
-    const register = require('../src/commands/tui').default;
-    // Register the TUI command (stores action in savedAction)
-    register({ program, utils } as any);
+    // Import the module under test and inject our mocked blessed implementation
+    // via the ctx object so the TUI code uses our mock instead of importing
+    // the real blessed. This is a small, explicit test seam that avoids
+    // fragile module-cache tricks.
+    // Import the module under test using ESM dynamic import so the test
+    // environment's module resolution works correctly.
+    const mod = await import('../src/commands/tui');
+    const register = mod.default || mod;
+    // Register the TUI command (stores action in savedAction). Inject
+    // our blessed mock via the ctx so the implementation uses it.
+    register({ program, utils, blessed: blessedMock } as any);
 
     expect(typeof savedAction).toBe('function');
 

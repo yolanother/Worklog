@@ -16,6 +16,9 @@ type Item = any;
 
 export default function register(ctx: PluginContext): void {
   const { program, utils } = ctx;
+  // Allow tests to inject a mocked blessed implementation via the ctx object.
+  // If not provided, fall back to the real blessed import.
+  const blessedImpl = (ctx as any).blessed || blessed;
 
   program
     .command('tui')
@@ -149,9 +152,9 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Setup blessed screen and layout
-      const screen = blessed.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
+      const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
 
-      const list = blessed.list({
+       const list = blessedImpl.list({
         parent: screen,
         label: ' Work Items ',
         width: '50%',
@@ -169,7 +172,7 @@ export default function register(ctx: PluginContext): void {
         top: 0,
       });
 
-      const detail = blessed.box({
+       const detail = blessedImpl.box({
         parent: screen,
         label: ' Details ',
         left: '50%',
@@ -187,7 +190,7 @@ export default function register(ctx: PluginContext): void {
         content: '',
       });
 
-      const copyIdButton = blessed.box({
+       const copyIdButton = blessedImpl.box({
         parent: detail,
         top: 0,
         right: 1,
@@ -200,7 +203,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'yellow' },
       });
 
-      const help = blessed.box({
+       const help = blessedImpl.box({
         parent: screen,
         bottom: 0,
         left: 0,
@@ -210,7 +213,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'grey' },
       });
 
-      const toast = blessed.box({
+       const toast = blessedImpl.box({
         parent: screen,
         bottom: 1,
         right: 1,
@@ -221,7 +224,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'black', bg: 'green' },
       });
 
-      const detailOverlay = blessed.box({
+       const detailOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -233,7 +236,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const detailModal = blessed.box({
+       const detailModal = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -253,7 +256,7 @@ export default function register(ctx: PluginContext): void {
         content: '',
       });
 
-      const detailClose = blessed.box({
+       const detailClose = blessedImpl.box({
         parent: detailModal,
         top: 0,
         right: 1,
@@ -264,7 +267,7 @@ export default function register(ctx: PluginContext): void {
         mouse: true,
       });
 
-      const closeOverlay = blessed.box({
+       const closeOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -276,7 +279,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const closeDialog = blessed.box({
+       const closeDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -291,7 +294,7 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'magenta' } },
       });
 
-      const closeDialogText = blessed.box({
+       const closeDialogText = blessedImpl.box({
         parent: closeDialog,
         top: 1,
         left: 2,
@@ -301,7 +304,7 @@ export default function register(ctx: PluginContext): void {
         tags: false,
       });
 
-      const closeDialogOptions = blessed.list({
+       const closeDialogOptions = blessedImpl.list({
         parent: closeDialog,
         top: 4,
         left: 2,
@@ -315,7 +318,7 @@ export default function register(ctx: PluginContext): void {
         items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
       });
 
-      const updateOverlay = blessed.box({
+       const updateOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -327,7 +330,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const updateDialog = blessed.box({
+       const updateDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -342,7 +345,7 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'magenta' } },
       });
 
-      const updateDialogText = blessed.box({
+       const updateDialogText = blessedImpl.box({
         parent: updateDialog,
         top: 1,
         left: 2,
@@ -353,7 +356,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Stages offered here — keep list conservative; this UI is intended to grow.
-      const updateDialogOptions = blessed.list({
+       const updateDialogOptions = blessedImpl.list({
         parent: updateDialog,
         top: 4,
         left: 2,
@@ -367,7 +370,7 @@ export default function register(ctx: PluginContext): void {
         items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
       });
 
-      const overlay = blessed.box({
+       const overlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -380,7 +383,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Opencode prompt dialog
-      const opencodeOverlay = blessed.box({
+       const opencodeOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -393,7 +396,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Larger dialog and textbox for multi-line prompts
-      const opencodeDialog = blessed.box({
+       const opencodeDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -409,7 +412,7 @@ export default function register(ctx: PluginContext): void {
       });
       
       // Server status indicator (footer centered)
-      const serverStatusBox = blessed.box({
+       const serverStatusBox = blessedImpl.box({
         parent: screen,
         bottom: 0,
         left: 'center',
@@ -422,7 +425,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Use a textarea so multi-line input works and Enter inserts newlines
-      const opencodeText = blessed.textarea({
+       const opencodeText = blessedImpl.textarea({
         parent: opencodeDialog,
         top: 1,
         left: 2,
@@ -485,7 +488,7 @@ export default function register(ctx: PluginContext): void {
       let isWaitingForResponse = false; // Track if we're waiting for OpenCode response
 
       // Create a text element to show the suggestion below the input
-      const suggestionHint = blessed.text({
+       const suggestionHint = blessedImpl.text({
         parent: opencodeDialog,
         top: '100%-4',
         left: 2,
@@ -591,7 +594,7 @@ export default function register(ctx: PluginContext): void {
         });
       });
 
-      const opencodeSend = blessed.box({
+       const opencodeSend = blessedImpl.box({
         parent: opencodeDialog,
         bottom: 0,
         right: 12,
@@ -604,7 +607,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'white', bg: 'green' },
       });
 
-      const opencodeCancel = blessed.box({
+       const opencodeCancel = blessedImpl.box({
         parent: opencodeDialog,
         top: 0,
         right: 1,
@@ -1009,10 +1012,10 @@ export default function register(ctx: PluginContext): void {
                     if (localHist && Array.isArray(localHist) && localHist.length > 0) {
                       // Present a small modal to ask how to proceed.
                       const choice = await new Promise<number>((resolve) => {
-                        const restoreOverlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                        const restoreDialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                        const text = blessed.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
-                        const opts = blessed.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
+                        const restoreOverlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                        const restoreDialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                        const text = blessedImpl.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
+                        const opts = blessedImpl.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
                         opts.select(0);
                         restoreOverlay.setFront(); restoreDialog.setFront(); opts.focus(); screen.render();
                         function cleanup() { try { restoreDialog.hide(); restoreOverlay.hide(); restoreDialog.destroy(); restoreOverlay.destroy(); } catch (_) {} }
@@ -1025,11 +1028,11 @@ export default function register(ctx: PluginContext): void {
                         // Restore via summary: generate editable summary, then prepend to prompt
                         const generated = generateSummaryFromHistory(localHist);
                         const edited = await new Promise<string>((resolve) => {
-                          const overlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                          const dialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                          const ta = blessed.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
-                          try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
-                          const btns = blessed.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
+                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                           const ta = blessedImpl.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
+                           try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
+                           const btns = blessedImpl.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
                           btns.select(0);
                           overlay.setFront(); dialog.setFront(); ta.focus(); screen.render();
                           function cleanup() { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch (_) {} }
@@ -1045,11 +1048,11 @@ export default function register(ctx: PluginContext): void {
                       } else if (choice === 2) {
                         // Full replay chosen — confirm with the user
                         const confirm = await new Promise<boolean>((resolve) => {
-                          const overlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                          const dialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                          const text = blessed.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
-                          const input = blessed.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
-                          const cancelBtn = blessed.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
+                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                           const text = blessedImpl.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
+                           const input = blessedImpl.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
+                           const cancelBtn = blessedImpl.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
                           overlay.setFront(); dialog.setFront(); input.focus(); screen.render();
                           cancelBtn.on('click', () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
                           input.on('submit', (val: string) => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve((val||'').trim() === 'YES'); });
@@ -1778,7 +1781,7 @@ export default function register(ctx: PluginContext): void {
 
         const bottomOffset = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
 
-        opencodePane = blessed.box({
+        opencodePane = blessedImpl.box({
           parent: screen,
           bottom: bottomOffset,
           left: 0,
@@ -1918,7 +1921,7 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
-      const helpMenu = blessed.box({
+       const helpMenu = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -1938,7 +1941,7 @@ export default function register(ctx: PluginContext): void {
         }
       });
 
-      const helpClose = blessed.box({
+       const helpClose = blessedImpl.box({
         parent: helpMenu,
         top: 0,
         right: 1,
