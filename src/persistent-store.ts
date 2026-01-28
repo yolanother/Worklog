@@ -356,7 +356,9 @@ export class SqlitePersistentStore {
    * Get comments for a work item
    */
   getCommentsForWorkItem(workItemId: string): Comment[] {
-    const stmt = this.db.prepare('SELECT * FROM comments WHERE workItemId = ? ORDER BY createdAt ASC');
+    // Return comments newest-first (reverse chronological order) so clients
+    // and CLI can display the most recent discussion first.
+    const stmt = this.db.prepare('SELECT * FROM comments WHERE workItemId = ? ORDER BY createdAt DESC');
     const rows = stmt.all(workItemId) as any[];
     return rows.map(row => this.rowToComment(row));
   }

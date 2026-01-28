@@ -76,20 +76,22 @@ export default function register(ctx: PluginContext): void {
         process.exit(1);
       }
       
-      const comments = db.getCommentsForWorkItem(workItemId);
+      // Use the normalized work item id when fetching comments so prefixed and
+      // unprefixed ids behave consistently.
+      const comments = db.getCommentsForWorkItem(normalizedWorkItemId);
       
-      if (utils.isJsonMode()) {
-        output.json({ success: true, count: comments.length, workItemId, comments });
-      } else {
-        if (comments.length === 0) {
-          console.log('No comments found for this work item');
-          return;
-        }
-        
-        console.log(`Found ${comments.length} comment(s) for ${workItemId}:\n`);
-        comments.forEach(comment => {
-          console.log(`[${comment.id}] by ${comment.author} at ${comment.createdAt}`);
-          console.log(`  ${comment.comment}`);
+        if (utils.isJsonMode()) {
+          output.json({ success: true, count: comments.length, workItemId: normalizedWorkItemId, comments });
+        } else {
+          if (comments.length === 0) {
+            console.log('No comments found for this work item');
+            return;
+          }
+          
+          console.log(`Found ${comments.length} comment(s) for ${normalizedWorkItemId}:\n`);
+          comments.forEach(comment => {
+            console.log(`[${comment.id}] by ${comment.author} at ${comment.createdAt}`);
+            console.log(`  ${comment.comment}`);
           if (comment.references.length > 0) {
             console.log(`  References: ${comment.references.join(', ')}`);
           }

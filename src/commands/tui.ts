@@ -16,6 +16,9 @@ type Item = any;
 
 export default function register(ctx: PluginContext): void {
   const { program, utils } = ctx;
+  // Allow tests to inject a mocked blessed implementation via the ctx object.
+  // If not provided, fall back to the real blessed import.
+  const blessedImpl = (ctx as any).blessed || blessed;
 
   program
     .command('tui')
@@ -89,8 +92,11 @@ export default function register(ctx: PluginContext): void {
           if (!fs.existsSync(statePath)) return null;
           const raw = fs.readFileSync(statePath, 'utf8');
           const j = JSON.parse(raw || '{}');
-          return j[prefix || 'default'] || null;
+          const val = j[prefix || 'default'] || null;
+          debugLog(`loadPersistedState prefix=${String(prefix || 'default')} path=${statePath} present=${val !== null}`);
+          return val;
         } catch (err) {
+          debugLog(`loadPersistedState error: ${String(err)}`);
           return null;
         }
       }
@@ -104,8 +110,13 @@ export default function register(ctx: PluginContext): void {
           }
           j[prefix || 'default'] = state;
           fs.writeFileSync(statePath, JSON.stringify(j, null, 2), 'utf8');
+          try {
+            const keys = Object.keys(state || {}).join(',');
+            debugLog(`savePersistedState prefix=${String(prefix || 'default')} path=${statePath} keys=[${keys}]`);
+          } catch (_) {}
         } catch (err) {
-          // ignore persistence errors
+          debugLog(`savePersistedState error: ${String(err)}`);
+          // ignore persistence errors but log for debugging
         }
       }
 
@@ -141,9 +152,9 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Setup blessed screen and layout
-      const screen = blessed.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
+      const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
 
-      const list = blessed.list({
+       const list = blessedImpl.list({
         parent: screen,
         label: ' Work Items ',
         width: '50%',
@@ -161,7 +172,7 @@ export default function register(ctx: PluginContext): void {
         top: 0,
       });
 
-      const detail = blessed.box({
+       const detail = blessedImpl.box({
         parent: screen,
         label: ' Details ',
         left: '50%',
@@ -179,7 +190,7 @@ export default function register(ctx: PluginContext): void {
         content: '',
       });
 
-      const copyIdButton = blessed.box({
+       const copyIdButton = blessedImpl.box({
         parent: detail,
         top: 0,
         right: 1,
@@ -192,7 +203,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'yellow' },
       });
 
-      const help = blessed.box({
+       const help = blessedImpl.box({
         parent: screen,
         bottom: 0,
         left: 0,
@@ -202,7 +213,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'grey' },
       });
 
-      const toast = blessed.box({
+       const toast = blessedImpl.box({
         parent: screen,
         bottom: 1,
         right: 1,
@@ -213,7 +224,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'black', bg: 'green' },
       });
 
-      const detailOverlay = blessed.box({
+       const detailOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -225,7 +236,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const detailModal = blessed.box({
+       const detailModal = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -245,7 +256,7 @@ export default function register(ctx: PluginContext): void {
         content: '',
       });
 
-      const detailClose = blessed.box({
+       const detailClose = blessedImpl.box({
         parent: detailModal,
         top: 0,
         right: 1,
@@ -256,7 +267,7 @@ export default function register(ctx: PluginContext): void {
         mouse: true,
       });
 
-      const closeOverlay = blessed.box({
+       const closeOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -268,7 +279,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const closeDialog = blessed.box({
+       const closeDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -283,7 +294,7 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'magenta' } },
       });
 
-      const closeDialogText = blessed.box({
+       const closeDialogText = blessedImpl.box({
         parent: closeDialog,
         top: 1,
         left: 2,
@@ -293,7 +304,7 @@ export default function register(ctx: PluginContext): void {
         tags: false,
       });
 
-      const closeDialogOptions = blessed.list({
+       const closeDialogOptions = blessedImpl.list({
         parent: closeDialog,
         top: 4,
         left: 2,
@@ -307,7 +318,7 @@ export default function register(ctx: PluginContext): void {
         items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
       });
 
-      const updateOverlay = blessed.box({
+       const updateOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -319,7 +330,7 @@ export default function register(ctx: PluginContext): void {
         style: { bg: 'black' },
       });
 
-      const updateDialog = blessed.box({
+       const updateDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -334,7 +345,7 @@ export default function register(ctx: PluginContext): void {
         style: { border: { fg: 'magenta' } },
       });
 
-      const updateDialogText = blessed.box({
+       const updateDialogText = blessedImpl.box({
         parent: updateDialog,
         top: 1,
         left: 2,
@@ -345,7 +356,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Stages offered here — keep list conservative; this UI is intended to grow.
-      const updateDialogOptions = blessed.list({
+       const updateDialogOptions = blessedImpl.list({
         parent: updateDialog,
         top: 4,
         left: 2,
@@ -359,7 +370,7 @@ export default function register(ctx: PluginContext): void {
         items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
       });
 
-      const overlay = blessed.box({
+       const overlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -372,7 +383,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Opencode prompt dialog
-      const opencodeOverlay = blessed.box({
+       const opencodeOverlay = blessedImpl.box({
         parent: screen,
         top: 0,
         left: 0,
@@ -385,7 +396,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Larger dialog and textbox for multi-line prompts
-      const opencodeDialog = blessed.box({
+       const opencodeDialog = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -401,7 +412,7 @@ export default function register(ctx: PluginContext): void {
       });
       
       // Server status indicator (footer centered)
-      const serverStatusBox = blessed.box({
+       const serverStatusBox = blessedImpl.box({
         parent: screen,
         bottom: 0,
         left: 'center',
@@ -414,7 +425,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Use a textarea so multi-line input works and Enter inserts newlines
-      const opencodeText = blessed.textarea({
+       const opencodeText = blessedImpl.textarea({
         parent: opencodeDialog,
         top: 1,
         left: 2,
@@ -477,7 +488,7 @@ export default function register(ctx: PluginContext): void {
       let isWaitingForResponse = false; // Track if we're waiting for OpenCode response
 
       // Create a text element to show the suggestion below the input
-      const suggestionHint = blessed.text({
+       const suggestionHint = blessedImpl.text({
         parent: opencodeDialog,
         top: '100%-4',
         left: 2,
@@ -583,7 +594,7 @@ export default function register(ctx: PluginContext): void {
         });
       });
 
-      const opencodeSend = blessed.box({
+       const opencodeSend = blessedImpl.box({
         parent: opencodeDialog,
         bottom: 0,
         right: 12,
@@ -596,7 +607,7 @@ export default function register(ctx: PluginContext): void {
         style: { fg: 'white', bg: 'green' },
       });
 
-      const opencodeCancel = blessed.box({
+       const opencodeCancel = blessedImpl.box({
         parent: opencodeDialog,
         top: 0,
         right: 1,
@@ -632,9 +643,11 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 0;  // Position at left of dialog interior
         opencodeText.width = '100%-2';  // Leave 1 char padding on each side
         opencodeText.height = desiredHeight - 2;  // Height minus top and bottom borders
-        // Reset styles by clearing properties without replacing the style object
+        // Ensure a style object exists but avoid replacing it entirely — blessed
+        // keeps internal references to the original style object which must be
+        // preserved. Create a style object only when missing (e.g. in tests).
         if (!opencodeText.style) {
-          opencodeText.style = {};
+          (opencodeText as any).style = {};
         }
         // Clear border and focus styles without replacing the entire style object
         if (opencodeText.style.border) {
@@ -677,9 +690,11 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 0;  // Position at left of dialog interior  
         opencodeText.width = '100%-2';  // Leave 1 char padding on each side
         opencodeText.height = MIN_INPUT_HEIGHT - 2;  // Height minus borders
-        // Reset styles by clearing properties without replacing the style object
+        // Ensure a style object exists but avoid replacing it entirely — blessed
+        // keeps internal references to the original style object which must be
+        // preserved. Create a style object only when missing (e.g. in tests).
         if (!opencodeText.style) {
-          opencodeText.style = {};
+          (opencodeText as any).style = {};
         }
         // Clear border and focus styles without replacing the entire style object
         if (opencodeText.style.border) {
@@ -883,8 +898,9 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      // Store current session ID for server communication
+      // Store current session ID and associated work-item id for server communication
       let currentSessionId: string | null = null;
+      let currentSessionWorkItemId: string | null = null;
       
       // Function to communicate with OpenCode server via HTTP API with SSE streaming
       async function sendPromptToServer(
@@ -906,73 +922,223 @@ export default function register(ctx: PluginContext): void {
             ? Promise.resolve(currentSessionId)
             : createSession(serverUrl, preferredSessionId);
             
-          sessionPromise
-            .then(sessionId => {
-              currentSessionId = sessionId;
-              // Update pane label to include session ID
-              if (pane.setLabel) {
-                pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
-              }
-              pane.pushLine('');
-              pane.pushLine(`{gray-fg}${prompt}{/}`);
-              pane.pushLine('');
-              // Ensure we scroll to the bottom after adding content
-              if (pane.setScrollPerc) {
-                pane.setScrollPerc(100);
-              }
-              screen.render();
-              debugLog(`session id=${sessionId}`);
-              
-              // Use async prompt endpoint for better streaming
-              const messageData = JSON.stringify({
-                parts: [{ type: 'text', text: prompt }]
-              });
-              
-              // First, send the prompt asynchronously
-              const sendOptions = {
-                hostname: 'localhost',
-                port: opencodeServerPort,
-                path: `/session/${sessionId}/prompt_async`,
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Content-Length': Buffer.byteLength(messageData)
-                }
-              };
-              
-              const sendReq = http.request(sendOptions, (res) => {
-                debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
-                if (res.statusCode === 204) {
-                  // Success - now connect to SSE for streaming response
-                  connectToSSE(sessionId, prompt, pane, indicator, inputField, resolve, reject, onComplete);
+           sessionPromise
+             .then(async (sessionObj) => {
+               // sessionObj may be a string (older behaviour) or an object { id, workItemId, existing }
+               const sessionId = typeof sessionObj === 'string' ? sessionObj : sessionObj.id;
+               const sessionWorkItemId = typeof sessionObj === 'string' ? null : (sessionObj.workItemId || null);
+               const sessionExisting = typeof sessionObj === 'object' && !!(sessionObj as any).existing;
+               currentSessionId = sessionId;
+               currentSessionWorkItemId = sessionWorkItemId;
+               // Update pane label to show the associated work-item id when available
+               if (pane.setLabel) {
+                 if (currentSessionWorkItemId) {
+                   pane.setLabel(` opencode - Work Item: ${currentSessionWorkItemId} [esc] `);
+                 } else {
+                   pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
+                 }
+               }
+
+                // If we found an existing session, load its history into the pane first
+                if (sessionExisting) {
+                  try {
+                    const history = await getSessionMessages(sessionId);
+                    if (pane.setContent) {
+                     let histText = '';
+                     for (const m of history) {
+                       const role = m.info?.role || 'unknown';
+                       histText += `{gray-fg}[${role}]{/}\n`;
+                       const parts = m.parts || [];
+                       for (const p of parts) {
+                         if (p.type === 'text' && p.text) {
+                           histText += `${p.text}\n`;
+                         } else if (p.type === 'tool-result' && p.content) {
+                           histText += `{green-fg}[Tool Result]{/}\n`;
+                           histText += `${p.content}\n`;
+                         } else if (p.type === 'tool-use' && p.tool) {
+                           histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
+                           if (p.tool.description) histText += `${p.tool.description}\n`;
+                         }
+                       }
+                       histText += '\n';
+                     }
+                      pane.setContent(histText + '\n');
+                    }
+                  } catch (err) {
+                    debugLog(`failed to load session history: ${String(err)}`);
+                  }
                 } else {
-                  let errorData = '';
-                  res.on('data', chunk => { errorData += chunk; });
-                  res.on('end', () => {
-                    debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
-                    const errorMsg = errorData || `HTTP ${res.statusCode} error`;
-                    pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
-                    screen.render();
-                    reject(new Error(`Failed to send prompt: ${errorMsg}`));
-                  });
+                  // No existing server session was found/used. If we have a locally
+                  // persisted history for this work-item, surface it read-only so
+                  // the user can inspect prior messages without auto-replaying them.
+                  try {
+                    const localHist = (sessionObj as any)?.localHistory;
+                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
+                      debugLog(`rendering local persisted history messages=${localHist.length} for workitem=${String(sessionWorkItemId)}`);
+                      if (pane.setContent) {
+                        let histText = '{yellow-fg}[Local persisted history - read-only]{/}\n\n';
+                        for (const m of localHist) {
+                          const role = m.info?.role || 'unknown';
+                          histText += `{gray-fg}[${role}]{/}\n`;
+                          const parts = m.parts || [];
+                          for (const p of parts) {
+                            if (p.type === 'text' && p.text) {
+                              histText += `${p.text}\n`;
+                            } else if (p.type === 'tool-result' && p.content) {
+                              histText += `{green-fg}[Tool Result]{/}\n`;
+                              histText += `${p.content}\n`;
+                            } else if (p.type === 'tool-use' && p.tool) {
+                              histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
+                              if (p.tool.description) histText += `${p.tool.description}\n`;
+                            }
+                          }
+                          histText += '\n';
+                        }
+                        // Add a clear separator so the user's new prompt is visually separated
+                        histText += '{yellow-fg}[End of local history]{/}\n\n';
+                        pane.setContent(histText + '\n');
+                      }
+                    }
+                  } catch (err) {
+                    debugLog(`failed to render local history: ${String(err)}`);
+                  }
                 }
-              });
-              
-              sendReq.on('error', (err) => {
-                debugLog(`prompt_async request error: ${String(err)}`);
-                pane.pushLine(`{red-fg}Request error: ${err}{/}`);
-                screen.render();
-                reject(err);
-              });
-              
-              sendReq.write(messageData);
-              sendReq.end();
-            })
-            .catch(err => {
-              pane.pushLine(`{red-fg}Session error: ${err}{/}`);
-              screen.render();
-              reject(err);
-            });
+                // If we rendered a local history above (server session wasn't reused)
+                // offer the user a safe restore flow: Show only / Restore via summary / Full replay.
+                let finalPrompt = prompt;
+                if (!sessionExisting) {
+                  try {
+                    const localHist = (sessionObj as any)?.localHistory;
+                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
+                      // Present a small modal to ask how to proceed.
+                      const choice = await new Promise<number>((resolve) => {
+                        const restoreOverlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                        const restoreDialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                        const text = blessedImpl.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
+                        const opts = blessedImpl.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
+                        opts.select(0);
+                        restoreOverlay.setFront(); restoreDialog.setFront(); opts.focus(); screen.render();
+                        function cleanup() { try { restoreDialog.hide(); restoreOverlay.hide(); restoreDialog.destroy(); restoreOverlay.destroy(); } catch (_) {} }
+                        opts.on('select', (_el: any, idx: number) => { cleanup(); resolve(idx); });
+                        // Allow escape to cancel
+                        restoreDialog.key(['escape'], () => { cleanup(); resolve(3); });
+                      });
+
+                      if (choice === 1) {
+                        // Restore via summary: generate editable summary, then prepend to prompt
+                        const generated = generateSummaryFromHistory(localHist);
+                        const edited = await new Promise<string>((resolve) => {
+                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                           const ta = blessedImpl.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
+                           try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
+                           const btns = blessedImpl.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
+                          btns.select(0);
+                          overlay.setFront(); dialog.setFront(); ta.focus(); screen.render();
+                          function cleanup() { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch (_) {} }
+                          btns.on('select', (_el: any, idx: number) => {
+                            const val = ta.getValue ? ta.getValue() : generated;
+                            cleanup(); if (idx === 0) resolve(val); else resolve('');
+                          });
+                          dialog.key(['escape'], () => { cleanup(); resolve(''); });
+                        });
+                        if (edited && edited.trim()) {
+                          finalPrompt = `Context summary (user-edited):\n${edited}\n\nUser prompt:\n${prompt}`;
+                        }
+                      } else if (choice === 2) {
+                        // Full replay chosen — confirm with the user
+                        const confirm = await new Promise<boolean>((resolve) => {
+                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                           const text = blessedImpl.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
+                           const input = blessedImpl.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
+                           const cancelBtn = blessedImpl.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
+                          overlay.setFront(); dialog.setFront(); input.focus(); screen.render();
+                          cancelBtn.on('click', () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
+                          input.on('submit', (val: string) => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve((val||'').trim() === 'YES'); });
+                          dialog.key(['escape'], () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
+                        });
+                        if (confirm) {
+                          // build a raw replay string — join textual parts
+                          const allText: string[] = [];
+                          for (const m of localHist) {
+                            const parts = m.parts || [];
+                            for (const p of parts) {
+                              if (p.type === 'text' && p.text) allText.push(p.text);
+                              else if (p.type === 'tool-result' && p.content) allText.push('[Tool Result]\n' + String(p.content));
+                            }
+                          }
+                          const replayText = allText.join('\n\n---\n\n');
+                          finalPrompt = `Full replay of previous conversation:\n${replayText}\n\nUser prompt:\n${prompt}`;
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    debugLog(`restore flow error: ${String(err)}`);
+                  }
+                }
+
+                pane.pushLine('');
+                // Show the user's short prompt in the pane (finalPrompt may contain extra context)
+                pane.pushLine(`{gray-fg}${prompt}{/}`);
+                pane.pushLine('');
+               // Ensure we scroll to the bottom after adding content
+               if (pane.setScrollPerc) {
+                 pane.setScrollPerc(100);
+               }
+               screen.render();
+               debugLog(`session id=${sessionId} workitem=${String(currentSessionWorkItemId)}`);
+
+               // Use async prompt endpoint for better streaming
+                const messageData = JSON.stringify({
+                  parts: [{ type: 'text', text: finalPrompt }]
+                });
+
+               // First, send the prompt asynchronously
+               const sendOptions = {
+                 hostname: 'localhost',
+                 port: opencodeServerPort,
+                 path: `/session/${sessionId}/prompt_async`,
+                 method: 'POST',
+                 headers: {
+                   'Content-Type': 'application/json',
+                   'Content-Length': Buffer.byteLength(messageData)
+                 }
+               };
+
+               const sendReq = http.request(sendOptions, (res) => {
+                 debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
+                 if (res.statusCode === 204) {
+                   // Success - now connect to SSE for streaming response
+                    connectToSSE(sessionId, finalPrompt, pane, indicator, inputField, resolve, reject, onComplete);
+                 } else {
+                   let errorData = '';
+                   res.on('data', chunk => { errorData += chunk; });
+                   res.on('end', () => {
+                     debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
+                     const errorMsg = errorData || `HTTP ${res.statusCode} error`;
+                     pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
+                     screen.render();
+                     reject(new Error(`Failed to send prompt: ${errorMsg}`));
+                   });
+                 }
+               });
+
+               sendReq.on('error', (err) => {
+                 debugLog(`prompt_async request error: ${String(err)}`);
+                 pane.pushLine(`{red-fg}Request error: ${err}{/}`);
+                 screen.render();
+                 reject(err);
+               });
+
+               sendReq.write(messageData);
+               sendReq.end();
+             })
+             .catch(err => {
+               pane.pushLine(`{red-fg}Session error: ${err}{/}`);
+               screen.render();
+               reject(err);
+             });
         });
       }
       
@@ -1336,53 +1502,271 @@ export default function register(ctx: PluginContext): void {
         req.end();
       }
       
-      // Helper function to create a new session
-      function createSession(serverUrl: string, preferredId?: string | null): Promise<string> {
+      // Persisted session mapping helpers (workItemId -> sessionId)
+      function getPersistedSessionIdForWorkItem(workItemId: string): string | null {
+        try {
+          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
+          return persisted.sessionMap && persisted.sessionMap[workItemId] ? persisted.sessionMap[workItemId] : null;
+        } catch (_) { return null; }
+      }
+
+      function persistSessionMapping(workItemId: string, sessionId: string) {
+        try {
+          const prefix = db.getPrefix?.();
+          const state = loadPersistedState(prefix) || {};
+          state.sessionMap = state.sessionMap || {};
+          state.sessionMap[workItemId] = sessionId;
+          savePersistedState(prefix, state);
+          debugLog(`persistSessionMapping workitem=${workItemId} -> session=${sessionId}`);
+        } catch (err) {
+          debugLog(`failed to persist session mapping: ${String(err)}`);
+        }
+      }
+
+      function persistSessionHistory(workItemId: string, history: any[]) {
+        try {
+          const prefix = db.getPrefix?.();
+          const state = loadPersistedState(prefix) || {};
+          state.sessionHistories = state.sessionHistories || {};
+          state.sessionHistories[workItemId] = history;
+          savePersistedState(prefix, state);
+          debugLog(`persistSessionHistory workitem=${workItemId} messages=${(history || []).length}`);
+        } catch (err) {
+          debugLog(`failed to persist session history: ${String(err)}`);
+        }
+      }
+
+      function loadPersistedSessionHistory(workItemId: string): any[] | null {
+        try {
+          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
+          return persisted.sessionHistories && persisted.sessionHistories[workItemId] ? persisted.sessionHistories[workItemId] : null;
+        } catch (_) { return null; }
+      }
+
+      // Produce a short, editable summary from persisted session history.
+      // This is intentionally simple: extract recent text parts and join them
+      // into a paragraph suitable for sending as context to the server.
+      function generateSummaryFromHistory(history: any[]): string {
+        try {
+          if (!history || history.length === 0) return '';
+          const pieces: string[] = [];
+          // Walk from the end (most recent) back and collect text parts
+          for (let i = history.length - 1; i >= 0 && pieces.length < 8; i--) {
+            const m = history[i];
+            const parts = m.parts || [];
+            for (let j = parts.length - 1; j >= 0; j--) {
+              const p = parts[j];
+              if (p.type === 'text' && p.text) {
+                const t = String(p.text).trim();
+                if (t) pieces.push(t);
+              } else if (p.type === 'tool-result' && p.content) {
+                const t = String(p.content).split('\n').slice(0, 4).join(' ').trim();
+                if (t) pieces.push(`[Tool result] ${t}`);
+              }
+              if (pieces.length >= 8) break;
+            }
+          }
+          pieces.reverse(); // maintain chronological order
+          let joined = pieces.join('\n\n');
+          // Trim to reasonable length for sending
+          if (joined.length > 1200) joined = joined.slice(0, 1200) + '...';
+          return joined;
+        } catch (err) {
+          debugLog(`summary error: ${String(err)}`);
+          return '';
+        }
+      }
+
+      // Retrieve messages for a session: GET /session/:id/message
+      function getSessionMessages(sessionId: string): Promise<any[]> {
         return new Promise((resolve, reject) => {
-          const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
-          // If a preferred session ID (work item id) is provided, request the server to use it
-          if (preferredId) sessionPayload.id = preferredId;
-          const sessionData = JSON.stringify(sessionPayload);
-          debugLog('create session');
-          
-          const options = {
+          const opts = {
+            hostname: 'localhost',
+            port: opencodeServerPort,
+            path: `/session/${encodeURIComponent(sessionId)}/message`,
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          };
+          const r = http.request(opts, (resp) => {
+            let body = '';
+            resp.on('data', c => body += c);
+            resp.on('end', () => {
+              if (!body) return resolve([]);
+              try {
+                const parsed = JSON.parse(body);
+                if (Array.isArray(parsed)) return resolve(parsed);
+                return resolve([]);
+              } catch (err) {
+                return reject(err);
+              }
+            });
+          });
+          r.on('error', (err) => reject(err));
+          r.end();
+        });
+      }
+
+      function checkSessionExists(sessionId: string): Promise<boolean> {
+        return new Promise((resolve) => {
+          const opts = {
+            hostname: 'localhost',
+            port: opencodeServerPort,
+            path: `/session/${encodeURIComponent(sessionId)}`,
+            method: 'GET',
+            timeout: 2000,
+            headers: { 'Accept': 'application/json' }
+          } as any;
+          const r = http.request(opts, (resp) => {
+            const ok = resp.statusCode !== undefined && resp.statusCode >= 200 && resp.statusCode < 300;
+            resp.resume();
+            resolve(ok);
+          });
+          r.on('error', () => resolve(false));
+          r.on('timeout', () => { r.destroy(); resolve(false); });
+          r.end();
+        });
+      }
+
+        // Find an existing session whose title contains the workitem marker.
+      function findSessionByTitle(preferredId: string): Promise<string | null> {
+        return new Promise((resolve) => {
+          const searchTitle = `workitem:${preferredId}`;
+          const opts = {
             hostname: 'localhost',
             port: opencodeServerPort,
             path: '/session',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(sessionData)
-            }
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
           };
-          
+          const r = http.request(opts, (resp) => {
+            let body = '';
+            resp.on('data', c => body += c);
+            resp.on('end', () => {
+              if (!body) return resolve(null);
+              try {
+                const parsed = JSON.parse(body);
+                if (!Array.isArray(parsed)) return resolve(null);
+                for (const s of parsed) {
+                  const title = s?.title || s?.name || '';
+                  if (typeof title === 'string' && title.includes(searchTitle)) {
+                    return resolve(s.id || s.sessionId || s.session_id || null);
+                  }
+                }
+                return resolve(null);
+              } catch (_) {
+                return resolve(null);
+              }
+            });
+          });
+          r.on('error', () => resolve(null));
+          r.end();
+        });
+      }
+
+      // Helper function to create or reuse a session. Returns an object { id, workItemId, existing? }.
+      async function createSession(serverUrl: string, preferredId?: string | null): Promise<{ id: string; workItemId?: string | null; existing?: boolean; localHistory?: any[] | null }> {
+        const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
+        if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
+        if (preferredId) sessionPayload.id = preferredId;
+        const sessionData = JSON.stringify(sessionPayload);
+        debugLog('create session');
+
+        try {
+          if (preferredId) {
+            const persistedId = getPersistedSessionIdForWorkItem(preferredId);
+            if (persistedId) {
+              const exists = await checkSessionExists(persistedId);
+              if (exists) {
+                debugLog(`reusing persisted session mapping for workitem=${preferredId} id=${persistedId}`);
+                return { id: persistedId, workItemId: preferredId, existing: true };
+              }
+              const persistedHistory = loadPersistedSessionHistory(preferredId);
+              if (persistedHistory) {
+                debugLog(`found ${persistedHistory.length} persisted messages for workitem=${preferredId} (will NOT auto-replay)`);
+                // keep local history to present to the user if we must create a new session
+                // it will be attached to the returned object as `localHistory`
+                // fallthrough to attempt to find session by title or create new one
+              }
+            }
+
+            const existing = await findSessionByTitle(preferredId);
+            if (existing) {
+              debugLog(`found existing session for workitem=${preferredId} id=${existing}`);
+              persistSessionMapping(preferredId, existing);
+              return { id: existing, workItemId: preferredId, existing: true };
+            }
+          }
+        } catch (err) {
+          debugLog(`session lookup error: ${String(err)}`);
+        }
+
+        // Create a new session on the server
+        const options = {
+          hostname: 'localhost',
+          port: opencodeServerPort,
+          path: '/session',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(sessionData)
+          }
+        } as any;
+
+        const sessionResponse: any = await new Promise((resolve, reject) => {
           const req = http.request(options, (res) => {
             let responseData = '';
             debugLog(`create session status=${res.statusCode ?? 'unknown'}`);
-            
+
             res.on('data', (chunk) => {
               responseData += chunk;
             });
-            
+
             res.on('end', () => {
-                try {
-                  const session = JSON.parse(responseData);
-                  debugLog(`create session response length=${responseData.length}`);
-                  // If the server returned an ID use it; otherwise fall back to preferredId
-                  const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-                  resolve(returnedId);
-                } catch (err) {
-                  debugLog(`create session parse error: ${String(err)}`);
-                  reject(new Error('Failed to parse session response: ' + err));
-                }
+              try {
+                const parsed = JSON.parse(responseData);
+                resolve(parsed);
+              } catch (err) {
+                reject(err);
+              }
             });
           });
-          
           req.on('error', reject);
           req.write(sessionData);
           req.end();
         });
-      }
+
+          try {
+            const session = sessionResponse;
+            debugLog(`create session response length=${JSON.stringify(session).length}`);
+            const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
+            let returnedWorkItemId: string | null = null;
+            const returnedTitle = session?.title || session?.name || '';
+            if (typeof returnedTitle === 'string') {
+              const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
+              if (m) returnedWorkItemId = m[1];
+            }
+            if (preferredId && returnedId) {
+              persistSessionMapping(preferredId, returnedId);
+            }
+
+            // Persist server messages for future restarts
+            try {
+              const fetched = returnedId ? await getSessionMessages(returnedId as string) : null;
+              if (preferredId && fetched && fetched.length > 0) persistSessionHistory(preferredId, fetched);
+            } catch (err) {
+              // ignore
+            }
+
+            // Also surface any locally persisted history (from previous mapping) so the caller
+            // can render it when the server session couldn't be reused.
+            const localHistory = preferredId ? loadPersistedSessionHistory(preferredId) : null;
+
+            return { id: returnedId as string, workItemId: returnedWorkItemId || preferredId || null, localHistory };
+          } catch (err) {
+            debugLog(`create session parse error: ${String(err)}`);
+            throw new Error('Failed to create session: ' + String(err));
+          }
+        }
       
       function ensureOpencodePane() {
         if (opencodePane) {
@@ -1397,7 +1781,7 @@ export default function register(ctx: PluginContext): void {
 
         const bottomOffset = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
 
-        opencodePane = blessed.box({
+        opencodePane = blessedImpl.box({
           parent: screen,
           bottom: bottomOffset,
           left: 0,
@@ -1537,7 +1921,7 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
-      const helpMenu = blessed.box({
+       const helpMenu = blessedImpl.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -1557,7 +1941,7 @@ export default function register(ctx: PluginContext): void {
         }
       });
 
-      const helpClose = blessed.box({
+       const helpClose = blessedImpl.box({
         parent: helpMenu,
         top: 0,
         right: 1,

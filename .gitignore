@@ -157,3 +157,6 @@ vite.config.ts.timestamp-*
 
 # Worklog TUI state
 .worklog/tui-state.json
+
+# opencode temporary files
+.opencode/tmp/
