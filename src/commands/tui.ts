@@ -541,17 +541,19 @@ export default function register(ctx: PluginContext): void {
       opencodeText.on('keypress', function(this: any, _ch: any, _key: any) {
         // Handle Ctrl+Enter for newline insertion  
         if (_key && _key.name === 'linefeed') {
-          debugLog('Detected linefeed (Ctrl+Enter)');
+          debugLog('Detected linefeed (Ctrl+Enter) - handling resize BEFORE newline');
           
-          // The textarea has already inserted the newline
-          // We need to force a complete redraw
-          const value = this.getValue ? this.getValue() : '';
-          const lines = value.split('\n').length;
-          const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
+          // Get CURRENT value BEFORE the textarea adds the newline
+          const currentValue = this.getValue ? this.getValue() : '';
+          const currentLines = currentValue.split('\n').length;
           
-          debugLog(`Lines: ${lines}, desiredHeight: ${desiredHeight}`);
+          // Calculate what the height WILL BE after the newline
+          const futureLines = currentLines + 1;
+          const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, futureLines + 2), inputMaxHeight());
           
-          // Update heights FIRST
+          debugLog(`Resizing: current=${currentLines} lines, future=${futureLines} lines, height=${desiredHeight}`);
+          
+          // Resize the dialog FIRST
           opencodeDialog.height = desiredHeight;
           opencodeText.height = desiredHeight - 2;
           
@@ -560,22 +562,23 @@ export default function register(ctx: PluginContext): void {
             opencodePane.height = paneHeight();
           }
           
-          // Force complete redraw by temporarily clearing and restoring value
-          const savedPos = this.getCaretPosition ? this.getCaretPosition() : value.length;
-          this.clearValue();
+          // Render with new size
           screen.render();
-          this.setValue(value);
-          if (this.moveCursor) {
-            this.moveCursor(savedPos);
-          }
           
-          // Scroll to bottom to show cursor
-          if (this.setScrollPerc) {
-            this.setScrollPerc(100);
-          }
+          // After the event loop completes and blessed inserts the newline, scroll to bottom
+          setImmediate(() => {
+            const newValue = this.getValue ? this.getValue() : '';
+            debugLog(`After blessed inserted newline: ${newValue.split('\n').length} lines`);
+            
+            // Scroll to bottom to keep cursor visible
+            if (this.setScrollPerc) {
+              this.setScrollPerc(100);
+            }
+            
+            screen.render();
+          });
           
-          screen.render();
-          debugLog('After linefeed handling - rendered');
+          // Don't call updateOpencodeInputLayout as we've handled the resize
           return;
         }
         
