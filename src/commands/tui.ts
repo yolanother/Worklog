@@ -1463,6 +1463,15 @@ export default function register(ctx: PluginContext): void {
         const before = value.substring(0, pos);
         const after = value.substring(pos);
         const newValue = before + '\n' + after;
+        
+        // Update layout first to expand the box if needed
+        const oldHeight = opencodeDialog.height;
+        updateOpencodeInputLayout();
+        const newHeight = opencodeDialog.height;
+        const heightChanged = newHeight !== oldHeight;
+        
+        // Set the new value AFTER updating layout
+        // This ensures the textarea has the right dimensions when setting content
         this.setValue(newValue);
         
         // Move cursor to start of new line
@@ -1471,21 +1480,40 @@ export default function register(ctx: PluginContext): void {
           this.moveCursor(newCursorPos);
         }
         
-        // Update layout first to expand the box
-        updateOpencodeInputLayout();
-        
-        // Calculate how many lines are in the textarea
+        // Calculate viewport and scrolling
         const totalLines = newValue.split('\n').length;
-        const visibleHeight = opencodeDialog.height - 2; // Minus borders
+        const visibleHeight = newHeight - 2; // Minus borders
+        const cursorLine = (before.match(/\n/g) || []).length + 1; // 1-based line number
         
-        // If we have more lines than visible height, scroll to show cursor
-        if (totalLines > visibleHeight) {
-          // Scroll so cursor line is at bottom of visible area
-          const cursorLine = (before.match(/\n/g) || []).length + 1;
-          const scrollTo = Math.max(0, cursorLine - visibleHeight + 1);
-          if (this.setScroll) {
-            this.setScroll(scrollTo);
+        // Always ensure we can see the cursor line
+        // If height changed, we need to recalculate the viewport
+        if (this.setScroll) {
+          // Keep cursor line visible in the viewport
+          // If cursor is below visible area, scroll down
+          // If cursor is above visible area (shouldn't happen), scroll up
+          const currentScroll = this.getScroll ? this.getScroll() : 0;
+          let newScroll = currentScroll;
+          
+          if (cursorLine > currentScroll + visibleHeight) {
+            // Cursor is below visible area, scroll down
+            newScroll = cursorLine - visibleHeight;
+          } else if (cursorLine <= currentScroll) {
+            // Cursor is above visible area, scroll up
+            newScroll = cursorLine - 1;
           }
+          
+          // For small content that fits entirely, don't scroll
+          if (totalLines <= visibleHeight) {
+            newScroll = 0;
+          }
+          
+          this.setScroll(Math.max(0, newScroll));
+        }
+        
+        // If the textarea needs to re-render its content
+        // Force a re-render by triggering the blessed internal update
+        if (this._updateCursor) {
+          this._updateCursor(true);
         }
         
         // Force focus back to ensure cursor is visible
