@@ -538,7 +538,13 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Hook into textarea input to update autocomplete
+      // Flag to prevent keypress handler from interfering with Ctrl+Enter
+      let isHandlingCtrlEnter = false;
+      
       opencodeText.on('keypress', function(_ch: any, _key: any) {
+        // Skip update if we're handling Ctrl+Enter
+        if (isHandlingCtrlEnter) return;
+        
         // Update immediately on keypress for better responsiveness
         process.nextTick(() => {
           updateAutocomplete();
@@ -1457,6 +1463,9 @@ export default function register(ctx: PluginContext): void {
 
       // Ctrl+Enter inserts newline
       opencodeText.key(['C-enter'], function(this: any) {
+        // Set flag to prevent keypress handler from interfering
+        isHandlingCtrlEnter = true;
+        
         // Get current value and cursor position
         const value = this.getValue ? this.getValue() : '';
         const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
@@ -1471,10 +1480,9 @@ export default function register(ctx: PluginContext): void {
         const lines = newValue.split('\n').length;
         const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
         const oldHeight = opencodeDialog.height;
-        const needsExpansion = desiredHeight > oldHeight;
         
-        // Expand dialog if needed
-        if (needsExpansion) {
+        // Update dialog and textarea dimensions if needed
+        if (desiredHeight !== oldHeight) {
           opencodeDialog.height = desiredHeight;
           opencodeText.height = desiredHeight - 2;
           
@@ -1482,16 +1490,10 @@ export default function register(ctx: PluginContext): void {
             opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
             opencodePane.height = paneHeight();
           }
-          
-          // WORKAROUND: After expanding, we need to force blessed to redraw the textarea content
-          // We do this by clearing and re-setting the value
-          this.setValue('');
-          screen.render();
-          this.setValue(newValue);
-        } else {
-          // No expansion needed, just set the value normally
-          this.setValue(newValue);
         }
+        
+        // Set the new value with the newline
+        this.setValue(newValue);
         
         // Move cursor to the correct position
         if (this.moveCursor) {
@@ -1506,9 +1508,18 @@ export default function register(ctx: PluginContext): void {
           this.setScroll(cursorLine - visibleLines);
         }
         
-        // Ensure focus and render
+        // Ensure focus
         this.focus();
+        
+        // Force a complete screen render
         screen.render();
+        
+        // Reset flag after a short delay to allow render to complete
+        process.nextTick(() => {
+          isHandlingCtrlEnter = false;
+          // Do another render to ensure everything is displayed
+          screen.render();
+        });
       });
 
       // Pressing Escape while the dialog (or any child) is focused should
