@@ -640,9 +640,11 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 0;  // Position at left of dialog interior
         opencodeText.width = '100%-2';  // Leave 1 char padding on each side
         opencodeText.height = desiredHeight - 2;  // Height minus top and bottom borders
-        // Reset styles by clearing properties without replacing the style object
+        // Ensure a style object exists but avoid replacing it entirely — blessed
+        // keeps internal references to the original style object which must be
+        // preserved. Create a style object only when missing (e.g. in tests).
         if (!opencodeText.style) {
-          opencodeText.style = {};
+          (opencodeText as any).style = {};
         }
         // Clear border and focus styles without replacing the entire style object
         if (opencodeText.style.border) {
@@ -685,9 +687,11 @@ export default function register(ctx: PluginContext): void {
         opencodeText.left = 0;  // Position at left of dialog interior  
         opencodeText.width = '100%-2';  // Leave 1 char padding on each side
         opencodeText.height = MIN_INPUT_HEIGHT - 2;  // Height minus borders
-        // Reset styles by clearing properties without replacing the style object
+        // Ensure a style object exists but avoid replacing it entirely — blessed
+        // keeps internal references to the original style object which must be
+        // preserved. Create a style object only when missing (e.g. in tests).
         if (!opencodeText.style) {
-          opencodeText.style = {};
+          (opencodeText as any).style = {};
         }
         // Clear border and focus styles without replacing the entire style object
         if (opencodeText.style.border) {
