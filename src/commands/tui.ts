@@ -883,8 +883,9 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      // Store current session ID for server communication
+      // Store current session ID and associated work-item id for server communication
       let currentSessionId: string | null = null;
+      let currentSessionWorkItemId: string | null = null;
       
       // Function to communicate with OpenCode server via HTTP API with SSE streaming
       async function sendPromptToServer(
@@ -907,11 +908,20 @@ export default function register(ctx: PluginContext): void {
             : createSession(serverUrl, preferredSessionId);
             
           sessionPromise
-            .then(sessionId => {
+            .then(sessionObj => {
+              // sessionObj may be a string (old behaviour) or an object { id, workItemId }
+              const sessionId = typeof sessionObj === 'string' ? sessionObj : sessionObj.id;
+              const sessionWorkItemId = typeof sessionObj === 'string' ? preferredSessionId : (sessionObj.workItemId || preferredSessionId);
               currentSessionId = sessionId;
-              // Update pane label to include session ID
+              currentSessionWorkItemId = sessionWorkItemId || null;
+              // Update pane label to show the associated work-item id when available
               if (pane.setLabel) {
-                pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
+                if (currentSessionWorkItemId) {
+                  pane.setLabel(` opencode - Work Item: ${currentSessionWorkItemId} [esc] `);
+                } else {
+                  // Fall back to session id only if no work-item id is known
+                  pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
+                }
               }
               pane.pushLine('');
               pane.pushLine(`{gray-fg}${prompt}{/}`);
@@ -921,7 +931,7 @@ export default function register(ctx: PluginContext): void {
                 pane.setScrollPerc(100);
               }
               screen.render();
-              debugLog(`session id=${sessionId}`);
+               debugLog(`session id=${sessionId} workitem=${String(currentSessionWorkItemId)}`);
               
               // Use async prompt endpoint for better streaming
               const messageData = JSON.stringify({
@@ -1337,10 +1347,13 @@ export default function register(ctx: PluginContext): void {
       }
       
       // Helper function to create a new session
-      function createSession(serverUrl: string, preferredId?: string | null): Promise<string> {
+      // Create session and return both server id and any work-item id embedded in the session
+      function createSession(serverUrl: string, preferredId?: string | null): Promise<{ id: string; workItemId?: string | null } | string> {
         return new Promise((resolve, reject) => {
           const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
-          // If a preferred session ID (work item id) is provided, request the server to use it
+          // If a preferred session ID (work item id) is provided, include it in the title so the server echoes it back
+          if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
+          // Also include an id field in case the server accepts it
           if (preferredId) sessionPayload.id = preferredId;
           const sessionData = JSON.stringify(sessionPayload);
           debugLog('create session');
@@ -1370,7 +1383,15 @@ export default function register(ctx: PluginContext): void {
                   debugLog(`create session response length=${responseData.length}`);
                   // If the server returned an ID use it; otherwise fall back to preferredId
                   const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-                  resolve(returnedId);
+                  // Try to extract work-item id from returned title if present (we set title to 'workitem:<id> ...')
+                  let returnedWorkItemId: string | null = null;
+                  const returnedTitle = session?.title || session?.name || session?.slug || '';
+                  if (typeof returnedTitle === 'string') {
+                    const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
+                    if (m) returnedWorkItemId = m[1];
+                  }
+                  // Resolve with an object containing both ids
+                  resolve({ id: returnedId, workItemId: returnedWorkItemId || preferredId || null });
                 } catch (err) {
                   debugLog(`create session parse error: ${String(err)}`);
                   reject(new Error('Failed to parse session response: ' + err));
