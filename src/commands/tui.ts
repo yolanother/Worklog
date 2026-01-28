@@ -539,6 +539,11 @@ export default function register(ctx: PluginContext): void {
 
       // Hook into textarea input to update autocomplete
       opencodeText.on('keypress', function(_ch: any, _key: any) {
+        // Log all keypresses to debug
+        if (_key && _key.name) {
+          debugLog(`keypress: name=${_key.name} ctrl=${_key.ctrl} shift=${_key.shift} meta=${_key.meta}`);
+        }
+        
         // Update immediately on keypress for better responsiveness
         process.nextTick(() => {
           updateAutocomplete();
@@ -1455,8 +1460,8 @@ export default function register(ctx: PluginContext): void {
         runOpencode(prompt);
       });
 
-      // Ctrl+Enter inserts newline
-      opencodeText.key(['C-enter'], function(this: any) {
+      // Ctrl+Enter inserts newline - try multiple key combinations
+      opencodeText.key(['C-enter', 'C-m', 'C-return'], function(this: any) {
         debugLog('CTRL+ENTER HANDLER CALLED');
         // Get current state
         const value = this.getValue ? this.getValue() : '';
