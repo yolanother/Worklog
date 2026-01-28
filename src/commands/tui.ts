@@ -541,8 +541,6 @@ export default function register(ctx: PluginContext): void {
       opencodeText.on('keypress', function(this: any, _ch: any, _key: any) {
         // Handle Ctrl+Enter for newline insertion  
         if (_key && _key.name === 'linefeed') {
-          debugLog('Detected linefeed (Ctrl+Enter) - handling resize BEFORE newline');
-          
           // Get CURRENT value BEFORE the textarea adds the newline
           const currentValue = this.getValue ? this.getValue() : '';
           const currentLines = currentValue.split('\n').length;
@@ -550,8 +548,6 @@ export default function register(ctx: PluginContext): void {
           // Calculate what the height WILL BE after the newline
           const futureLines = currentLines + 1;
           const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, futureLines + 2), inputMaxHeight());
-          
-          debugLog(`Resizing: current=${currentLines} lines, future=${futureLines} lines, height=${desiredHeight}`);
           
           // Resize the dialog FIRST
           opencodeDialog.height = desiredHeight;
@@ -567,9 +563,6 @@ export default function register(ctx: PluginContext): void {
           
           // After the event loop completes and blessed inserts the newline, scroll to bottom
           setImmediate(() => {
-            const newValue = this.getValue ? this.getValue() : '';
-            debugLog(`After blessed inserted newline: ${newValue.split('\n').length} lines`);
-            
             // Scroll to bottom to keep cursor visible
             if (this.setScrollPerc) {
               this.setScrollPerc(100);
@@ -1498,77 +1491,6 @@ export default function register(ctx: PluginContext): void {
         runOpencode(prompt);
       });
 
-      // Ctrl+Enter inserts newline - try multiple key combinations
-      opencodeText.key(['C-enter', 'C-m', 'C-return'], function(this: any) {
-        debugLog('CTRL+ENTER HANDLER CALLED');
-        // Get current state
-        const value = this.getValue ? this.getValue() : '';
-        debugLog(`Current value: ${value}`);
-        const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
-        const before = value.substring(0, pos);
-        const after = value.substring(pos);
-        const newValue = before + '\n' + after;
-        const newCursorPos = before.length + 1;
-        
-        // Calculate new height
-        const lines = newValue.split('\n').length;
-        const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
-        
-        // Set the new value first
-        this.setValue(newValue);
-        if (this.moveCursor) {
-          this.moveCursor(newCursorPos);
-        }
-        
-        // Update dialog height
-        opencodeDialog.height = desiredHeight;
-        opencodeText.height = desiredHeight - 2;
-        
-        // Force blessed to recalculate the textarea's render
-        // This is a hack but might fix the display issue
-        if (this._parseContent) {
-          this._parseContent();
-        }
-        if (this.setContent && this.getContent) {
-          this.setContent(this.getContent());
-        }
-        
-        // Update pane if needed
-        if (opencodePane) {
-          opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
-          opencodePane.height = paneHeight();
-        }
-        
-        // HACK: Test if typing a character fixes the rendering
-        // Add a period temporarily
-        debugLog('HACK: Adding period for test');
-        const testValue = newValue + '.';
-        this.setValue(testValue);
-        debugLog(`After adding period: ${this.getValue()}`);
-        this.moveCursor(newCursorPos + testValue.length);
-        screen.render();
-        
-        // Remove the period
-        debugLog('HACK: Removing period');
-        this.setValue(newValue);
-        debugLog(`After removing period: ${this.getValue()}`);
-        this.moveCursor(newCursorPos);
-        
-        // Always scroll to bottom to show all content including the cursor
-        if (this.setScrollPerc) {
-          this.setScrollPerc(100);
-        } else if (this.setScroll) {
-          // Scroll to the last line
-          const totalLines = newValue.split('\n').length;
-          const visibleLines = desiredHeight - 2;
-          const maxScroll = Math.max(0, totalLines - visibleLines);
-          this.setScroll(maxScroll);
-        }
-        
-        // Multiple renders to ensure display
-        this.focus();
-        screen.render();
-      });
 
       // Pressing Escape while the dialog (or any child) is focused should
       // close both the input dialog and the response pane so the user returns
