@@ -27,11 +27,12 @@ Success criteria
 - Tests: unit tests cover detection logic and JSON output schema; integration test(s) verify exit codes for representative fixtures.
 - Refactor report: deliver a short, actionable refactor report as part of the MVP that outlines how to evolve the codebase from the MVP to a pluggable checks system (modules, plugin API shape, registration lifecycle, config model, performance considerations).
 
-Constraints
+- Constraints
 - Non-destructive by default; any auto-fix behaviour must be opt-in via `--fix` and `--dry-run` modes (not in scope for initial delivery).
 - Must operate on current persisted worklog data formats (see `.worklog/worklog-data.jsonl`) and reuse dependency edges produced by `Feature: Dependency tracking + ready` (WL-0MKRPG5CY0592TOI).
 - CLI must be consistent with existing command patterns (subcommand under `worklog` with standard `--json` flag and `--scope` filters).
-- Performance: target typical execution for repositories in the 100s up to 5,000 items; design for streaming/linear-time checks where possible to meet upper bound.
+-- Performance: target typical execution for repositories in the 100s up to 5,000 items; design for streaming/linear-time checks where possible to meet upper bound.
+  - Preferred data flow: perform checks against the canonical worklog datastore (DB) where possible and export results to `.worklog/worklog-data.jsonl` or similar JSONL fixtures as a final artifact. This reduces repeated parsing costs and enables efficient queries for large datasets; the MVP may read JSONL but the long-term approach should prioritise DB-backed analysis with a JSONL export step when complete.
 
 Existing state
 - Parent epic: `Add bd-equivalent workflow commands` (WL-0MKRJK13H1VCHLPZ) contains `worklog doctor` as a child (WL-0MKRPG64S04PL1A6).
