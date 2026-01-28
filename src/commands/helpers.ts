@@ -245,18 +245,19 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     lines.push(item.stage);
   }
 
-  if (db) {
-    const comments = db.getCommentsForWorkItem(item.id);
-    if (comments.length > 0) {
-      lines.push('');
-      lines.push('## Comments');
-      lines.push('');
-      for (const c of comments) {
-        lines.push(`  [${c.id}] ${c.author} at ${c.createdAt}`);
-        lines.push(`    ${c.comment}`);
+    if (db) {
+      // Ensure comments are presented newest-first in human output as well.
+      const comments = db.getCommentsForWorkItem(item.id);
+      if (comments.length > 0) {
+        lines.push('');
+        lines.push('## Comments');
+        lines.push('');
+        for (const c of comments) {
+          lines.push(`  [${c.id}] ${c.author} at ${c.createdAt}`);
+          lines.push(`    ${c.comment}`);
+        }
       }
     }
-  }
 
   return lines.join('\n');
 }
