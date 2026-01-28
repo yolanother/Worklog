@@ -1336,52 +1336,225 @@ export default function register(ctx: PluginContext): void {
         req.end();
       }
       
-      // Helper function to create a new session
-      function createSession(serverUrl: string, preferredId?: string | null): Promise<string> {
+      // Persisted session mapping helpers (workItemId -> sessionId)
+      function getPersistedSessionIdForWorkItem(workItemId: string): string | null {
+        try {
+          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
+          return persisted.sessionMap && persisted.sessionMap[workItemId] ? persisted.sessionMap[workItemId] : null;
+        } catch (_) { return null; }
+      }
+
+      function persistSessionMapping(workItemId: string, sessionId: string) {
+        try {
+          const prefix = db.getPrefix?.();
+          const state = loadPersistedState(prefix) || {};
+          state.sessionMap = state.sessionMap || {};
+          state.sessionMap[workItemId] = sessionId;
+          savePersistedState(prefix, state);
+        } catch (err) {
+          debugLog(`failed to persist session mapping: ${String(err)}`);
+        }
+      }
+
+      function persistSessionHistory(workItemId: string, history: any[]) {
+        try {
+          const prefix = db.getPrefix?.();
+          const state = loadPersistedState(prefix) || {};
+          state.sessionHistories = state.sessionHistories || {};
+          state.sessionHistories[workItemId] = history;
+          savePersistedState(prefix, state);
+        } catch (err) {
+          debugLog(`failed to persist session history: ${String(err)}`);
+        }
+      }
+
+      function loadPersistedSessionHistory(workItemId: string): any[] | null {
+        try {
+          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
+          return persisted.sessionHistories && persisted.sessionHistories[workItemId] ? persisted.sessionHistories[workItemId] : null;
+        } catch (_) { return null; }
+      }
+
+      // Retrieve messages for a session: GET /session/:id/message
+      function getSessionMessages(sessionId: string): Promise<any[]> {
         return new Promise((resolve, reject) => {
-          const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
-          // If a preferred session ID (work item id) is provided, request the server to use it
-          if (preferredId) sessionPayload.id = preferredId;
-          const sessionData = JSON.stringify(sessionPayload);
-          debugLog('create session');
-          
-          const options = {
+          const opts = {
+            hostname: 'localhost',
+            port: opencodeServerPort,
+            path: `/session/${encodeURIComponent(sessionId)}/message`,
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          };
+          const r = http.request(opts, (resp) => {
+            let body = '';
+            resp.on('data', c => body += c);
+            resp.on('end', () => {
+              if (!body) return resolve([]);
+              try {
+                const parsed = JSON.parse(body);
+                if (Array.isArray(parsed)) return resolve(parsed);
+                return resolve([]);
+              } catch (err) {
+                return reject(err);
+              }
+            });
+          });
+          r.on('error', (err) => reject(err));
+          r.end();
+        });
+      }
+
+      function checkSessionExists(sessionId: string): Promise<boolean> {
+        return new Promise((resolve) => {
+          const opts = {
+            hostname: 'localhost',
+            port: opencodeServerPort,
+            path: `/session/${encodeURIComponent(sessionId)}`,
+            method: 'GET',
+            timeout: 2000,
+            headers: { 'Accept': 'application/json' }
+          } as any;
+          const r = http.request(opts, (resp) => {
+            const ok = resp.statusCode !== undefined && resp.statusCode >= 200 && resp.statusCode < 300;
+            resp.resume();
+            resolve(ok);
+          });
+          r.on('error', () => resolve(false));
+          r.on('timeout', () => { r.destroy(); resolve(false); });
+          r.end();
+        });
+      }
+
+      // Find an existing session whose title contains the workitem marker.
+      function findSessionByTitle(preferredId: string): Promise<string | null> {
+        return new Promise((resolve) => {
+          const searchTitle = `workitem:${preferredId}`;
+          const opts = {
             hostname: 'localhost',
             port: opencodeServerPort,
             path: '/session',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(sessionData)
-            }
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
           };
-          
+          const r = http.request(opts, (resp) => {
+            let body = '';
+            resp.on('data', c => body += c);
+            resp.on('end', () => {
+              if (!body) return resolve(null);
+              try {
+                const parsed = JSON.parse(body);
+                if (!Array.isArray(parsed)) return resolve(null);
+                for (const s of parsed) {
+                  const title = s?.title || s?.name || '';
+                  if (typeof title === 'string' && title.includes(searchTitle)) {
+                    return resolve(s.id || s.sessionId || s.session_id || null);
+                  }
+                }
+                return resolve(null);
+              } catch (_) {
+                return resolve(null);
+              }
+            });
+          });
+          r.on('error', () => resolve(null));
+          r.end();
+        });
+      }
+
+      // Helper function to create or reuse a session. Returns the server session id.
+      async function createSession(serverUrl: string, preferredId?: string | null): Promise<string> {
+        const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
+        if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
+        if (preferredId) sessionPayload.id = preferredId;
+        const sessionData = JSON.stringify(sessionPayload);
+        debugLog('create session');
+
+        try {
+          if (preferredId) {
+            const persistedId = getPersistedSessionIdForWorkItem(preferredId);
+            if (persistedId) {
+              const exists = await checkSessionExists(persistedId);
+              if (exists) {
+                debugLog(`reusing persisted session mapping for workitem=${preferredId} id=${persistedId}`);
+                return persistedId;
+              }
+              const persistedHistory = loadPersistedSessionHistory(preferredId);
+              if (persistedHistory) debugLog(`found ${persistedHistory.length} persisted messages for workitem=${preferredId} (will NOT auto-replay)`);
+            }
+
+            const existing = await findSessionByTitle(preferredId);
+            if (existing) {
+              debugLog(`found existing session for workitem=${preferredId} id=${existing}`);
+              persistSessionMapping(preferredId, existing);
+              return existing;
+            }
+          }
+        } catch (err) {
+          debugLog(`session lookup error: ${String(err)}`);
+        }
+
+        // Create a new session on the server
+        const options = {
+          hostname: 'localhost',
+          port: opencodeServerPort,
+          path: '/session',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(sessionData)
+          }
+        } as any;
+
+        const sessionResponse: any = await new Promise((resolve, reject) => {
           const req = http.request(options, (res) => {
             let responseData = '';
             debugLog(`create session status=${res.statusCode ?? 'unknown'}`);
-            
+
             res.on('data', (chunk) => {
               responseData += chunk;
             });
-            
+
             res.on('end', () => {
-                try {
-                  const session = JSON.parse(responseData);
-                  debugLog(`create session response length=${responseData.length}`);
-                  // If the server returned an ID use it; otherwise fall back to preferredId
-                  const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-                  resolve(returnedId);
-                } catch (err) {
-                  debugLog(`create session parse error: ${String(err)}`);
-                  reject(new Error('Failed to parse session response: ' + err));
-                }
+              try {
+                const parsed = JSON.parse(responseData);
+                resolve(parsed);
+              } catch (err) {
+                reject(err);
+              }
             });
           });
-          
           req.on('error', reject);
           req.write(sessionData);
           req.end();
         });
+
+        try {
+          const session = sessionResponse;
+          debugLog(`create session response length=${JSON.stringify(session).length}`);
+          const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
+          let returnedWorkItemId: string | null = null;
+          const returnedTitle = session?.title || session?.name || '';
+          if (typeof returnedTitle === 'string') {
+            const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
+            if (m) returnedWorkItemId = m[1];
+          }
+          if (preferredId && returnedId) {
+            persistSessionMapping(preferredId, returnedId);
+          }
+
+          // Persist server messages for future restarts
+          try {
+            const fetched = returnedId ? await getSessionMessages(returnedId as string) : null;
+            if (preferredId && fetched && fetched.length > 0) persistSessionHistory(preferredId, fetched);
+          } catch (err) {
+            // ignore
+          }
+
+          return returnedId as string;
+        } catch (err) {
+          debugLog(`create session parse error: ${String(err)}`);
+          throw new Error('Failed to create session: ' + String(err));
+        }
       }
       
       function ensureOpencodePane() {
