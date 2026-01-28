@@ -5,6 +5,7 @@
 import type { PluginContext } from '../plugin-types.js';
 import type { UpdateOptions } from '../cli-types.js';
 import type { UpdateWorkItemInput, WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
+import { promises as fs } from 'fs';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
 
 export default function register(ctx: PluginContext): void {
@@ -15,6 +16,7 @@ export default function register(ctx: PluginContext): void {
     .description('Update a work item')
     .option('-t, --title <title>', 'New title')
     .option('-d, --description <description>', 'New description')
+    .option('--description-file <file>', 'Read description from a file')
     .option('-s, --status <status>', 'New status')
     .option('-p, --priority <priority>', 'New priority')
     .option('-P, --parent <parentId>', 'New parent ID')
@@ -28,13 +30,22 @@ export default function register(ctx: PluginContext): void {
     .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
     .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((id: string, options: UpdateOptions) => {
+    .action(async (id: string, options: UpdateOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const normalizedId = utils.normalizeCliId(id, options.prefix) || id;
       const updates: UpdateWorkItemInput = {};
       if (options.title) updates.title = options.title;
       if (options.description) updates.description = options.description;
+      if (options.descriptionFile) {
+        try {
+          const contents = await fs.readFile(options.descriptionFile, 'utf8');
+          updates.description = contents;
+        } catch (err) {
+          output.error(`Failed to read description file: ${options.descriptionFile}`);
+          process.exit(1);
+        }
+      }
       if (options.status) updates.status = options.status as WorkItemStatus;
       if (options.priority) updates.priority = options.priority as WorkItemPriority;
       if (options.parent !== undefined) updates.parentId = utils.normalizeCliId(options.parent, options.prefix) || null;

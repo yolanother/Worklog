@@ -6,6 +6,7 @@ import type { PluginContext } from '../plugin-types.js';
 import type { CreateOptions } from '../cli-types.js';
 import type { WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
+import { promises as fs } from 'fs';
 
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
@@ -15,6 +16,7 @@ export default function register(ctx: PluginContext): void {
     .description('Create a new work item')
     .requiredOption('-t, --title <title>', 'Title of the work item')
     .option('-d, --description <description>', 'Description of the work item', '')
+    .option('--description-file <file>', 'Read description from a file')
     .option('-s, --status <status>', 'Status (open, in-progress, completed, blocked, deleted)', 'open')
     .option('-p, --priority <priority>', 'Priority (low, medium, high, critical)', 'medium')
     .option('-P, --parent <parentId>', 'Parent work item ID')
@@ -28,13 +30,24 @@ export default function register(ctx: PluginContext): void {
     .option('--deleted-by <deletedBy>', 'Deleted by (interoperability field)')
     .option('--delete-reason <deleteReason>', 'Delete reason (interoperability field)')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options: CreateOptions) => {
+    .action(async (options: CreateOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      
+
+      let description = options.description || '';
+      if (options.descriptionFile) {
+        try {
+          description = await fs.readFile(options.descriptionFile, 'utf8');
+        } catch (err) {
+          // Print a helpful error and exit with failure
+          console.error(`Failed to read description file: ${options.descriptionFile}`);
+          process.exit(1);
+        }
+      }
+
       const item = db.create({
         title: options.title,
-        description: options.description || '',
+        description: description,
         status: (options.status || 'open') as WorkItemStatus,
         priority: (options.priority || 'medium') as WorkItemPriority,
         parentId: utils.normalizeCliId(options.parent, options.prefix) || null,
