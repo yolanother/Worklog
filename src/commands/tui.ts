@@ -474,6 +474,7 @@ export default function register(ctx: PluginContext): void {
       let currentSuggestion = '';
       let isCommandMode = false;
       let userTypedText = '';
+      let isWaitingForResponse = false; // Track if we're waiting for OpenCode response
 
       // Create a text element to show the suggestion below the input
       const suggestionHint = blessed.text({
@@ -1433,6 +1434,12 @@ export default function register(ctx: PluginContext): void {
           return;
         }
 
+        // Block if we're already waiting for a response
+        if (isWaitingForResponse) {
+          showToast('Please wait for current response to complete');
+          return;
+        }
+
         // Check server is running
         if (opencodeServerStatus !== 'running' || opencodeServerPort === 0) {
           showToast('OpenCode server not running');
@@ -1444,10 +1451,23 @@ export default function register(ctx: PluginContext): void {
         opencodePane.setFront();
         screen.render();
 
+        // Set flag to block new requests and update label
+        isWaitingForResponse = true;
+        opencodeDialog.setLabel(' prompt (waiting...) [esc] ');
+        screen.render();
+
         // Use HTTP API to communicate with server
         try {
-          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => openOpencodeDialog());
+          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => {
+            // Clear flag when response completes and restore label
+            isWaitingForResponse = false;
+            opencodeDialog.setLabel(' prompt [esc] ');
+            openOpencodeDialog();
+          });
         } catch (err) {
+          // Clear flag on error too and restore label
+          isWaitingForResponse = false;
+          opencodeDialog.setLabel(' prompt [esc] ');
           opencodePane.pushLine(`{red-fg}Server communication error: ${err}{/red-fg}`);
           screen.render();
         }
