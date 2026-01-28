@@ -1494,11 +1494,20 @@ export default function register(ctx: PluginContext): void {
           opencodePane.height = paneHeight();
         }
         
-        // Scroll to keep cursor visible
+        // Scroll handling - ensure content is visible
         const cursorLine = (before.match(/\n/g) || []).length + 1;
+        const totalLines = newValue.split('\n').length;
         const visibleLines = desiredHeight - 2;
-        if (this.setScroll && cursorLine > visibleLines) {
-          this.setScroll(cursorLine - visibleLines);
+        
+        if (this.setScroll) {
+          if (totalLines <= visibleLines) {
+            // All content fits - scroll to top
+            this.setScroll(0);
+          } else if (cursorLine > visibleLines) {
+            // Content doesn't fit and cursor is beyond visible area - scroll down
+            this.setScroll(cursorLine - visibleLines);
+          }
+          // Otherwise keep current scroll position
         }
         
         // Multiple renders to ensure display
