@@ -538,10 +538,41 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Hook into textarea input to update autocomplete
-      opencodeText.on('keypress', function(_ch: any, _key: any) {
-        // Log all keypresses to debug
-        if (_key && _key.name) {
-          debugLog(`keypress: name=${_key.name} ctrl=${_key.ctrl} shift=${_key.shift} meta=${_key.meta}`);
+      opencodeText.on('keypress', function(this: any, _ch: any, _key: any) {
+        // Handle Ctrl+Enter for newline insertion  
+        if (_key && _key.name === 'linefeed') {
+          debugLog('Detected linefeed (Ctrl+Enter)');
+          
+          // The textarea has already inserted the newline, so we just need to handle the resize
+          const value = this.getValue ? this.getValue() : '';
+          const lines = value.split('\n').length;
+          const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
+          
+          opencodeDialog.height = desiredHeight;
+          opencodeText.height = desiredHeight - 2;
+          
+          if (opencodePane) {
+            opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
+            opencodePane.height = paneHeight();
+          }
+          
+          // HACK: Add and remove a character to force refresh
+          const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
+          const testValue = value + '.';
+          this.setValue(testValue);
+          screen.render();
+          this.setValue(value);
+          if (this.moveCursor) {
+            this.moveCursor(pos);
+          }
+          
+          // Scroll to bottom
+          if (this.setScrollPerc) {
+            this.setScrollPerc(100);
+          }
+          
+          screen.render();
+          return;
         }
         
         // Update immediately on keypress for better responsiveness
