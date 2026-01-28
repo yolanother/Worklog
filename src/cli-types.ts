@@ -16,6 +16,7 @@ export interface StatusOptions { prefix?: string }
 export interface CreateOptions {
   title: string;
   description?: string;
+  descriptionFile?: string;
   status?: WorkItemStatus;
   priority?: WorkItemPriority;
   parent?: string;
@@ -47,6 +48,7 @@ export interface ShowOptions { children?: boolean; prefix?: string }
 export interface UpdateOptions {
   title?: string;
   description?: string;
+  descriptionFile?: string;
   status?: WorkItemStatus;
   priority?: WorkItemPriority;
   parent?: string;
