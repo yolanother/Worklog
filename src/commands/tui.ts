@@ -538,13 +538,7 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Hook into textarea input to update autocomplete
-      // Flag to prevent keypress handler from interfering with Ctrl+Enter
-      let isHandlingCtrlEnter = false;
-      
       opencodeText.on('keypress', function(_ch: any, _key: any) {
-        // Skip update if we're handling Ctrl+Enter
-        if (isHandlingCtrlEnter) return;
-        
         // Update immediately on keypress for better responsiveness
         process.nextTick(() => {
           updateAutocomplete();
@@ -1463,61 +1457,56 @@ export default function register(ctx: PluginContext): void {
 
       // Ctrl+Enter inserts newline
       opencodeText.key(['C-enter'], function(this: any) {
-        // Set flag to prevent keypress handler from interfering
-        isHandlingCtrlEnter = true;
-        
-        // Get current value and cursor position
+        // Get current state
         const value = this.getValue ? this.getValue() : '';
         const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
         const before = value.substring(0, pos);
         const after = value.substring(pos);
-        
-        // Create new value with newline inserted
         const newValue = before + '\n' + after;
         const newCursorPos = before.length + 1;
         
-        // Calculate if we need to expand the dialog
+        // Calculate new height
         const lines = newValue.split('\n').length;
         const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
-        const oldHeight = opencodeDialog.height;
         
-        // Update dialog and textarea dimensions if needed
-        if (desiredHeight !== oldHeight) {
-          opencodeDialog.height = desiredHeight;
-          opencodeText.height = desiredHeight - 2;
-          
-          if (opencodePane) {
-            opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
-            opencodePane.height = paneHeight();
-          }
-        }
-        
-        // Set the new value with the newline
+        // Set the new value first
         this.setValue(newValue);
-        
-        // Move cursor to the correct position
         if (this.moveCursor) {
           this.moveCursor(newCursorPos);
         }
         
-        // Handle scrolling if content exceeds visible area
-        const visibleLines = (opencodeText.height as number) || 1;
-        const cursorLine = (before.match(/\n/g) || []).length + 1; // 1-based
+        // Update dialog height
+        opencodeDialog.height = desiredHeight;
+        opencodeText.height = desiredHeight - 2;
         
+        // Force blessed to recalculate the textarea's render
+        // This is a hack but might fix the display issue
+        if (this._parseContent) {
+          this._parseContent();
+        }
+        if (this.setContent && this.getContent) {
+          this.setContent(this.getContent());
+        }
+        
+        // Update pane if needed
+        if (opencodePane) {
+          opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
+          opencodePane.height = paneHeight();
+        }
+        
+        // Scroll to keep cursor visible
+        const cursorLine = (before.match(/\n/g) || []).length + 1;
+        const visibleLines = desiredHeight - 2;
         if (this.setScroll && cursorLine > visibleLines) {
           this.setScroll(cursorLine - visibleLines);
         }
         
-        // Ensure focus
+        // Multiple renders to ensure display
         this.focus();
-        
-        // Force a complete screen render
         screen.render();
         
-        // Reset flag after a short delay to allow render to complete
-        process.nextTick(() => {
-          isHandlingCtrlEnter = false;
-          // Do another render to ensure everything is displayed
+        // Force another render after the event loop
+        setImmediate(() => {
           screen.render();
         });
       });
