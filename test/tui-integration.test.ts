@@ -30,11 +30,9 @@ const blessedMock = {
   list: vi.fn((opts: any) => ({ style: opts?.style || {}, setItems: vi.fn(), on: vi.fn() })),
 };
 
-// Mock blessed so the module under test receives our mock when imported
-vi.doMock('blessed', () => blessedMock);
-
-// Import register after mocking blessed
-import register from '../src/commands/tui';
+// We'll inject our mock into the require cache for 'blessed' right before
+// importing the module under test so the ESM import in that module picks
+// up our mocked implementation.
 
 describe('TUI integration: style preservation', () => {
   beforeEach(() => {
@@ -63,6 +61,17 @@ describe('TUI integration: style preservation', () => {
       }),
     };
 
+    // Inject our mocked blessed into node's module cache so that importing
+    // the module under test will receive it. We must do this via require
+    // cache because the module uses ESM import which in the test environment
+    // will read from the CJS cache mapping.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const blessedPath = require.resolve('blessed');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require.cache[blessedPath] = { exports: blessedMock } as any;
+    // Now import the module under test after patching the cache
+    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+    const register = require('../src/commands/tui').default;
     // Register the TUI command (stores action in savedAction)
     register({ program, utils } as any);
 
