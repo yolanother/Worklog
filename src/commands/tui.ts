@@ -883,9 +883,8 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      // Store current session ID and associated work-item id for server communication
+      // Store current session ID for server communication
       let currentSessionId: string | null = null;
-      let currentSessionWorkItemId: string | null = null;
       
       // Function to communicate with OpenCode server via HTTP API with SSE streaming
       async function sendPromptToServer(
@@ -900,28 +899,16 @@ export default function register(ctx: PluginContext): void {
         
         return new Promise((resolve, reject) => {
           // First, create or reuse a session
-          // Prefer using the currently-selected work item ID as the OpenCode session ID
-          const preferredSessionId = (typeof getSelectedItem === 'function' && getSelectedItem()) ? getSelectedItem()?.id : null;
-          // If we already have a session that matches the preferred ID, reuse it.
-          const sessionPromise = (currentSessionId && preferredSessionId && currentSessionId === preferredSessionId)
+          const sessionPromise = currentSessionId 
             ? Promise.resolve(currentSessionId)
-            : createSession(serverUrl, preferredSessionId);
+            : createSession(serverUrl);
             
           sessionPromise
-            .then(sessionObj => {
-              // sessionObj may be a string (old behaviour) or an object { id, workItemId }
-              const sessionId = typeof sessionObj === 'string' ? sessionObj : sessionObj.id;
-              const sessionWorkItemId = typeof sessionObj === 'string' ? preferredSessionId : (sessionObj.workItemId || preferredSessionId);
+            .then(sessionId => {
               currentSessionId = sessionId;
-              currentSessionWorkItemId = sessionWorkItemId || null;
-              // Update pane label to show the associated work-item id when available
+              // Update pane label to include session ID
               if (pane.setLabel) {
-                if (currentSessionWorkItemId) {
-                  pane.setLabel(` opencode - Work Item: ${currentSessionWorkItemId} [esc] `);
-                } else {
-                  // Fall back to session id only if no work-item id is known
-                  pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
-                }
+                pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
               }
               pane.pushLine('');
               pane.pushLine(`{gray-fg}${prompt}{/}`);
@@ -931,7 +918,7 @@ export default function register(ctx: PluginContext): void {
                 pane.setScrollPerc(100);
               }
               screen.render();
-               debugLog(`session id=${sessionId} workitem=${String(currentSessionWorkItemId)}`);
+              debugLog(`session id=${sessionId}`);
               
               // Use async prompt endpoint for better streaming
               const messageData = JSON.stringify({
@@ -1347,15 +1334,11 @@ export default function register(ctx: PluginContext): void {
       }
       
       // Helper function to create a new session
-      // Create session and return both server id and any work-item id embedded in the session
-      function createSession(serverUrl: string, preferredId?: string | null): Promise<{ id: string; workItemId?: string | null } | string> {
+      function createSession(serverUrl: string): Promise<string> {
         return new Promise((resolve, reject) => {
-          const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
-          // If a preferred session ID (work item id) is provided, include it in the title so the server echoes it back
-          if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
-          // Also include an id field in case the server accepts it
-          if (preferredId) sessionPayload.id = preferredId;
-          const sessionData = JSON.stringify(sessionPayload);
+          const sessionData = JSON.stringify({
+            title: 'TUI Session ' + new Date().toISOString()
+          });
           debugLog('create session');
           
           const options = {
@@ -1378,24 +1361,14 @@ export default function register(ctx: PluginContext): void {
             });
             
             res.on('end', () => {
-                try {
-                  const session = JSON.parse(responseData);
-                  debugLog(`create session response length=${responseData.length}`);
-                  // If the server returned an ID use it; otherwise fall back to preferredId
-                  const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-                  // Try to extract work-item id from returned title if present (we set title to 'workitem:<id> ...')
-                  let returnedWorkItemId: string | null = null;
-                  const returnedTitle = session?.title || session?.name || session?.slug || '';
-                  if (typeof returnedTitle === 'string') {
-                    const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
-                    if (m) returnedWorkItemId = m[1];
-                  }
-                  // Resolve with an object containing both ids
-                  resolve({ id: returnedId, workItemId: returnedWorkItemId || preferredId || null });
-                } catch (err) {
-                  debugLog(`create session parse error: ${String(err)}`);
-                  reject(new Error('Failed to parse session response: ' + err));
-                }
+              try {
+                const session = JSON.parse(responseData);
+                debugLog(`create session response length=${responseData.length}`);
+                resolve(session.id);
+              } catch (err) {
+                debugLog(`create session parse error: ${String(err)}`);
+                reject(new Error('Failed to parse session response: ' + err));
+              }
             });
           });
           
@@ -1440,18 +1413,15 @@ export default function register(ctx: PluginContext): void {
         // When Escape is pressed in the response pane we want to close
         // the pane but leave the input dialog open so the user can edit
         // or resubmit the prompt without re-opening the prompt dialog.
-      opencodePane.key(['escape'], () => {
-        closeOpencodePane();
-        // Return focus to the input textbox if it's visible so the
-        // user can continue typing. If the input dialog is in compact
-        // mode it will remain visible.
-        try {
-          opencodeText.focus();
-        } catch (_) {}
-        // Prevent the global Escape handler from acting immediately
-        // after we closed the pane.
-        suppressEscapeUntil = Date.now() + 250;
-      });
+        opencodePane.key(['escape'], () => {
+          closeOpencodePane();
+          // Return focus to the input textbox if it's visible so the
+          // user can continue typing. If the input dialog is in compact
+          // mode it will remain visible.
+          try {
+            opencodeText.focus();
+          } catch (_) {}
+        });
         
         opencodePane.show();
         opencodePane.setFront();
@@ -1551,9 +1521,6 @@ export default function register(ctx: PluginContext): void {
         if (opencodePane) {
           opencodePane.hide();
         }
-        // Prevent the global Escape handler from acting on the same
-        // keypress and exiting the TUI.
-        suppressEscapeUntil = Date.now() + 250;
         list.focus();
         screen.render();
       });
@@ -1741,11 +1708,6 @@ export default function register(ctx: PluginContext): void {
       }
 
       let suppressDetailCloseUntil = 0;
-      // Prevent the global Escape handler from immediately exiting when
-      // a child control handles Escape (e.g. the input textarea).
-      // Child handlers set this timestamp briefly to suppress the
-      // global handler from acting on the same key event.
-      let suppressEscapeUntil = 0;
       function openDetailsForId(id: string) {
         const item = db.get(id);
         if (!item) {
@@ -2120,11 +2082,6 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['escape'], () => {
-        // If a child handler just handled Escape, ignore this global
-        // handler to avoid exiting the TUI unexpectedly.
-        if (suppressEscapeUntil && Date.now() < suppressEscapeUntil) {
-          return;
-        }
         // Close any active overlays/panes in reverse-open order
         if (!closeDialog.hidden) {
           closeCloseDialog();
