@@ -89,8 +89,11 @@ export default function register(ctx: PluginContext): void {
           if (!fs.existsSync(statePath)) return null;
           const raw = fs.readFileSync(statePath, 'utf8');
           const j = JSON.parse(raw || '{}');
-          return j[prefix || 'default'] || null;
+          const val = j[prefix || 'default'] || null;
+          debugLog(`loadPersistedState prefix=${String(prefix || 'default')} path=${statePath} present=${val !== null}`);
+          return val;
         } catch (err) {
+          debugLog(`loadPersistedState error: ${String(err)}`);
           return null;
         }
       }
@@ -104,8 +107,13 @@ export default function register(ctx: PluginContext): void {
           }
           j[prefix || 'default'] = state;
           fs.writeFileSync(statePath, JSON.stringify(j, null, 2), 'utf8');
+          try {
+            const keys = Object.keys(state || {}).join(',');
+            debugLog(`savePersistedState prefix=${String(prefix || 'default')} path=${statePath} keys=[${keys}]`);
+          } catch (_) {}
         } catch (err) {
-          // ignore persistence errors
+          debugLog(`savePersistedState error: ${String(err)}`);
+          // ignore persistence errors but log for debugging
         }
       }
 
@@ -883,8 +891,9 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      // Store current session ID for server communication
+      // Store current session ID and associated work-item id for server communication
       let currentSessionId: string | null = null;
+      let currentSessionWorkItemId: string | null = null;
       
       // Function to communicate with OpenCode server via HTTP API with SSE streaming
       async function sendPromptToServer(
@@ -906,73 +915,223 @@ export default function register(ctx: PluginContext): void {
             ? Promise.resolve(currentSessionId)
             : createSession(serverUrl, preferredSessionId);
             
-          sessionPromise
-            .then(sessionId => {
-              currentSessionId = sessionId;
-              // Update pane label to include session ID
-              if (pane.setLabel) {
-                pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
-              }
-              pane.pushLine('');
-              pane.pushLine(`{gray-fg}${prompt}{/}`);
-              pane.pushLine('');
-              // Ensure we scroll to the bottom after adding content
-              if (pane.setScrollPerc) {
-                pane.setScrollPerc(100);
-              }
-              screen.render();
-              debugLog(`session id=${sessionId}`);
-              
-              // Use async prompt endpoint for better streaming
-              const messageData = JSON.stringify({
-                parts: [{ type: 'text', text: prompt }]
-              });
-              
-              // First, send the prompt asynchronously
-              const sendOptions = {
-                hostname: 'localhost',
-                port: opencodeServerPort,
-                path: `/session/${sessionId}/prompt_async`,
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Content-Length': Buffer.byteLength(messageData)
-                }
-              };
-              
-              const sendReq = http.request(sendOptions, (res) => {
-                debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
-                if (res.statusCode === 204) {
-                  // Success - now connect to SSE for streaming response
-                  connectToSSE(sessionId, prompt, pane, indicator, inputField, resolve, reject, onComplete);
+           sessionPromise
+             .then(async (sessionObj) => {
+               // sessionObj may be a string (older behaviour) or an object { id, workItemId, existing }
+               const sessionId = typeof sessionObj === 'string' ? sessionObj : sessionObj.id;
+               const sessionWorkItemId = typeof sessionObj === 'string' ? null : (sessionObj.workItemId || null);
+               const sessionExisting = typeof sessionObj === 'object' && !!(sessionObj as any).existing;
+               currentSessionId = sessionId;
+               currentSessionWorkItemId = sessionWorkItemId;
+               // Update pane label to show the associated work-item id when available
+               if (pane.setLabel) {
+                 if (currentSessionWorkItemId) {
+                   pane.setLabel(` opencode - Work Item: ${currentSessionWorkItemId} [esc] `);
+                 } else {
+                   pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
+                 }
+               }
+
+                // If we found an existing session, load its history into the pane first
+                if (sessionExisting) {
+                  try {
+                    const history = await getSessionMessages(sessionId);
+                    if (pane.setContent) {
+                     let histText = '';
+                     for (const m of history) {
+                       const role = m.info?.role || 'unknown';
+                       histText += `{gray-fg}[${role}]{/}\n`;
+                       const parts = m.parts || [];
+                       for (const p of parts) {
+                         if (p.type === 'text' && p.text) {
+                           histText += `${p.text}\n`;
+                         } else if (p.type === 'tool-result' && p.content) {
+                           histText += `{green-fg}[Tool Result]{/}\n`;
+                           histText += `${p.content}\n`;
+                         } else if (p.type === 'tool-use' && p.tool) {
+                           histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
+                           if (p.tool.description) histText += `${p.tool.description}\n`;
+                         }
+                       }
+                       histText += '\n';
+                     }
+                      pane.setContent(histText + '\n');
+                    }
+                  } catch (err) {
+                    debugLog(`failed to load session history: ${String(err)}`);
+                  }
                 } else {
-                  let errorData = '';
-                  res.on('data', chunk => { errorData += chunk; });
-                  res.on('end', () => {
-                    debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
-                    const errorMsg = errorData || `HTTP ${res.statusCode} error`;
-                    pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
-                    screen.render();
-                    reject(new Error(`Failed to send prompt: ${errorMsg}`));
-                  });
+                  // No existing server session was found/used. If we have a locally
+                  // persisted history for this work-item, surface it read-only so
+                  // the user can inspect prior messages without auto-replaying them.
+                  try {
+                    const localHist = (sessionObj as any)?.localHistory;
+                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
+                      debugLog(`rendering local persisted history messages=${localHist.length} for workitem=${String(sessionWorkItemId)}`);
+                      if (pane.setContent) {
+                        let histText = '{yellow-fg}[Local persisted history - read-only]{/}\n\n';
+                        for (const m of localHist) {
+                          const role = m.info?.role || 'unknown';
+                          histText += `{gray-fg}[${role}]{/}\n`;
+                          const parts = m.parts || [];
+                          for (const p of parts) {
+                            if (p.type === 'text' && p.text) {
+                              histText += `${p.text}\n`;
+                            } else if (p.type === 'tool-result' && p.content) {
+                              histText += `{green-fg}[Tool Result]{/}\n`;
+                              histText += `${p.content}\n`;
+                            } else if (p.type === 'tool-use' && p.tool) {
+                              histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
+                              if (p.tool.description) histText += `${p.tool.description}\n`;
+                            }
+                          }
+                          histText += '\n';
+                        }
+                        // Add a clear separator so the user's new prompt is visually separated
+                        histText += '{yellow-fg}[End of local history]{/}\n\n';
+                        pane.setContent(histText + '\n');
+                      }
+                    }
+                  } catch (err) {
+                    debugLog(`failed to render local history: ${String(err)}`);
+                  }
                 }
-              });
-              
-              sendReq.on('error', (err) => {
-                debugLog(`prompt_async request error: ${String(err)}`);
-                pane.pushLine(`{red-fg}Request error: ${err}{/}`);
-                screen.render();
-                reject(err);
-              });
-              
-              sendReq.write(messageData);
-              sendReq.end();
-            })
-            .catch(err => {
-              pane.pushLine(`{red-fg}Session error: ${err}{/}`);
-              screen.render();
-              reject(err);
-            });
+                // If we rendered a local history above (server session wasn't reused)
+                // offer the user a safe restore flow: Show only / Restore via summary / Full replay.
+                let finalPrompt = prompt;
+                if (!sessionExisting) {
+                  try {
+                    const localHist = (sessionObj as any)?.localHistory;
+                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
+                      // Present a small modal to ask how to proceed.
+                      const choice = await new Promise<number>((resolve) => {
+                        const restoreOverlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                        const restoreDialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                        const text = blessed.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
+                        const opts = blessed.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
+                        opts.select(0);
+                        restoreOverlay.setFront(); restoreDialog.setFront(); opts.focus(); screen.render();
+                        function cleanup() { try { restoreDialog.hide(); restoreOverlay.hide(); restoreDialog.destroy(); restoreOverlay.destroy(); } catch (_) {} }
+                        opts.on('select', (_el: any, idx: number) => { cleanup(); resolve(idx); });
+                        // Allow escape to cancel
+                        restoreDialog.key(['escape'], () => { cleanup(); resolve(3); });
+                      });
+
+                      if (choice === 1) {
+                        // Restore via summary: generate editable summary, then prepend to prompt
+                        const generated = generateSummaryFromHistory(localHist);
+                        const edited = await new Promise<string>((resolve) => {
+                          const overlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                          const dialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                          const ta = blessed.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
+                          try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
+                          const btns = blessed.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
+                          btns.select(0);
+                          overlay.setFront(); dialog.setFront(); ta.focus(); screen.render();
+                          function cleanup() { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch (_) {} }
+                          btns.on('select', (_el: any, idx: number) => {
+                            const val = ta.getValue ? ta.getValue() : generated;
+                            cleanup(); if (idx === 0) resolve(val); else resolve('');
+                          });
+                          dialog.key(['escape'], () => { cleanup(); resolve(''); });
+                        });
+                        if (edited && edited.trim()) {
+                          finalPrompt = `Context summary (user-edited):\n${edited}\n\nUser prompt:\n${prompt}`;
+                        }
+                      } else if (choice === 2) {
+                        // Full replay chosen — confirm with the user
+                        const confirm = await new Promise<boolean>((resolve) => {
+                          const overlay = blessed.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
+                          const dialog = blessed.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
+                          const text = blessed.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
+                          const input = blessed.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
+                          const cancelBtn = blessed.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
+                          overlay.setFront(); dialog.setFront(); input.focus(); screen.render();
+                          cancelBtn.on('click', () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
+                          input.on('submit', (val: string) => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve((val||'').trim() === 'YES'); });
+                          dialog.key(['escape'], () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
+                        });
+                        if (confirm) {
+                          // build a raw replay string — join textual parts
+                          const allText: string[] = [];
+                          for (const m of localHist) {
+                            const parts = m.parts || [];
+                            for (const p of parts) {
+                              if (p.type === 'text' && p.text) allText.push(p.text);
+                              else if (p.type === 'tool-result' && p.content) allText.push('[Tool Result]\n' + String(p.content));
+                            }
+                          }
+                          const replayText = allText.join('\n\n---\n\n');
+                          finalPrompt = `Full replay of previous conversation:\n${replayText}\n\nUser prompt:\n${prompt}`;
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    debugLog(`restore flow error: ${String(err)}`);
+                  }
+                }
+
+                pane.pushLine('');
+                // Show the user's short prompt in the pane (finalPrompt may contain extra context)
+                pane.pushLine(`{gray-fg}${prompt}{/}`);
+                pane.pushLine('');
+               // Ensure we scroll to the bottom after adding content
+               if (pane.setScrollPerc) {
+                 pane.setScrollPerc(100);
+               }
+               screen.render();
+               debugLog(`session id=${sessionId} workitem=${String(currentSessionWorkItemId)}`);
+
+               // Use async prompt endpoint for better streaming
+                const messageData = JSON.stringify({
+                  parts: [{ type: 'text', text: finalPrompt }]
+                });
+
+               // First, send the prompt asynchronously
+               const sendOptions = {
+                 hostname: 'localhost',
+                 port: opencodeServerPort,
+                 path: `/session/${sessionId}/prompt_async`,
+                 method: 'POST',
+                 headers: {
+                   'Content-Type': 'application/json',
+                   'Content-Length': Buffer.byteLength(messageData)
+                 }
+               };
+
+               const sendReq = http.request(sendOptions, (res) => {
+                 debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
+                 if (res.statusCode === 204) {
+                   // Success - now connect to SSE for streaming response
+                    connectToSSE(sessionId, finalPrompt, pane, indicator, inputField, resolve, reject, onComplete);
+                 } else {
+                   let errorData = '';
+                   res.on('data', chunk => { errorData += chunk; });
+                   res.on('end', () => {
+                     debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
+                     const errorMsg = errorData || `HTTP ${res.statusCode} error`;
+                     pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
+                     screen.render();
+                     reject(new Error(`Failed to send prompt: ${errorMsg}`));
+                   });
+                 }
+               });
+
+               sendReq.on('error', (err) => {
+                 debugLog(`prompt_async request error: ${String(err)}`);
+                 pane.pushLine(`{red-fg}Request error: ${err}{/}`);
+                 screen.render();
+                 reject(err);
+               });
+
+               sendReq.write(messageData);
+               sendReq.end();
+             })
+             .catch(err => {
+               pane.pushLine(`{red-fg}Session error: ${err}{/}`);
+               screen.render();
+               reject(err);
+             });
         });
       }
       
@@ -1351,6 +1510,7 @@ export default function register(ctx: PluginContext): void {
           state.sessionMap = state.sessionMap || {};
           state.sessionMap[workItemId] = sessionId;
           savePersistedState(prefix, state);
+          debugLog(`persistSessionMapping workitem=${workItemId} -> session=${sessionId}`);
         } catch (err) {
           debugLog(`failed to persist session mapping: ${String(err)}`);
         }
@@ -1363,6 +1523,7 @@ export default function register(ctx: PluginContext): void {
           state.sessionHistories = state.sessionHistories || {};
           state.sessionHistories[workItemId] = history;
           savePersistedState(prefix, state);
+          debugLog(`persistSessionHistory workitem=${workItemId} messages=${(history || []).length}`);
         } catch (err) {
           debugLog(`failed to persist session history: ${String(err)}`);
         }
@@ -1373,6 +1534,40 @@ export default function register(ctx: PluginContext): void {
           const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
           return persisted.sessionHistories && persisted.sessionHistories[workItemId] ? persisted.sessionHistories[workItemId] : null;
         } catch (_) { return null; }
+      }
+
+      // Produce a short, editable summary from persisted session history.
+      // This is intentionally simple: extract recent text parts and join them
+      // into a paragraph suitable for sending as context to the server.
+      function generateSummaryFromHistory(history: any[]): string {
+        try {
+          if (!history || history.length === 0) return '';
+          const pieces: string[] = [];
+          // Walk from the end (most recent) back and collect text parts
+          for (let i = history.length - 1; i >= 0 && pieces.length < 8; i--) {
+            const m = history[i];
+            const parts = m.parts || [];
+            for (let j = parts.length - 1; j >= 0; j--) {
+              const p = parts[j];
+              if (p.type === 'text' && p.text) {
+                const t = String(p.text).trim();
+                if (t) pieces.push(t);
+              } else if (p.type === 'tool-result' && p.content) {
+                const t = String(p.content).split('\n').slice(0, 4).join(' ').trim();
+                if (t) pieces.push(`[Tool result] ${t}`);
+              }
+              if (pieces.length >= 8) break;
+            }
+          }
+          pieces.reverse(); // maintain chronological order
+          let joined = pieces.join('\n\n');
+          // Trim to reasonable length for sending
+          if (joined.length > 1200) joined = joined.slice(0, 1200) + '...';
+          return joined;
+        } catch (err) {
+          debugLog(`summary error: ${String(err)}`);
+          return '';
+        }
       }
 
       // Retrieve messages for a session: GET /session/:id/message
@@ -1425,7 +1620,7 @@ export default function register(ctx: PluginContext): void {
         });
       }
 
-      // Find an existing session whose title contains the workitem marker.
+        // Find an existing session whose title contains the workitem marker.
       function findSessionByTitle(preferredId: string): Promise<string | null> {
         return new Promise((resolve) => {
           const searchTitle = `workitem:${preferredId}`;
@@ -1461,8 +1656,8 @@ export default function register(ctx: PluginContext): void {
         });
       }
 
-      // Helper function to create or reuse a session. Returns the server session id.
-      async function createSession(serverUrl: string, preferredId?: string | null): Promise<string> {
+      // Helper function to create or reuse a session. Returns an object { id, workItemId, existing? }.
+      async function createSession(serverUrl: string, preferredId?: string | null): Promise<{ id: string; workItemId?: string | null; existing?: boolean; localHistory?: any[] | null }> {
         const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
         if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
         if (preferredId) sessionPayload.id = preferredId;
@@ -1476,17 +1671,22 @@ export default function register(ctx: PluginContext): void {
               const exists = await checkSessionExists(persistedId);
               if (exists) {
                 debugLog(`reusing persisted session mapping for workitem=${preferredId} id=${persistedId}`);
-                return persistedId;
+                return { id: persistedId, workItemId: preferredId, existing: true };
               }
               const persistedHistory = loadPersistedSessionHistory(preferredId);
-              if (persistedHistory) debugLog(`found ${persistedHistory.length} persisted messages for workitem=${preferredId} (will NOT auto-replay)`);
+              if (persistedHistory) {
+                debugLog(`found ${persistedHistory.length} persisted messages for workitem=${preferredId} (will NOT auto-replay)`);
+                // keep local history to present to the user if we must create a new session
+                // it will be attached to the returned object as `localHistory`
+                // fallthrough to attempt to find session by title or create new one
+              }
             }
 
             const existing = await findSessionByTitle(preferredId);
             if (existing) {
               debugLog(`found existing session for workitem=${preferredId} id=${existing}`);
               persistSessionMapping(preferredId, existing);
-              return existing;
+              return { id: existing, workItemId: preferredId, existing: true };
             }
           }
         } catch (err) {
@@ -1528,34 +1728,38 @@ export default function register(ctx: PluginContext): void {
           req.end();
         });
 
-        try {
-          const session = sessionResponse;
-          debugLog(`create session response length=${JSON.stringify(session).length}`);
-          const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-          let returnedWorkItemId: string | null = null;
-          const returnedTitle = session?.title || session?.name || '';
-          if (typeof returnedTitle === 'string') {
-            const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
-            if (m) returnedWorkItemId = m[1];
-          }
-          if (preferredId && returnedId) {
-            persistSessionMapping(preferredId, returnedId);
-          }
-
-          // Persist server messages for future restarts
           try {
-            const fetched = returnedId ? await getSessionMessages(returnedId as string) : null;
-            if (preferredId && fetched && fetched.length > 0) persistSessionHistory(preferredId, fetched);
-          } catch (err) {
-            // ignore
-          }
+            const session = sessionResponse;
+            debugLog(`create session response length=${JSON.stringify(session).length}`);
+            const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
+            let returnedWorkItemId: string | null = null;
+            const returnedTitle = session?.title || session?.name || '';
+            if (typeof returnedTitle === 'string') {
+              const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
+              if (m) returnedWorkItemId = m[1];
+            }
+            if (preferredId && returnedId) {
+              persistSessionMapping(preferredId, returnedId);
+            }
 
-          return returnedId as string;
-        } catch (err) {
-          debugLog(`create session parse error: ${String(err)}`);
-          throw new Error('Failed to create session: ' + String(err));
+            // Persist server messages for future restarts
+            try {
+              const fetched = returnedId ? await getSessionMessages(returnedId as string) : null;
+              if (preferredId && fetched && fetched.length > 0) persistSessionHistory(preferredId, fetched);
+            } catch (err) {
+              // ignore
+            }
+
+            // Also surface any locally persisted history (from previous mapping) so the caller
+            // can render it when the server session couldn't be reused.
+            const localHistory = preferredId ? loadPersistedSessionHistory(preferredId) : null;
+
+            return { id: returnedId as string, workItemId: returnedWorkItemId || preferredId || null, localHistory };
+          } catch (err) {
+            debugLog(`create session parse error: ${String(err)}`);
+            throw new Error('Failed to create session: ' + String(err));
+          }
         }
-      }
       
       function ensureOpencodePane() {
         if (opencodePane) {
