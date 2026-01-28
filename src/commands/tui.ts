@@ -1494,6 +1494,17 @@ export default function register(ctx: PluginContext): void {
           opencodePane.height = paneHeight();
         }
         
+        // HACK: Test if typing a character fixes the rendering
+        // Add a period temporarily
+        const testValue = newValue + '.';
+        this.setValue(testValue);
+        this.moveCursor(newCursorPos + testValue.length);
+        screen.render();
+        
+        // Remove the period
+        this.setValue(newValue);
+        this.moveCursor(newCursorPos);
+        
         // Always scroll to bottom to show all content including the cursor
         if (this.setScrollPerc) {
           this.setScrollPerc(100);
@@ -1508,11 +1519,6 @@ export default function register(ctx: PluginContext): void {
         // Multiple renders to ensure display
         this.focus();
         screen.render();
-        
-        // Force another render after the event loop
-        setImmediate(() => {
-          screen.render();
-        });
       });
 
       // Pressing Escape while the dialog (or any child) is focused should
