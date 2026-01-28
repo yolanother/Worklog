@@ -1457,8 +1457,10 @@ export default function register(ctx: PluginContext): void {
 
       // Ctrl+Enter inserts newline
       opencodeText.key(['C-enter'], function(this: any) {
+        debugLog('CTRL+ENTER HANDLER CALLED');
         // Get current state
         const value = this.getValue ? this.getValue() : '';
+        debugLog(`Current value: ${value}`);
         const pos = this.getCaretPosition ? this.getCaretPosition() : value.length;
         const before = value.substring(0, pos);
         const after = value.substring(pos);
@@ -1496,13 +1498,17 @@ export default function register(ctx: PluginContext): void {
         
         // HACK: Test if typing a character fixes the rendering
         // Add a period temporarily
+        debugLog('HACK: Adding period for test');
         const testValue = newValue + '.';
         this.setValue(testValue);
+        debugLog(`After adding period: ${this.getValue()}`);
         this.moveCursor(newCursorPos + testValue.length);
         screen.render();
         
         // Remove the period
+        debugLog('HACK: Removing period');
         this.setValue(newValue);
+        debugLog(`After removing period: ${this.getValue()}`);
         this.moveCursor(newCursorPos);
         
         // Always scroll to bottom to show all content including the cursor
