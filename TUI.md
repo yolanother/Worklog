@@ -1,20 +1,18 @@
-Worklog TUI
-=============
+# Worklog TUI
 
 This document describes the interactive terminal UI shipped as the `wl tui` (or `worklog tui`) command.
 
-Overview
---------
+## Overview
 
 - The TUI presents a tree view of work items on the left and a details pane on the right.
 - It can show all items, or be limited to in-progress items via `--in-progress`.
 - The details pane uses the same human formatter as the CLI so what you see in the TUI matches `wl show --format full`.
 - Integrated OpenCode AI assistant for intelligent work item management and coding assistance.
 
-Controls
---------
+## Controls
 
 ### Navigation
+
 - Arrow Up / Down — move selection
 - Right / Enter — expand node
 - Left — collapse node (or collapse parent)
@@ -23,6 +21,7 @@ Controls
 - q / Esc / Ctrl-C — quit
 
 ### Work Item Actions
+
 - n — create new work item
 - e — edit selected item
 - c — add comment to selected item
@@ -32,6 +31,7 @@ Controls
 - h — toggle help menu
 
 ### OpenCode AI Integration
+
 - **O** (capital O) — open OpenCode AI assistant dialog
   - Ctrl+S — send prompt
   - Enter — accept autocomplete or add newline
@@ -41,18 +41,21 @@ Controls
   - Input fields appear when agent needs information
   - q or click [x] to close response pane
 
-OpenCode Features
------------------
+## OpenCode Features
 
 ### Auto-start Server
+
 The OpenCode server automatically starts when you press O. Server status indicators:
+
 - `[-]` — Server stopped
-- `[~]` — Server starting  
-- `[OK] Port: 9999` — Server running
+- `[~]` — Server starting
+- `[OK] Port: 9999` — Server running (default; configurable via `OPENCODE_SERVER_PORT`)
 - `[X]` — Server error
 
 ### Slash Commands
+
 Type `/` in the OpenCode dialog to see available commands:
+
 - `/help` — Get help with OpenCode
 - `/edit` — Edit files with AI assistance
 - `/create` — Create new files
@@ -61,6 +64,7 @@ Type `/` in the OpenCode dialog to see available commands:
 - Plus 20+ more commands
 
 ### Interactive Sessions
+
 - Sessions persist across multiple prompts
 - Real-time streaming responses
 - Interactive input when agents need clarification
@@ -68,8 +72,7 @@ Type `/` in the OpenCode dialog to see available commands:
 
 For detailed OpenCode documentation, see `docs/opencode-tui.md`.
 
-Usage
------
+## Usage
 
 Install dependencies and run from source:
 
@@ -78,14 +81,12 @@ npm install
 npm run cli -- tui
 ```
 
-Options
--------
+## Options
 
 - `--in-progress` — show only items with status `in-progress`.
 - `--prefix <prefix>` — use a different project prefix.
 
-Notes
------
+## Notes
 
 - The TUI uses `blessed` for rendering. For a smoother TypeScript developer experience install the types: `npm install -D @types/blessed`.
 - The TUI is intentionally lightweight: it renders items from the current database snapshot. If you want live updates across processes, run a background sync or re-open the TUI.

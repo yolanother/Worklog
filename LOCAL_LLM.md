@@ -102,8 +102,50 @@ export WIN_HOST_IP=$(ip route show default | awk '{print $3}')
 export FOUNDRY_PORT=65000  # or your chosen port
 export FOUNDRY_MODEL_NAME="phi-4-openvino-gpu:1" # be sure to select the right variant for
 
+CONFIG_DIR="${HOME}/.config/opencode"
+CONFIG_FILE="${CONFIG_DIR}/opencode.json"
 
+mkdir -p "$CONFIG_DIR"
 
+# Ensure file exists and is valid JSON
+if [ ! -s "$CONFIG_FILE" ]; then
+    echo '{}' > "$CONFIG_FILE"
+fi
+
+# Build provider JSON safely
+PROVIDER_JSON=$(cat <<EOF
+{
+  "provider": {
+    "foundry-local": {
+      "name": "Foundry Local",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+          "baseURL": "http://${WIN_HOST_IP}:${FOUNDRY_PORT}/v1"
+      },
+      "models": {
+          "${FOUNDRY_MODEL_NAME}": {
+              "name": "Phi 4"
+          }
+      }
+    }
+  }
+}
+EOF
+)
+
+# Write provider JSON to a temp file
+TMP_PROVIDER=$(mktemp)
+echo "$PROVIDER_JSON" > "$TMP_PROVIDER"
+
+# Merge safely
+jq -s 'reduce .[] as $item ({}; . * $item)' \
+    "$CONFIG_FILE" "$TMP_PROVIDER" \
+    > "${CONFIG_FILE}.tmp"
+
+mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+rm "$TMP_PROVIDER"
+
+echo "✓ Foundry Local provider added to $CONFIG_FILE"
 ```
 
 ---
