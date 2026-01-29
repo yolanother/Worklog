@@ -149,4 +149,45 @@ describe('TUI integration: style preservation', () => {
     // The style object should still be the same reference
     expect(created.style).toBe(originalStyleRef);
   });
+
+  it('escapes blessed tags when rendering detail text', async () => {
+    let savedAction: Function | null = null;
+    const program: any = {
+      opts: () => ({ verbose: false }),
+      command() { return this; },
+      description() { return this; },
+      option() { return this; },
+      action(fn: Function) { savedAction = fn; return this; },
+    };
+
+    const utils = {
+      requireInitialized: () => {},
+      getDatabase: () => ({
+        list: () => [{ id: 'WL-TEST-1', title: 'Detail item', status: 'open', description: 'Has {braces}' }],
+        getPrefix: () => 'default',
+        getCommentsForWorkItem: (_id: string) => [],
+        get: () => ({ id: 'WL-TEST-1', title: 'Detail item', status: 'open', description: 'Has {braces}' }),
+      }),
+    };
+
+    const mod = await import('../src/commands/tui');
+    const register = mod.default || mod;
+    register({ program, utils, blessed: blessedMock } as any);
+
+    await (savedAction as any)({});
+
+    const boxMock = (blessedMock as any).box?.mock;
+    const boxCalls = boxMock?.calls || [];
+    const detailIndex = boxCalls.findIndex((call: any[]) => call?.[0]?.label === ' Details ');
+    const detail = detailIndex >= 0 ? boxMock.results[detailIndex]?.value : null;
+
+    const selectHandler = handlers['select'] || handlers['select item'];
+    expect(typeof selectHandler).toBe('function');
+    selectHandler(null, 0);
+
+    const setContentCalls = detail?.setContent?.mock?.calls || [];
+    const content = setContentCalls.length > 0 ? setContentCalls[setContentCalls.length - 1][0] : '';
+    expect(content).toContain('{open}');
+    expect(content).toContain('{close}');
+  });
 });

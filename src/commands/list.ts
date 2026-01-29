@@ -58,8 +58,21 @@ export default function register(ctx: PluginContext): void {
         });
       }
       
-      // Sort then apply limit so we return the highest priority / oldest as intended
-      const sortedAll = items.slice().sort(sortByPriorityAndDate);
+      // Sort then apply limit so we return the intended order
+      const allowedIds = new Set(items.map(item => item.id));
+      const orderedItems = db.getAllOrderedByHierarchySortIndex().filter(item => allowedIds.has(item.id));
+      const positions = new Map(orderedItems.map((item, index) => [item.id, index]));
+      const sortedAll = items.slice().sort((a, b) => {
+        const aPos = positions.get(a.id);
+        const bPos = positions.get(b.id);
+        if (aPos === undefined && bPos === undefined) {
+          return sortByPriorityAndDate(a, b);
+        }
+        if (aPos === undefined) return 1;
+        if (bPos === undefined) return -1;
+        if (aPos !== bPos) return aPos - bPos;
+        return sortByPriorityAndDate(a, b);
+      });
       const limited = limit ? sortedAll.slice(0, limit) : sortedAll;
 
       if (utils.isJsonMode()) {

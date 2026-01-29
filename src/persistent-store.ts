@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -70,6 +70,7 @@ export class SqlitePersistentStore {
         description TEXT NOT NULL,
         status TEXT NOT NULL,
         priority TEXT NOT NULL,
+        sortIndex INTEGER NOT NULL DEFAULT 0,
         parentId TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
@@ -134,6 +135,14 @@ export class SqlitePersistentStore {
       maybeAdd('effort');
     }
 
+    if (existingVersion < 5) {
+      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
+      const existingCols = new Set(cols.map(c => String(c.name)));
+      if (!existingCols.has('sortIndex')) {
+        this.db.exec('ALTER TABLE workitems ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0');
+      }
+    }
+
     // Create comments table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS comments (
@@ -151,6 +160,8 @@ export class SqlitePersistentStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_workitems_status ON workitems(status);
       CREATE INDEX IF NOT EXISTS idx_workitems_priority ON workitems(priority);
+      CREATE INDEX IF NOT EXISTS idx_workitems_sortIndex ON workitems(sortIndex);
+      CREATE INDEX IF NOT EXISTS idx_workitems_parent_sortIndex ON workitems(parentId, sortIndex);
       CREATE INDEX IF NOT EXISTS idx_workitems_parentId ON workitems(parentId);
       CREATE INDEX IF NOT EXISTS idx_comments_workItemId ON comments(workItemId);
     `);
@@ -213,13 +224,14 @@ export class SqlitePersistentStore {
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
-      (id, title, description, status, priority, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, risk, effort, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, sortIndex, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, risk, effort, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
         status = excluded.status,
         priority = excluded.priority,
+        sortIndex = excluded.sortIndex,
         parentId = excluded.parentId,
         createdAt = excluded.createdAt,
         updatedAt = excluded.updatedAt,
@@ -243,6 +255,7 @@ export class SqlitePersistentStore {
       item.description,
       item.status,
       item.priority,
+      item.sortIndex,
       item.parentId,
       item.createdAt,
       item.updatedAt,
@@ -291,6 +304,45 @@ export class SqlitePersistentStore {
     const stmt = this.db.prepare('SELECT * FROM workitems');
     const rows = stmt.all() as any[];
     return rows.map(row => this.rowToWorkItem(row));
+  }
+
+  getAllWorkItemsOrderedByHierarchySortIndex(): WorkItem[] {
+    const items = this.getAllWorkItems();
+    const childrenByParent = new Map<string | null, WorkItem[]>();
+
+    for (const item of items) {
+      const parentKey = item.parentId ?? null;
+      const list = childrenByParent.get(parentKey);
+      if (list) {
+        list.push(item);
+      } else {
+        childrenByParent.set(parentKey, [item]);
+      }
+    }
+
+    const sortSiblings = (list: WorkItem[]): WorkItem[] => {
+      return list.slice().sort((a, b) => {
+        if (a.sortIndex !== b.sortIndex) {
+          return a.sortIndex - b.sortIndex;
+        }
+        const createdDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        if (createdDiff !== 0) return createdDiff;
+        return a.id.localeCompare(b.id);
+      });
+    };
+
+    const ordered: WorkItem[] = [];
+    const traverse = (parentId: string | null) => {
+      const children = childrenByParent.get(parentId) || [];
+      const sorted = sortSiblings(children);
+      for (const child of sorted) {
+        ordered.push(child);
+        traverse(child.id);
+      }
+    };
+
+    traverse(null);
+    return ordered;
   }
 
   /**
@@ -418,6 +470,7 @@ export class SqlitePersistentStore {
         description: row.description,
         status: row.status,
         priority: row.priority,
+        sortIndex: row.sortIndex ?? 0,
         parentId: row.parentId,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -444,6 +497,7 @@ export class SqlitePersistentStore {
         description: row.description,
         status: row.status,
         priority: row.priority,
+        sortIndex: row.sortIndex ?? 0,
         parentId: row.parentId,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

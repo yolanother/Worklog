@@ -18,22 +18,13 @@ import chalk from 'chalk';
 
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
 const WORKLOG_POST_PULL_HOOK_MARKER = 'worklog:post-pull-hook:v1';
-const WORKLOG_GITIGNORE_MARKER = 'worklog:gitignore:v1';
+const WORKLOG_GITIGNORE_SECTION_START = 'Worklog Specific Ignores';
+const WORKLOG_GITIGNORE_SECTION_END = '### End of Worklog Specific Ignores';
 const WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH = 'templates/AGENTS.md';
 const WORKLOG_AGENT_DESTINATION_FILENAME = 'AGENTS.md';
 const WORKFLOW_TEMPLATE_RELATIVE_PATH = 'templates/WORKFLOW.md';
 const WORKFLOW_DESTINATION_FILENAME = 'WORKFLOW.md';
-
-const WORKLOG_GITIGNORE_ENTRIES: string[] = [
-  `# ${WORKLOG_GITIGNORE_MARKER}`,
-  '.worklog/config.yaml',
-  '.worklog/initialized',
-  '.worklog/worklog.db',
-  '.worklog/worklog.db-shm',
-  '.worklog/worklog.db-wal',
-  '.worklog/worklog-data.jsonl',
-  '.worklog/tmp-worktree-*',
-];
+const WORKLOG_GITIGNORE_TEMPLATE_RELATIVE_PATH = 'templates/GITIGNORE_WORKLOG.txt';
 
 const DEFAULT_COMMITTED_HOOKS_DIR = '.githooks';
 
@@ -86,12 +77,6 @@ function normalizeInitOptions(options: InitOptions): NormalizedInitOptions {
   };
 }
 
-function fileHasLine(content: string, line: string): boolean {
-  const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(^|\\n)${escaped}(\\n|$)`);
-  return re.test(content);
-}
-
 function ensureGitignore(options: { silent: boolean }): { updated: boolean; present: boolean; gitignorePath?: string; added?: string[]; reason?: string } {
   let gitignorePath = path.join(process.cwd(), '.gitignore');
 
@@ -113,16 +98,27 @@ function ensureGitignore(options: { silent: boolean }): { updated: boolean; pres
     return { updated: false, present: false, gitignorePath, reason: (e as Error).message };
   }
 
-  const missing: string[] = [];
-  for (const line of WORKLOG_GITIGNORE_ENTRIES) {
-    if (!fileHasLine(existing, line)) {
-      missing.push(line);
-    }
-  }
-
-  if (missing.length === 0) {
+  if (existing && hasWorklogGitignoreSection(existing)) {
     return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, added: [] };
   }
+
+  const templatePath = locateGitignoreTemplate();
+  if (!templatePath) {
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, reason: 'gitignore template not found' };
+  }
+
+  let templateContent = '';
+  try {
+    templateContent = fs.readFileSync(templatePath, 'utf-8');
+  } catch (e) {
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, reason: (e as Error).message };
+  }
+
+  if (!templateContent.trim()) {
+    return { updated: false, present: fs.existsSync(gitignorePath), gitignorePath, reason: 'gitignore template is empty' };
+  }
+
+  const sectionLines = templateContent.split(/\r?\n/).filter(line => line.length > 0);
 
   let out = existing;
   if (out.length > 0 && !out.endsWith('\n')) {
@@ -131,7 +127,10 @@ function ensureGitignore(options: { silent: boolean }): { updated: boolean; pres
   if (out.length > 0 && !out.endsWith('\n\n')) {
     out += '\n';
   }
-  out += missing.join('\n') + '\n';
+  if (!templateContent.endsWith('\n')) {
+    templateContent += '\n';
+  }
+  out += templateContent;
 
   try {
     fs.writeFileSync(gitignorePath, out, { encoding: 'utf-8' });
@@ -142,7 +141,7 @@ function ensureGitignore(options: { silent: boolean }): { updated: boolean; pres
   if (!options.silent) {
     console.log(`✓ Updated .gitignore at ${gitignorePath}`);
   }
-  return { updated: true, present: true, gitignorePath, added: missing };
+  return { updated: true, present: true, gitignorePath, added: sectionLines };
 }
 
 function installPrePushHook(options: { silent: boolean }): { installed: boolean; skipped: boolean; present: boolean; hookPath?: string; reason?: string } {
@@ -484,6 +483,17 @@ function locateWorkflowTemplate(): string | null {
   const packageRoot = path.resolve(moduleDir, '..', '..');
   const candidate = path.join(packageRoot, WORKFLOW_TEMPLATE_RELATIVE_PATH);
   return fs.existsSync(candidate) ? candidate : null;
+}
+
+function locateGitignoreTemplate(): string | null {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageRoot = path.resolve(moduleDir, '..', '..');
+  const candidate = path.join(packageRoot, WORKLOG_GITIGNORE_TEMPLATE_RELATIVE_PATH);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+function hasWorklogGitignoreSection(content: string): boolean {
+  return content.includes(WORKLOG_GITIGNORE_SECTION_START) && content.includes(WORKLOG_GITIGNORE_SECTION_END);
 }
 
 async function promptWorkflowInstall(questionText: string, forceAnswer?: boolean): Promise<boolean> {

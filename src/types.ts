@@ -16,6 +16,7 @@ export interface WorkItem {
   description: string;
   status: WorkItemStatus;
   priority: WorkItemPriority;
+  sortIndex: number;
   parentId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +47,7 @@ export interface CreateWorkItemInput {
   description?: string;
   status?: WorkItemStatus;
   priority?: WorkItemPriority;
+  sortIndex?: number;
   parentId?: string | null;
   tags?: string[];
   assignee?: string;
@@ -68,6 +70,7 @@ export interface UpdateWorkItemInput {
   description?: string;
   status?: WorkItemStatus;
   priority?: WorkItemPriority;
+  sortIndex?: number;
   parentId?: string | null;
   tags?: string[];
   assignee?: string;

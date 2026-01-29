@@ -30,7 +30,7 @@ export default function register(ctx: PluginContext): void {
         result.comments = db.getCommentsForWorkItem(normalizedId);
         if (options.children) {
            const children = db.getDescendants(normalizedId);
-          const ancestors: typeof item[] = [];
+           const ancestors: typeof item[] = [];
           let currentParentId = item.parentId;
           while (currentParentId) {
             const parent = db.get(currentParentId);
@@ -48,7 +48,7 @@ export default function register(ctx: PluginContext): void {
       const chosenFormat = resolveFormat(program);
 
       if (options.children) {
-        const itemsToDisplay = [item, ...db.getDescendants(id)];
+        const itemsToDisplay = [item, ...db.getDescendants(normalizedId)];
 
         console.log('');
         // Always show a tree with hierarchy markers; the per-item formatting
@@ -59,7 +59,7 @@ export default function register(ctx: PluginContext): void {
 
         // For non-full formats, also show comments for the root item (legacy behavior)
         if (chosenFormat !== 'full') {
-          const comments = db.getCommentsForWorkItem(id);
+          const comments = db.getCommentsForWorkItem(normalizedId);
           if (comments.length > 0) {
             console.log('Comments:');
             comments.forEach(c => {

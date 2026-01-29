@@ -321,6 +321,31 @@ wl --json list | jq .workItems | head -n 20
 
 ---
 
+## Maintenance
+
+Maintenance commands are used for one-off migrations and data evolution tasks.
+
+### `migrate` (subcommands)
+
+Run data migrations.
+
+Subcommands:
+
+- `sort-index` — compute `sort_index` values using existing next-item ordering.
+
+Options:
+
+- `--dry-run` — Print the updates without applying them.
+- `--gap <gap>` — Integer gap between consecutive `sort_index` values (optional; default: `100`).
+- `--prefix <prefix>` — Override the default prefix (optional).
+
+Examples:
+
+```sh
+wl migrate sort-index --dry-run
+wl migrate sort-index --gap 100
+```
+
 ## Plugins
 
 Plugin commands let you inspect installed extensions that add or alter CLI functionality. To list commands provided by plugins in your environment run `wl --help` (or `worklog --help`).

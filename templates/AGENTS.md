@@ -5,6 +5,8 @@ IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use
 ## CRITICAL RULES
 
 - Use Worklog (wl), described below, for ALL task tracking, do NOT use markdown TODOs, task lists, or other tracking methods
+- When mentioning a work item always use its title followed by its ID in parentheses, e.g. "Fix login bug (WL-1234)"
+- Always keep work items up to date with accurate status, priority, stage, and assignee
 - Whenever you are provided with, or discover, a new work item create it in wl immediately
 - Whenever you are provided with or discover important context (specifications, designs, user-stories) ensure the information is added to the description of the relevant work item(s) OR create a new work item if none exist
 - Whenever you create a planning document (PRD, spec, design doc) add references to the document in the description of any work item that is directly related to the document

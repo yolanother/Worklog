@@ -45,7 +45,7 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      const item = db.create({
+      const item = db.createWithNextSortIndex({
         title: options.title,
         description: description,
         status: (options.status || 'open') as WorkItemStatus,

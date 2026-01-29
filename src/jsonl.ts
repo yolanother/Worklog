@@ -108,6 +108,9 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if ((item as any).deleteReason === undefined) {
           (item as any).deleteReason = '';
         }
+        if ((item as any).sortIndex === undefined) {
+          (item as any).sortIndex = 0;
+        }
         if ((item as any).risk === undefined) {
           (item as any).risk = '';
         }
@@ -160,6 +163,9 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         }
         if ((item as any).deleteReason === undefined) {
           (item as any).deleteReason = '';
+        }
+        if ((item as any).sortIndex === undefined) {
+          (item as any).sortIndex = 0;
         }
         if ((item as any).risk === undefined) {
           (item as any).risk = '';

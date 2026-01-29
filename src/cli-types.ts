@@ -70,6 +70,12 @@ export interface ImportOptions { file?: string; prefix?: string }
 export interface NextOptions { assignee?: string; search?: string; number?: string; prefix?: string }
 export interface InProgressOptions { assignee?: string; prefix?: string }
 
+export interface MigrateOptions {
+  dryRun?: boolean;
+  gap?: string;
+  prefix?: string;
+}
+
 export interface SyncOptions {
   file?: string;
   prefix?: string;
