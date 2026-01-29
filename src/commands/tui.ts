@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { OpencodeClient, type OpencodeServerStatus } from '../tui/opencode-client.js';
 import {
   DetailComponent,
@@ -196,6 +196,69 @@ export default function register(ctx: PluginContext): void {
       const updateDialog = dialogsComponent.updateDialog;
       const updateDialogText = dialogsComponent.updateDialogText;
       const updateDialogOptions = dialogsComponent.updateDialogOptions;
+
+      const nextOverlay = blessedImpl.box({
+        parent: screen,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100% - 1',
+        hidden: true,
+        mouse: true,
+        clickable: true,
+        style: { bg: 'black' },
+      });
+
+      const nextDialog = blessedImpl.box({
+        parent: screen,
+        top: 'center',
+        left: 'center',
+        width: '60%',
+        height: 12,
+        label: ' Next Work Item ',
+        border: { type: 'line' },
+        hidden: true,
+        tags: true,
+        mouse: true,
+        clickable: true,
+        style: { border: { fg: 'cyan' } },
+      });
+
+      const nextDialogClose = blessedImpl.box({
+        parent: nextDialog,
+        top: 0,
+        right: 1,
+        height: 1,
+        width: 3,
+        content: '[x]',
+        style: { fg: 'red' },
+        mouse: true,
+        clickable: true,
+      });
+
+      const nextDialogText = blessedImpl.box({
+        parent: nextDialog,
+        top: 1,
+        left: 2,
+        width: '100%-4',
+        height: 5,
+        content: 'Evaluating next work item...',
+        tags: true,
+      });
+
+      const nextDialogOptions = blessedImpl.list({
+        parent: nextDialog,
+        top: 7,
+        left: 2,
+        width: '100%-4',
+        height: 3,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' },
+        },
+        items: ['View', 'Close'],
+      });
 
       const helpMenu = new HelpMenuComponent({ parent: screen, blessed: blessedImpl }).create();
 
@@ -988,6 +1051,180 @@ export default function register(ctx: PluginContext): void {
         toastComponent.show(message);
       }
 
+      let nextWorkItem: Item | null = null;
+      let nextWorkItemReason = '';
+      let nextWorkItemRunning = false;
+
+      function formatStageLabel(stage: string | undefined): string | null {
+        if (stage === undefined) return null;
+        if (stage === '') return 'Undefined';
+        return stage;
+      }
+
+      function setNextDialogContent(content: string) {
+        nextDialogText.setContent(content);
+        screen.render();
+      }
+
+      function openNextDialog() {
+        nextWorkItem = null;
+        nextWorkItemReason = '';
+        nextDialogOptions.select(0);
+        nextOverlay.show();
+        nextDialog.show();
+        nextOverlay.setFront();
+        nextDialog.setFront();
+        nextDialogOptions.focus();
+        setNextDialogContent('Evaluating next work item...');
+        runNextWorkItem();
+      }
+
+      function closeNextDialog() {
+        nextDialog.hide();
+        nextOverlay.hide();
+        list.focus();
+        screen.render();
+      }
+
+      async function viewWorkItemInTree(id: string): Promise<boolean> {
+        const visible = buildVisible();
+        let found = visible.findIndex(node => node.item.id === id);
+        if (found >= 0) {
+          renderListAndDetail(found);
+          list.focus();
+          screen.render();
+          return true;
+        }
+
+        if (itemsById.has(id)) {
+          let cursor = itemsById.get(id) as Item | undefined;
+          while (cursor?.parentId && itemsById.has(cursor.parentId)) {
+            expanded.add(cursor.parentId);
+            cursor = itemsById.get(cursor.parentId);
+          }
+          const expandedVisible = buildVisible();
+          found = expandedVisible.findIndex(node => node.item.id === id);
+          if (found >= 0) {
+            renderListAndDetail(found);
+            list.focus();
+            screen.render();
+            return true;
+          }
+        }
+
+        closeNextDialog();
+        const choice = await modalDialogs.selectList({
+          title: 'Switch to ALL items?',
+          message: 'The selected item is not visible. Switch to all items to locate it?',
+          items: ['Switch to all items', 'Cancel'],
+          defaultIndex: 0,
+          cancelIndex: 1,
+          height: 9,
+        });
+
+        if (choice !== 0) {
+          list.focus();
+          screen.render();
+          return false;
+        }
+
+        showClosed = true;
+        options.inProgress = false;
+        options.all = true;
+        items = db.list({}).filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+        rebuildTree();
+        let refreshed = buildVisible();
+        let refreshedIndex = refreshed.findIndex(node => node.item.id === id);
+        if (refreshedIndex < 0 && itemsById.has(id)) {
+          let cursor = itemsById.get(id) as Item | undefined;
+          while (cursor?.parentId && itemsById.has(cursor.parentId)) {
+            expanded.add(cursor.parentId);
+            cursor = itemsById.get(cursor.parentId);
+          }
+          refreshed = buildVisible();
+          refreshedIndex = refreshed.findIndex(node => node.item.id === id);
+        }
+        if (refreshedIndex >= 0) {
+          renderListAndDetail(refreshedIndex);
+          list.focus();
+          screen.render();
+          return true;
+        }
+
+        showToast('Item not found');
+        return false;
+      }
+
+      function runNextWorkItem() {
+        if (nextWorkItemRunning) return;
+        nextWorkItemRunning = true;
+        const args = ['next', '--json'];
+        if (options.prefix) {
+          args.push('--prefix', options.prefix);
+        }
+        const child = spawn('wl', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+
+        child.stderr?.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+
+        child.on('error', (err) => {
+          nextWorkItemRunning = false;
+          const message = `Error running wl next: ${String(err)}`;
+          setNextDialogContent(`{red-fg}${message}{/red-fg}`);
+        });
+
+        child.on('close', (code) => {
+          nextWorkItemRunning = false;
+          if (code !== 0) {
+            const errText = stderr.trim() || `wl next exited with code ${code}`;
+            setNextDialogContent(`{red-fg}${errText}{/red-fg}`);
+            return;
+          }
+
+          let payload: any = null;
+          try {
+            payload = JSON.parse(stdout.trim());
+          } catch (err) {
+            setNextDialogContent(`{red-fg}Failed to parse wl next output{/red-fg}`);
+            return;
+          }
+
+          if (!payload?.success) {
+            setNextDialogContent(`{red-fg}wl next did not return a result{/red-fg}`);
+            return;
+          }
+
+          const workItem = payload.workItem;
+          nextWorkItem = workItem || null;
+          nextWorkItemReason = payload.reason || '';
+
+          if (!workItem) {
+            const reason = payload.reason ? `\nReason: ${payload.reason}` : '';
+            setNextDialogContent(`No work item found.${reason}`);
+            return;
+          }
+
+          const stageLabel = formatStageLabel(workItem.stage);
+          const lines = [
+            `{bold}${workItem.title}{/bold}`,
+            `ID: ${workItem.id}`,
+            `Status: ${workItem.status}${stageLabel ? ` · Stage: ${stageLabel}` : ''}`,
+            `Priority: ${workItem.priority || 'none'}`,
+          ];
+          if (nextWorkItemReason) {
+            lines.push(`Reason: ${nextWorkItemReason}`);
+          }
+          setNextDialogContent(lines.join('\n'));
+        });
+      }
+
       // Initial render
       renderListAndDetail(0);
 
@@ -1140,6 +1377,10 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         // Close any active overlays/panes in reverse-open order
+        if (!nextDialog.hidden) {
+          closeNextDialog();
+          return;
+        }
         if (!closeDialog.hidden) {
           closeCloseDialog();
           return;
@@ -1225,6 +1466,13 @@ export default function register(ctx: PluginContext): void {
       // Refresh from database
       screen.key(['r', 'R'], () => {
         refreshFromDatabase();
+      });
+
+      // Evaluate next item
+      screen.key(['n', 'N'], () => {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden && nextDialog.hidden) {
+          openNextDialog();
+        }
       });
 
       // Filter shortcuts
@@ -1315,6 +1563,72 @@ export default function register(ctx: PluginContext): void {
 
       closeDialogOptions.key(['escape'], () => {
         closeCloseDialog();
+      });
+
+      nextDialog.key(['escape'], () => {
+        closeNextDialog();
+      });
+
+      nextOverlay.on('click', () => {
+        closeNextDialog();
+      });
+
+      nextDialogClose.on('click', () => {
+        closeNextDialog();
+      });
+
+      nextDialogOptions.on('select', async (_el: any, idx: number) => {
+        if (idx === 0) {
+          if (!nextWorkItem || !nextWorkItem.id) {
+            showToast(nextWorkItemRunning ? 'Still evaluating...' : 'No work item to view');
+            return;
+          }
+          const selected = await viewWorkItemInTree(nextWorkItem.id);
+          if (selected) closeNextDialog();
+          return;
+        }
+        if (idx === 1) {
+          closeNextDialog();
+        }
+      });
+
+      nextDialogOptions.on('click', async () => {
+        const idx = (nextDialogOptions as any).selected ?? 0;
+        if (typeof (nextDialogOptions as any).emit === 'function') {
+          (nextDialogOptions as any).emit('select item', null, idx);
+          return;
+        }
+        if (idx === 0) {
+          if (!nextWorkItem || !nextWorkItem.id) {
+            showToast(nextWorkItemRunning ? 'Still evaluating...' : 'No work item to view');
+            return;
+          }
+          const selected = await viewWorkItemInTree(nextWorkItem.id);
+          if (selected) closeNextDialog();
+          return;
+        }
+        if (idx === 1) {
+          closeNextDialog();
+        }
+      });
+
+      nextDialogOptions.on('select item', async (_el: any, idx: number) => {
+        if (idx === 0) {
+          if (!nextWorkItem || !nextWorkItem.id) {
+            showToast(nextWorkItemRunning ? 'Still evaluating...' : 'No work item to view');
+            return;
+          }
+          const selected = await viewWorkItemInTree(nextWorkItem.id);
+          if (selected) closeNextDialog();
+          return;
+        }
+        if (idx === 1) {
+          closeNextDialog();
+        }
+      });
+
+      nextDialogOptions.key(['escape'], () => {
+        closeNextDialog();
       });
 
       detailOverlay.on('click', () => {

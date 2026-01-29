@@ -429,6 +429,7 @@ export class OpencodeClient {
     let lastUserMessageId: string | null = null;
     let streamText = pane.getContent ? pane.getContent() : '';
     let sseClosed = false;
+    let waitingForInput = false;
     const appendText = (text: string) => {
       streamText += text;
     };
@@ -670,7 +671,6 @@ export class OpencodeClient {
 
     const req = this.httpImpl.request(options, (res) => {
       this.options.log(`sse status=${res.statusCode ?? 'unknown'}`);
-      let waitingForInput = false;
 
       res.on('data', (chunk) => {
         this.options.log(`sse chunk bytes=${chunk.length}`);
