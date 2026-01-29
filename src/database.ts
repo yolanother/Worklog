@@ -153,7 +153,7 @@ export class WorklogDatabase {
 
     const traverse = (parentId: string | null) => {
       const children = childrenByParent.get(parentId) || [];
-      const sorted = this.sortItemsByScore(children);
+    const sorted = this.orderBySortIndex(children);
       for (const child of sorted) {
         order.push(child);
         traverse(child.id);
@@ -298,8 +298,8 @@ export class WorklogDatabase {
     const siblings = this.store
       .getAllWorkItems()
       .filter(item => item.parentId === (input.parentId ?? null));
-    const ordered = this.sortItemsByScore(siblings);
-    const maxSortIndex = ordered.reduce((max, item) => Math.max(max, item.sortIndex ?? 0), 0);
+      const ordered = this.orderBySortIndex(siblings);
+      const maxSortIndex = ordered.reduce((max, item) => Math.max(max, item.sortIndex ?? 0), 0);
     const sortIndex = maxSortIndex + gap;
     return this.create({ ...input, sortIndex });
   }
@@ -485,7 +485,7 @@ export class WorklogDatabase {
       .filter(entry => entry.depth === maxDepth)
       .map(entry => entry.item);
 
-    return this.selectByScore(deepest, recencyPolicy);
+    return this.selectBySortIndex(deepest, recencyPolicy);
   }
 
   /**
@@ -522,17 +522,9 @@ export class WorklogDatabase {
       return null;
     }
 
-    // Use priority then creation time (stable and simple) for blocking selections
-    const sorted = pairs.sort((a, b) => {
-      const priorityDiff = this.getPriorityValue(b.blocking.priority) - this.getPriorityValue(a.blocking.priority);
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-
-      return new Date(a.blocking.createdAt).getTime() - new Date(b.blocking.createdAt).getTime();
-    });
-
-    return sorted[0];
+    const orderedBlocking = this.orderBySortIndex(pairs.map(pair => pair.blocking));
+    const selected = orderedBlocking[0];
+    return selected ? pairs.find(pair => pair.blocking.id === selected.id) ?? null : null;
   }
 
   /**
@@ -606,6 +598,34 @@ export class WorklogDatabase {
     return scored[0].it;
   }
 
+  private orderBySortIndex(items: WorkItem[]): WorkItem[] {
+    const orderedAll = this.store.getAllWorkItemsOrderedByHierarchySortIndex();
+    const positions = new Map(orderedAll.map((item, index) => [item.id, index]));
+    return items.slice().sort((a, b) => {
+      const aPos = positions.get(a.id);
+      const bPos = positions.get(b.id);
+      if (aPos === undefined && bPos === undefined) {
+        const createdDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        if (createdDiff !== 0) return createdDiff;
+        return a.id.localeCompare(b.id);
+      }
+      if (aPos === undefined) return 1;
+      if (bPos === undefined) return -1;
+      if (aPos !== bPos) return aPos - bPos;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
+  private selectBySortIndex(items: WorkItem[], recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem | null {
+    if (!items || items.length === 0) return null;
+    const firstSortIndex = items[0].sortIndex ?? 0;
+    const allSame = items.every(item => (item.sortIndex ?? 0) === firstSortIndex);
+    if (allSame) {
+      return this.selectByScore(items, recencyPolicy);
+    }
+    return this.orderBySortIndex(items)[0] ?? null;
+  }
+
   /**
    * Shared next-item selection logic to keep single-item and batch results aligned.
    */
@@ -643,11 +663,11 @@ export class WorklogDatabase {
     this.debug(`${debugPrefix} unblocked criticals=${unblockedCriticals.length}`);
 
     if (unblockedCriticals.length > 0) {
-      const selected = this.selectByScore(unblockedCriticals, recencyPolicy);
+      const selected = this.selectBySortIndex(unblockedCriticals, recencyPolicy);
       this.debug(`${debugPrefix} selected critical=${selected?.id || ''}`);
       return {
         workItem: selected,
-        reason: 'Unblocked critical work item'
+        reason: `Next unblocked critical item by sort_index${selected ? ` (priority ${selected.priority})` : ''}`
       };
     }
 
@@ -689,7 +709,7 @@ export class WorklogDatabase {
         };
       }
 
-      const selectedBlockedCritical = this.selectByScore(blockedCriticals, recencyPolicy);
+      const selectedBlockedCritical = this.selectBySortIndex(blockedCriticals, recencyPolicy);
       this.debug(`${debugPrefix} selected blocked critical=${selectedBlockedCritical?.id || ''}`);
       return {
         workItem: selectedBlockedCritical,
@@ -708,11 +728,11 @@ export class WorklogDatabase {
       if (openItems.length === 0) {
         return { workItem: null, reason: 'No work items available' };
       }
-      const selected = this.selectByScore(openItems, recencyPolicy);
+      const selected = this.selectBySortIndex(openItems, recencyPolicy);
       this.debug(`${debugPrefix} selected open=${selected?.id || ''}`);
       return {
         workItem: selected,
-        reason: `Highest priority (${selected?.priority}) and oldest open item`
+        reason: `Next open item by sort_index${selected ? ` (priority ${selected.priority})` : ''}`
       };
     }
 
@@ -748,7 +768,7 @@ export class WorklogDatabase {
           // Apply filters to blocking items and select highest priority
           const filteredBlockingItems = this.applyFilters(blockingItems, assignee, searchTerm);
           if (filteredBlockingItems.length > 0) {
-            const selected = this.selectByScore(filteredBlockingItems, recencyPolicy);
+            const selected = this.selectBySortIndex(filteredBlockingItems, recencyPolicy);
             this.debug(`${debugPrefix} selected blocking issue=${selected?.id || ''}`);
             return {
               workItem: selected,
@@ -780,11 +800,11 @@ export class WorklogDatabase {
       };
     }
 
-    const selected = this.selectByScore(filteredChildren, recencyPolicy);
+    const selected = this.selectBySortIndex(filteredChildren, recencyPolicy);
     this.debug(`${debugPrefix} selected child=${selected?.id || ''}`);
     return {
       workItem: selected,
-      reason: `Highest priority (${selected?.priority}) child of deepest in-progress item ${selectedInProgress.id}`
+      reason: `Next child by sort_index of deepest in-progress item ${selectedInProgress.id}`
     };
   }
 

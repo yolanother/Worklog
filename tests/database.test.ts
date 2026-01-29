@@ -437,7 +437,7 @@ describe('WorklogDatabase', () => {
       
       expect(result.workItem).not.toBeNull();
       expect(result.workItem?.id).toBe(item.id);
-      expect(result.reason).toContain('Highest priority');
+      expect(result.reason).toContain('Next open item by sort_index');
     });
 
     it('should return highest priority item when multiple open items exist', () => {
@@ -470,7 +470,7 @@ describe('WorklogDatabase', () => {
       const result = db.findNextWorkItem();
       // Should select the direct child since parent is in-progress
       expect(result.workItem?.id).toBe(child.id);
-      expect(result.reason).toContain('child of deepest in-progress item');
+      expect(result.reason).toContain('child');
     });
 
     it('should skip completed and deleted items', () => {
