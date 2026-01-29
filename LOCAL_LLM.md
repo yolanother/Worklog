@@ -65,8 +65,6 @@ $FOUNDRY_MODEL_NAME = "phi-4-openvino-gpu:1" # be sure to select the right varia
 foundry model download $FOUNDRY_MODEL_NAME
 ```
 
-Note: you can actually skip this step as the next one will automatically download the model if it is not present.
-
 Run the model on the service:
 
 ```powershell
@@ -91,7 +89,7 @@ $resp = Invoke-RestMethod -Method Post `
 $resp.choices[0].message.content
 ```
 
-## Configure OpenCode to use Foundry Local
+### Configure OpenCode to use Foundry Local
 
 NOTE: if you use WSL to run Worklog and Opencode you will probably need to perform some one-time networking setup to allow WSL to reach your Foundry Local endpoint running on Windows. See the Appendix at the end of this document for details.
 
@@ -150,104 +148,9 @@ echo "✓ Foundry Local provider added to $CONFIG_FILE"
 
 ---
 
-## Using BOTH: “local compute when appropriate, hosted when needed”
+## Ollama
 
-There are two common strategies.
-
-### Strategy 1 (recommended): two OpenCode servers on two ports
-
-Run two OpenCode servers, each configured to a different provider:
-
-- Port A → OpenCode configured for **Ollama**
-- Port B → OpenCode configured for **Foundry**
-
-Then start Worklog with the port you want:
-
-```powershell
-# Local
-$env:OPENCODE_SERVER_PORT = 51625
-wl tui
-
-# Hosted
-$env:OPENCODE_SERVER_PORT = 51626
-wl tui
-```
-
-This is simple and keeps the “which model am I using?” decision explicit.
-
-This strategy also maps cleanly to future LLM-powered commands:
-
-- set `OPENCODE_SERVER_PORT` before running the command (local vs hosted)
-- keep provider configuration inside OpenCode profiles/config
-
-### Strategy 2: switch models/providers inside OpenCode
-
-If OpenCode supports interactive model/provider switching (via a setting or slash command), you can keep one server and switch “in session”.
-
-Document the exact OpenCode command/config you’re using here once confirmed.
-
----
-
-## Configure OpenCode server (Worklog-side)
-
-Worklog will auto-start the OpenCode server when you press `O` in the TUI.
-
-For non-TUI usage (and for future LLM-powered CLI commands), you’ll typically want to run OpenCode as a shared local service in a separate terminal/session.
-
-### Choose an OpenCode server port
-
-```powershell
-$env:OPENCODE_SERVER_PORT = 51625
-```
-
-Note: Worklog currently defaults `OPENCODE_SERVER_PORT` to `9999` if not set. To avoid confusion across docs and environments, set it explicitly.
-
-If you want to run multiple OpenCode servers (e.g., one for Ollama, one for Foundry), you’ll typically run them on different ports and start Worklog with the port you want to use (details below).
-
-### Run OpenCode as a shared local service (recommended)
-
-Start the server yourself so it’s available to both the TUI and future command-line features:
-
-```powershell
-$env:OPENCODE_SERVER_PORT = 51625
-opencode serve --port $env:OPENCODE_SERVER_PORT
-```
-
-Then, in a separate terminal:
-
-```powershell
-$env:OPENCODE_SERVER_PORT = 51625
-wl tui
-```
-
-### About OpenCode server auth
-
-Some OpenCode deployments support server auth (for example via env vars like `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD`).
-
-Worklog does not currently attach auth headers when calling the OpenCode HTTP API, so enabling server auth will likely prevent Worklog from connecting.
-
----
-
-## Provider-agnostic setup (applies to any provider)
-
-OpenCode is the component that chooses and talks to your model provider.
-
-Worklog just needs:
-
-- an OpenCode server running locally, and
-- `OPENCODE_SERVER_PORT` set so Worklog can find it.
-
-Provider configuration happens in OpenCode. Because that surface can evolve, use this workflow:
-
-1. Configure your provider in OpenCode (see OpenCode docs and `opencode serve --help`).
-2. Start `opencode serve`.
-3. Validate from Worklog (TUI or CLI) with a small prompt.
-
-The next sections provide two worked examples (Ollama + Foundry).
-
----
-
-## Example A — Ollama (local LLM)
+WARNING: This section is still AI authored and untested. Please proceed with caution and verify commands before running.
 
 This option is best for:
 
