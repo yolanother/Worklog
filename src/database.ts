@@ -672,7 +672,7 @@ export class WorklogDatabase {
     }
 
     const blockedCriticals = criticalItems.filter(
-      item => item.status === 'blocked' || this.getNonClosedChildren(item.id).length > 0
+      item => item.status === 'blocked'
     );
     this.debug(`${debugPrefix} blocked criticals=${blockedCriticals.length}`);
     if (blockedCriticals.length > 0) {

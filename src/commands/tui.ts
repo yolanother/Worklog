@@ -750,6 +750,14 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       }
 
+      function escapeBlessedTags(value: string): string {
+        const helper = (blessedImpl as any)?.helpers?.escape;
+        if (typeof helper === 'function') {
+          return helper(value);
+        }
+        return value.replace(/[{}]/g, (ch) => (ch === '{' ? '{open}' : '{close}'));
+      }
+
       function updateDetailForIndex(idx: number, visible?: VisibleNode[]) {
         const v = visible || buildVisible();
         if (v.length === 0) {
@@ -758,7 +766,8 @@ export default function register(ctx: PluginContext): void {
         }
         const node = v[idx] || v[0];
         const text = humanFormatWorkItem(node.item, db, 'full');
-        detail.setContent(decorateIdsForClick(text));
+        const escaped = escapeBlessedTags(text);
+        detail.setContent(decorateIdsForClick(escaped));
         detail.setScroll(0);
       }
 
@@ -841,7 +850,9 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         detailOverlay.show();
-        detailModal.setContent(decorateIdsForClick(humanFormatWorkItem(item, db, 'full')));
+        const text = humanFormatWorkItem(item, db, 'full');
+        const escaped = escapeBlessedTags(text);
+        detailModal.setContent(decorateIdsForClick(escaped));
         detailModal.setScroll(0);
         detailModal.show();
         detailOverlay.setFront();
