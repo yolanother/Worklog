@@ -138,25 +138,19 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Local config (user should create their own from defaults)
-.worklog/config.yaml
+##################################
+Worklog Specific Ignores
+##################################
 
-# Initialization semaphore (created by init command)
-.worklog/initialized
+# Ignore Worklog directory by default
+.worklog/
 
-# Worklog JSONL export (synced via refs/worklog/data)
-.worklog/worklog-data.jsonl
-
-# SQLite database (persistent storage)
-.worklog/worklog.db
-.worklog/worklog.db-shm
-.worklog/worklog.db-wal
-
-# worklog:gitignore:v1
-.worklog/tmp-worktree-*
-
-# Worklog TUI state
-.worklog/tui-state.json
+# Keep defaults and plugins tracked
+!.worklog/config.defaults.yaml
+!.worklog/plugins/
+!.worklog/plugins/**
 
 # opencode temporary files
 .opencode/tmp/
+
+### End of Worklog Specific Ignores
