@@ -80,10 +80,10 @@ export class ModalDialogsComponent {
 
       const list = this.blessedImpl.list({
         parent: dialog,
-        top: 4,
+        top: 5,
         left: 2,
         width: '100%-4',
-        height: 4,
+        height: Math.min(4, options.items.length),
         keys: true,
         mouse: true,
         items: options.items,
@@ -101,6 +101,21 @@ export class ModalDialogsComponent {
       };
 
       list.on('select', (_el: any, idx: number) => {
+        cleanup();
+        resolve(idx);
+      });
+
+      list.on('select item', (_el: any, idx: number) => {
+        cleanup();
+        resolve(idx);
+      });
+
+      list.on('click', () => {
+        const idx = (list as any).selected ?? 0;
+        if (typeof (list as any).emit === 'function') {
+          (list as any).emit('select item', null, idx);
+          return;
+        }
         cleanup();
         resolve(idx);
       });

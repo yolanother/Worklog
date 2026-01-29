@@ -152,6 +152,7 @@ export class HelpMenuComponent {
         category: 'Actions',
         items: [
           { keys: 'O', description: 'Open OpenCode prompt' },
+          { keys: 'N', description: 'Find next work item' },
           { keys: 'X', description: 'Close selected item' },
           { keys: 'U', description: 'Update selected item' },
         ],
