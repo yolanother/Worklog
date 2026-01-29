@@ -11,6 +11,16 @@ import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawnSync, spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
+import {
+  DetailComponent,
+  DialogsComponent,
+  HelpMenuComponent,
+  ListComponent,
+  ModalDialogsComponent,
+  OpencodePaneComponent,
+  OverlaysComponent,
+  ToastComponent,
+} from '../tui/components/index.js';
 
 type Item = any;
 
@@ -154,300 +164,50 @@ export default function register(ctx: PluginContext): void {
       // Setup blessed screen and layout
       const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
 
-       const list = blessedImpl.list({
-        parent: screen,
-        label: ' Work Items ',
-        width: '50%',
-        height: '100%-1',
-        tags: true,
-        keys: true,
-        vi: false,
-        mouse: true,
-        scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'grey' } },
-        style: {
-          selected: { bg: 'blue' },
-        },
-        border: { type: 'line' },
-        left: 0,
-        top: 0,
-      });
+      const listComponent = new ListComponent({ parent: screen, blessed: blessedImpl }).create();
+      const list = listComponent.getList();
+      const help = listComponent.getFooter();
 
-       const detail = blessedImpl.box({
-        parent: screen,
-        label: ' Details ',
-        left: '50%',
-        width: '50%',
-        height: '100%-1',
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        clickable: true,
-        border: { type: 'line' },
-        style: { focus: { border: { fg: 'green' } } },
-        content: '',
-      });
+      const detailComponent = new DetailComponent({ parent: screen, blessed: blessedImpl }).create();
+      const detail = detailComponent.getDetail();
+      const copyIdButton = detailComponent.getCopyIdButton();
 
-       const copyIdButton = blessedImpl.box({
-        parent: detail,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 11,
-        content: '[Copy ID]',
-        tags: false,
-        mouse: true,
-        align: 'right',
-        style: { fg: 'yellow' },
-      });
-
-       const help = blessedImpl.box({
+      const toastComponent = new ToastComponent({
         parent: screen,
-        bottom: 0,
-        left: 0,
-        height: 1,
-        width: '100%',
-        content: 'Press ? for help',
-        style: { fg: 'grey' },
-      });
-
-       const toast = blessedImpl.box({
-        parent: screen,
-        bottom: 1,
-        right: 1,
-        height: 1,
-        width: 12,
-        content: '',
-        hidden: true,
+        blessed: blessedImpl,
+        position: { bottom: 1, right: 1 },
         style: { fg: 'black', bg: 'green' },
-      });
+        duration: 1200,
+      }).create();
 
-       const detailOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
+      const overlaysComponent = new OverlaysComponent({ parent: screen, blessed: blessedImpl }).create();
+      const dialogsComponent = new DialogsComponent({ parent: screen, blessed: blessedImpl, overlays: overlaysComponent }).create();
 
-       const detailModal = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '70%',
-        height: '70%',
-        label: ' Item Details ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'green' } },
-        content: '',
-      });
+      const detailOverlay = overlaysComponent.detailOverlay;
+      const detailModal = dialogsComponent.detailModal;
+      const detailClose = dialogsComponent.detailClose;
 
-       const detailClose = blessedImpl.box({
-        parent: detailModal,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-      });
+      const closeOverlay = overlaysComponent.closeOverlay;
+      const closeDialog = dialogsComponent.closeDialog;
+      const closeDialogText = dialogsComponent.closeDialogText;
+      const closeDialogOptions = dialogsComponent.closeDialogOptions;
 
-       const closeOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
+      const updateOverlay = overlaysComponent.updateOverlay;
+      const updateDialog = dialogsComponent.updateDialog;
+      const updateDialogText = dialogsComponent.updateDialogText;
+      const updateDialogOptions = dialogsComponent.updateDialogOptions;
 
-       const closeDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '50%',
-        height: 10,
-        label: ' Close Work Item ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'magenta' } },
-      });
+      const helpMenu = new HelpMenuComponent({ parent: screen, blessed: blessedImpl }).create();
 
-       const closeDialogText = blessedImpl.box({
-        parent: closeDialog,
-        top: 1,
-        left: 2,
-        height: 2,
-        width: '100%-4',
-        content: 'Close selected item with stage:',
-        tags: false,
-      });
+      const modalDialogs = new ModalDialogsComponent({ parent: screen, blessed: blessedImpl }).create();
 
-       const closeDialogOptions = blessedImpl.list({
-        parent: closeDialog,
-        top: 4,
-        left: 2,
-        width: '100%-4',
-        height: 4,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' },
-        },
-        items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
-      });
-
-       const updateOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-       const updateDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '50%',
-        height: 14,
-        label: ' Update Work Item ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'magenta' } },
-      });
-
-       const updateDialogText = blessedImpl.box({
-        parent: updateDialog,
-        top: 1,
-        left: 2,
-        height: 2,
-        width: '100%-4',
-        content: 'Update selected item stage:',
-        tags: false,
-      });
-
-      // Stages offered here — keep list conservative; this UI is intended to grow.
-       const updateDialogOptions = blessedImpl.list({
-        parent: updateDialog,
-        top: 4,
-        left: 2,
-        width: '100%-4',
-        height: 8,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' },
-        },
-        items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
-      });
-
-       const overlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-      // Opencode prompt dialog
-       const opencodeOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-      // Larger dialog and textbox for multi-line prompts
-       const opencodeDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '80%',
-        height: '60%',
-        label: ' Run opencode ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'yellow' } },
-      });
-      
-      // Server status indicator (footer centered)
-       const serverStatusBox = blessedImpl.box({
-        parent: screen,
-        bottom: 0,
-        left: 'center',
-        width: 1,
-        height: 1,
-        content: '',
-        tags: true,
-        align: 'center',
-        style: { fg: 'white' }
-      });
-
-      // Use a textarea so multi-line input works and Enter inserts newlines
-       const opencodeText = blessedImpl.textarea({
-        parent: opencodeDialog,
-        top: 1,
-        left: 2,
-        width: '100%-4',
-        height: '100%-6',
-        inputOnFocus: true,
-        keys: true,
-        vi: false,
-        mouse: true,
-        clickable: true,
-        scrollable: true,     // Enable scrolling
-        alwaysScroll: true,   // Always show scrollbar when needed
-        border: { type: 'line' },
-        style: { focus: { border: { fg: 'green' } } },
-      });
-      const opencodeTextDefaults = {
-        top: 1,
-        left: 2,
-        width: '100%-4',
-        height: '100%-6',
-        border: { type: 'line' }
-      };
+      const opencodeUi = new OpencodePaneComponent({ parent: screen, blessed: blessedImpl }).create();
+      const serverStatusBox = opencodeUi.serverStatusBox;
+      const opencodeDialog = opencodeUi.dialog;
+      const opencodeText = opencodeUi.textarea;
+      const suggestionHint = opencodeUi.suggestionHint;
+      const opencodeSend = opencodeUi.sendButton;
+      const opencodeCancel = opencodeUi.cancelButton;
 
       // Command autocomplete support
       const AVAILABLE_COMMANDS = [
@@ -486,20 +246,6 @@ export default function register(ctx: PluginContext): void {
       let isCommandMode = false;
       let userTypedText = '';
       let isWaitingForResponse = false; // Track if we're waiting for OpenCode response
-
-      // Create a text element to show the suggestion below the input
-       const suggestionHint = blessedImpl.text({
-        parent: opencodeDialog,
-        top: '100%-4',
-        left: 2,
-        width: '100%-4',
-        height: 1,
-        tags: true,
-        style: {
-          fg: 'gray'
-        },
-        content: ''
-      });
 
       function applyCommandSuggestion(target: any) {
         if (isCommandMode && currentSuggestion) {
@@ -594,30 +340,7 @@ export default function register(ctx: PluginContext): void {
         });
       });
 
-       const opencodeSend = blessedImpl.box({
-        parent: opencodeDialog,
-        bottom: 0,
-        right: 12,
-        height: 1,
-        width: 10,
-        tags: true,
-        content: '[ {underline}S{/underline}end ]',
-        mouse: true,
-        clickable: true,
-        style: { fg: 'white', bg: 'green' },
-      });
 
-       const opencodeCancel = blessedImpl.box({
-        parent: opencodeDialog,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-        clickable: true,
-      });
 
       // Active opencode pane/process tracking
       let opencodePane: any = null;
@@ -1011,52 +734,33 @@ export default function register(ctx: PluginContext): void {
                     const localHist = (sessionObj as any)?.localHistory;
                     if (localHist && Array.isArray(localHist) && localHist.length > 0) {
                       // Present a small modal to ask how to proceed.
-                      const choice = await new Promise<number>((resolve) => {
-                        const restoreOverlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                        const restoreDialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                        const text = blessedImpl.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
-                        const opts = blessedImpl.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
-                        opts.select(0);
-                        restoreOverlay.setFront(); restoreDialog.setFront(); opts.focus(); screen.render();
-                        function cleanup() { try { restoreDialog.hide(); restoreOverlay.hide(); restoreDialog.destroy(); restoreOverlay.destroy(); } catch (_) {} }
-                        opts.on('select', (_el: any, idx: number) => { cleanup(); resolve(idx); });
-                        // Allow escape to cancel
-                        restoreDialog.key(['escape'], () => { cleanup(); resolve(3); });
+                      const choice = await modalDialogs.selectList({
+                        title: 'Restore session',
+                        message: 'Local persisted conversation found. How would you like to proceed?',
+                        items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'],
+                        defaultIndex: 0,
+                        cancelIndex: 3,
                       });
 
                       if (choice === 1) {
                         // Restore via summary: generate editable summary, then prepend to prompt
                         const generated = generateSummaryFromHistory(localHist);
-                        const edited = await new Promise<string>((resolve) => {
-                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                           const ta = blessedImpl.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
-                           try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
-                           const btns = blessedImpl.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
-                          btns.select(0);
-                          overlay.setFront(); dialog.setFront(); ta.focus(); screen.render();
-                          function cleanup() { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch (_) {} }
-                          btns.on('select', (_el: any, idx: number) => {
-                            const val = ta.getValue ? ta.getValue() : generated;
-                            cleanup(); if (idx === 0) resolve(val); else resolve('');
-                          });
-                          dialog.key(['escape'], () => { cleanup(); resolve(''); });
+                        const edited = await modalDialogs.editTextarea({
+                          title: 'Edit summary (sent as context)',
+                          initial: generated,
+                          confirmLabel: 'Send summary',
+                          cancelLabel: 'Cancel',
                         });
                         if (edited && edited.trim()) {
                           finalPrompt = `Context summary (user-edited):\n${edited}\n\nUser prompt:\n${prompt}`;
                         }
                       } else if (choice === 2) {
                         // Full replay chosen — confirm with the user
-                        const confirm = await new Promise<boolean>((resolve) => {
-                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                           const text = blessedImpl.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
-                           const input = blessedImpl.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
-                           const cancelBtn = blessedImpl.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
-                          overlay.setFront(); dialog.setFront(); input.focus(); screen.render();
-                          cancelBtn.on('click', () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
-                          input.on('submit', (val: string) => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve((val||'').trim() === 'YES'); });
-                          dialog.key(['escape'], () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
+                        const confirm = await modalDialogs.confirmTextbox({
+                          title: 'Confirm full replay',
+                          message: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.',
+                          confirmText: 'YES',
+                          cancelLabel: 'Cancel',
                         });
                         if (confirm) {
                           // build a raw replay string — join textual parts
@@ -1769,56 +1473,26 @@ export default function register(ctx: PluginContext): void {
         }
       
       function ensureOpencodePane() {
-        if (opencodePane) {
-          opencodePane.show();
-          opencodePane.setFront();
-          // In compact mode, adjust pane position to be above the input
-          const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
-          opencodePane.bottom = currentHeight + FOOTER_HEIGHT;
-          opencodePane.height = paneHeight();
-          return;
-        }
+        // In compact mode, adjust pane position to be above the input
+        const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
+        const bottomOffset = currentHeight + FOOTER_HEIGHT;
 
-        const bottomOffset = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
-
-        opencodePane = blessedImpl.box({
-          parent: screen,
+        opencodePane = opencodeUi.ensureResponsePane({
           bottom: bottomOffset,
-          left: 0,
-          width: '100%',
           height: paneHeight(),
-          label: ` opencode [esc] `,
-          border: { type: 'line' },
-          tags: true,
-          scrollable: true,
-          alwaysScroll: true,
-          keys: true,
-          vi: true,
-          mouse: true,
-          clickable: true,
-          style: { border: { fg: 'magenta' } },
+          label: ' opencode [esc] ',
+          onEscape: () => {
+            closeOpencodePane();
+            // Return focus to the input textbox if it's visible so the
+            // user can continue typing.
+            try {
+              opencodeText.focus();
+            } catch (_) {}
+            // Prevent the global Escape handler from acting immediately
+            // after we closed the pane.
+            suppressEscapeUntil = Date.now() + 250;
+          },
         });
-
-        // Add Escape key handler to close only the response pane.
-        // When Escape is pressed in the response pane we want to close
-        // the pane but leave the input dialog open so the user can edit
-        // or resubmit the prompt without re-opening the prompt dialog.
-      opencodePane.key(['escape'], () => {
-        closeOpencodePane();
-        // Return focus to the input textbox if it's visible so the
-        // user can continue typing. If the input dialog is in compact
-        // mode it will remain visible.
-        try {
-          opencodeText.focus();
-        } catch (_) {}
-        // Prevent the global Escape handler from acting immediately
-        // after we closed the pane.
-        suppressEscapeUntil = Date.now() + 250;
-      });
-        
-        opencodePane.show();
-        opencodePane.setFront();
-        opencodePane.focus();
       }
 
       async function runOpencode(prompt: string) {
@@ -1921,76 +1595,6 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
-       const helpMenu = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '70%',
-        height: '70%',
-        label: ' Help ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        style: {
-          border: { fg: 'cyan' },
-        }
-      });
-
-       const helpClose = blessedImpl.box({
-        parent: helpMenu,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-      });
-
-      const helpText = [
-        'Keyboard shortcuts',
-        '',
-        'Navigation:',
-        '  Up/Down, j/k   Move selection',
-        '  PageUp/PageDown, Home/End   Jump',
-        '',
-        'Tree:',
-        '  Right/Enter    Expand node',
-        '  Left           Collapse node / parent',
-        '  Space          Toggle expand/collapse',
-        '',
-        'Focus:',
-        '  Tab            Cycle focus panes',
-        '',
-        'Filters:',
-        '  I              Show in-progress only',
-        '  A              Show open items',
-        '  B              Show blocked only',
-        '',
-        'Refresh:',
-        '  R              Reload items from database',
-        '',
-        'Clipboard:',
-        '  C              Copy selected item ID',
-        '',
-        'Preview:',
-        '  P              Open parent in modal',
-        '',
-        'Close:',
-        '  X              Close selected item (in_review/done/deleted)',
-        '',
-        'Help:',
-        '  ?              Toggle this help',
-        '',
-        'Exit:',
-        '  q, Esc, Ctrl-C  Quit'
-      ].join('\n');
-      helpMenu.setContent(helpText);
 
       let listLines: string[] = [];
       function renderListAndDetail(selectIndex = 0) {
@@ -2322,19 +1926,8 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      let toastTimer: NodeJS.Timeout | null = null;
       function showToast(message: string) {
-        if (!message) return;
-        const padded = ` ${message} `;
-        toast.setContent(padded);
-        toast.width = padded.length;
-        toast.show();
-        screen.render();
-        if (toastTimer) clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => {
-          toast.hide();
-          screen.render();
-        }, 1200);
+        toastComponent.show(message);
       }
 
       // Initial render
@@ -2509,7 +2102,7 @@ export default function register(ctx: PluginContext): void {
           closeDetails();
           return;
         }
-        if (!helpMenu.hidden) {
+        if (helpMenu.isVisible()) {
           // If help overlay is visible, close it instead of quitting
           closeHelp();
           return;
@@ -2526,30 +2119,23 @@ export default function register(ctx: PluginContext): void {
       screen.render();
 
       function openHelp() {
-        overlay.show();
         helpMenu.show();
-        overlay.setFront();
-        helpMenu.setFront();
-        helpMenu.focus();
-        screen.render();
       }
 
       function closeHelp() {
         helpMenu.hide();
-        overlay.hide();
         list.focus();
-        screen.render();
       }
 
       // Toggle help
       screen.key(['?'], () => {
-        if (helpMenu.hidden) openHelp();
+        if (!helpMenu.isVisible()) openHelp();
         else closeHelp();
       });
 
       // Open opencode prompt dialog (shortcut O)
       screen.key(['o', 'O'], async () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
           await openOpencodeDialog();
         }
       });
@@ -2566,14 +2152,14 @@ export default function register(ctx: PluginContext): void {
 
       // Close selected item
       screen.key(['x', 'X'], () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden) {
           openCloseDialog();
         }
       });
 
       // Update selected item (quick edit) - shortcut U
       screen.key(['u', 'U'], () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
           openUpdateDialog();
         }
       });
@@ -2616,26 +2202,8 @@ export default function register(ctx: PluginContext): void {
         openHelp();
       });
 
-      // Click help to close
-      helpMenu.on('click', () => {
-        closeHelp();
-      });
-
-      helpClose.on('click', () => {
-        closeHelp();
-      });
-
-      overlay.on('click', () => {
-        closeHelp();
-      });
-
       copyIdButton.on('click', () => {
         copySelectedId();
-      });
-
-      // Close help with Esc or q when focused
-      helpMenu.key(['escape', 'q'], () => {
-        closeHelp();
       });
 
       closeOverlay.on('click', () => {
@@ -2706,11 +2274,7 @@ export default function register(ctx: PluginContext): void {
           closeDetails();
           return;
         }
-        if (!helpMenu.hidden && !isInside(helpMenu, data.x, data.y)) {
-          closeHelp();
-          return;
-        }
-        if (detailModal.hidden && helpMenu.hidden && isInside(detail, data.x, data.y)) {
+        if (detailModal.hidden && !helpMenu.isVisible() && isInside(detail, data.x, data.y)) {
           if (data.action === 'click' || data.action === 'mousedown') {
             openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
           }

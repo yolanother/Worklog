@@ -1,4 +1,5 @@
 // Common types for TUI components
+import type { Widgets } from 'blessed';
 
 export interface Position {
   top?: number | string;
@@ -64,4 +65,27 @@ export interface ServerStatus {
   pid?: number;
   port?: number;
   sessionId?: string;
+}
+
+export type BlessedScreen = Widgets.Screen;
+export type BlessedBox = Widgets.BoxElement;
+export type BlessedList = Widgets.ListElement;
+export type BlessedTextarea = Widgets.TextareaElement;
+export type BlessedText = Widgets.TextElement;
+export type BlessedTextbox = Widgets.TextboxElement;
+
+export interface BlessedFactory {
+  box: (...args: any[]) => Widgets.BoxElement;
+  list: (...args: any[]) => Widgets.ListElement;
+  textarea: (...args: any[]) => Widgets.TextareaElement;
+  text: (...args: any[]) => Widgets.TextElement;
+  textbox: (...args: any[]) => Widgets.TextboxElement;
+}
+
+export interface TuiComponentLifecycle {
+  create(): this;
+  show(): void;
+  hide(): void;
+  focus(): void;
+  destroy(): void;
 }
