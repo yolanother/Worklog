@@ -1,7 +1,9 @@
 import blessed from 'blessed';
+import type { BlessedBox, BlessedFactory, BlessedScreen } from '../types.js';
 
 export interface HelpMenuOptions {
-  parent: any; // blessed.Widgets.Screen
+  parent: BlessedScreen;
+  blessed?: BlessedFactory;
   position?: {
     top?: number | string;
     left?: number | string;
@@ -23,17 +25,19 @@ export interface HelpMenuOptions {
 }
 
 export class HelpMenuComponent {
-  private screen: any; // blessed.Widgets.Screen
-  private overlay: any; // blessed.Widgets.BoxElement
-  private menu: any; // blessed.Widgets.BoxElement
-  private closeButton: any; // blessed.Widgets.BoxElement
+  private blessedImpl: BlessedFactory;
+  private screen: BlessedScreen;
+  private overlay: BlessedBox;
+  private menu: BlessedBox;
+  private closeButton: BlessedBox;
   private onClose?: () => void;
 
   constructor(options: HelpMenuOptions) {
     this.screen = options.parent;
+    this.blessedImpl = options.blessed || blessed;
 
     // Create overlay background
-    this.overlay = blessed.box({
+    this.overlay = this.blessedImpl.box({
       parent: this.screen,
       top: 0,
       left: 0,
@@ -46,7 +50,7 @@ export class HelpMenuComponent {
     });
 
     // Create help menu box
-    this.menu = blessed.box({
+    this.menu = this.blessedImpl.box({
       parent: this.screen,
       top: options.position?.top || 'center',
       left: options.position?.left || 'center',
@@ -67,7 +71,7 @@ export class HelpMenuComponent {
     });
 
     // Create close button
-    this.closeButton = blessed.box({
+    this.closeButton = this.blessedImpl.box({
       parent: this.menu,
       top: 0,
       right: 1,
@@ -85,6 +89,14 @@ export class HelpMenuComponent {
 
     // Setup event handlers
     this.setupEventHandlers();
+  }
+
+  /**
+   * Lifecycle method for parity with other components.
+   * Creation happens in the constructor; this enables fluent usage.
+   */
+  create(): this {
+    return this;
   }
 
   private getDefaultShortcuts() {

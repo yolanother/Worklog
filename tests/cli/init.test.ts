@@ -4,9 +4,9 @@ import * as path from 'path';
 import {
   cliPath,
   execAsync,
-  execWithInput,
   enterTempDir,
   leaveTempDir,
+  seedWorkItems,
   writeConfig,
   writeInitSemaphore
 } from './cli-helpers.js';
@@ -75,7 +75,9 @@ describe('CLI Init Tests', () => {
       writeConfig(sourceRepo, 'Sync Test', 'SYNC');
       writeInitSemaphore(sourceRepo, '0.0.1');
 
-      await execAsync(`tsx ${cliPath} --json create -t "Seed item"`, { cwd: sourceRepo });
+      seedWorkItems(sourceRepo, [
+        { title: 'Seed item' },
+      ]);
       await execAsync(`tsx ${cliPath} sync`, { cwd: sourceRepo });
 
       await execAsync(`git clone ${remoteRepo} ${cloneRepo}`);
@@ -84,8 +86,10 @@ describe('CLI Init Tests', () => {
 
       writeConfig(cloneRepo, 'Sync Test', 'SYNC');
 
-      const initResult = await execWithInput(`tsx ${cliPath} init`, 'n\n', { cwd: cloneRepo });
-      expect(initResult.exitCode).toBe(0);
+      await execAsync(
+        `tsx ${cliPath} init --project-name "Sync Test" --prefix SYNC --auto-export yes --auto-sync no --workflow-inline no --agents-template skip --stats-plugin-overwrite no`,
+        { cwd: cloneRepo }
+      );
 
       const { stdout } = await execAsync(`tsx ${cliPath} --json list`, { cwd: cloneRepo });
       const listResult = JSON.parse(stdout);
@@ -97,7 +101,7 @@ describe('CLI Init Tests', () => {
       cleanupTempDir(remoteRepo);
       cleanupTempDir(cloneRepo);
     }
-  });
+  }, 60000);
 
   // Removed: outside-repo .worklog simulation (not part of the target scenario).
 });

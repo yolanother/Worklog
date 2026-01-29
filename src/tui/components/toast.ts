@@ -1,7 +1,9 @@
 import blessed from 'blessed';
+import type { BlessedBox, BlessedFactory, BlessedScreen } from '../types.js';
 
 export interface ToastOptions {
-  parent: any; // blessed.Widgets.Screen
+  parent: BlessedScreen;
+  blessed?: BlessedFactory;
   position?: {
     bottom?: number | string;
     right?: number | string;
@@ -16,17 +18,19 @@ export interface ToastOptions {
 }
 
 export class ToastComponent {
-  private box: any; // blessed.Widgets.BoxElement
-  private screen: any; // blessed.Widgets.Screen
+  private blessedImpl: BlessedFactory;
+  private box: BlessedBox;
+  private screen: BlessedScreen;
   private timer: NodeJS.Timeout | null = null;
   private duration: number;
 
   constructor(options: ToastOptions) {
     this.screen = options.parent;
+    this.blessedImpl = options.blessed || blessed;
     this.duration = options.duration || 1200;
 
     // Create the toast box
-    this.box = blessed.box({
+    this.box = this.blessedImpl.box({
       parent: this.screen,
       bottom: options.position?.bottom ?? 1,
       right: options.position?.right ?? 1,
@@ -38,6 +42,14 @@ export class ToastComponent {
       hidden: true,
       style: options.style || { fg: 'black', bg: 'green' },
     });
+  }
+
+  /**
+   * Lifecycle method for parity with other components.
+   * Creation happens in the constructor; this enables fluent usage.
+   */
+  create(): this {
+    return this;
   }
 
   /**

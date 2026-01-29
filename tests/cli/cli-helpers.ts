@@ -4,6 +4,8 @@ import * as path from 'path';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
+import { exportToJsonl } from '../../src/jsonl.js';
+import type { WorkItem, Comment, WorkItemPriority, WorkItemStatus } from '../../src/types.js';
 
 export const execAsync = promisify(childProcess.exec);
 
@@ -83,4 +85,45 @@ export function writeInitSemaphore(
     JSON.stringify({ version, initializedAt }),
     'utf-8'
   );
+}
+
+export function seedWorkItems(
+  dir: string,
+  items: Array<{
+    id?: string;
+    title: string;
+    description?: string;
+    status?: WorkItemStatus;
+    priority?: WorkItemPriority;
+    parentId?: string | null;
+    tags?: string[];
+    assignee?: string;
+    stage?: string;
+  }>,
+  comments: Comment[] = []
+): WorkItem[] {
+  const now = new Date().toISOString();
+  const seeded = items.map((item, index) => ({
+    id: item.id ?? `TEST-${index + 1}`,
+    title: item.title,
+    description: item.description ?? '',
+    status: item.status ?? 'open',
+    priority: item.priority ?? 'medium',
+    parentId: item.parentId ?? null,
+    createdAt: now,
+    updatedAt: now,
+    tags: item.tags ?? [],
+    assignee: item.assignee ?? '',
+    stage: item.stage ?? '',
+    issueType: '',
+    createdBy: '',
+    deletedBy: '',
+    deleteReason: '',
+    risk: '',
+    effort: '',
+  }));
+
+  const dataPath = path.join(dir, '.worklog', 'worklog-data.jsonl');
+  exportToJsonl(seeded, comments, dataPath);
+  return seeded;
 }

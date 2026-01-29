@@ -4,6 +4,7 @@ import {
   execAsync,
   enterTempDir,
   leaveTempDir,
+  seedWorkItems,
   writeConfig,
   writeInitSemaphore
 } from './cli-helpers.js';
@@ -22,11 +23,13 @@ describe('CLI Issue Status Tests', () => {
   });
 
   describe('list command', () => {
-    beforeEach(async () => {
-      await execAsync(`tsx ${cliPath} create -t "Task 1" -s open -p high`);
-      await execAsync(`tsx ${cliPath} create -t "Task 2" -s in-progress -p medium`);
-      await execAsync(`tsx ${cliPath} create -t "Task 3" -s completed -p low`);
-    }, 20000);
+    beforeEach(() => {
+      seedWorkItems(tempState.tempDir, [
+        { title: 'Task 1', status: 'open', priority: 'high' },
+        { title: 'Task 2', status: 'in-progress', priority: 'medium' },
+        { title: 'Task 3', status: 'completed', priority: 'low' },
+      ]);
+    });
 
     it('should list all work items', async () => {
       const { stdout } = await execAsync(`tsx ${cliPath} --json list`);

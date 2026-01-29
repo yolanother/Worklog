@@ -9,8 +9,18 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
-import { spawnSync, spawn, ChildProcess } from 'child_process';
-import * as http from 'http';
+import { spawnSync } from 'child_process';
+import { OpencodeClient, type OpencodeServerStatus } from '../tui/opencode-client.js';
+import {
+  DetailComponent,
+  DialogsComponent,
+  HelpMenuComponent,
+  ListComponent,
+  ModalDialogsComponent,
+  OpencodePaneComponent,
+  OverlaysComponent,
+  ToastComponent,
+} from '../tui/components/index.js';
 
 type Item = any;
 
@@ -154,300 +164,50 @@ export default function register(ctx: PluginContext): void {
       // Setup blessed screen and layout
       const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
 
-       const list = blessedImpl.list({
-        parent: screen,
-        label: ' Work Items ',
-        width: '50%',
-        height: '100%-1',
-        tags: true,
-        keys: true,
-        vi: false,
-        mouse: true,
-        scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'grey' } },
-        style: {
-          selected: { bg: 'blue' },
-        },
-        border: { type: 'line' },
-        left: 0,
-        top: 0,
-      });
+      const listComponent = new ListComponent({ parent: screen, blessed: blessedImpl }).create();
+      const list = listComponent.getList();
+      const help = listComponent.getFooter();
 
-       const detail = blessedImpl.box({
-        parent: screen,
-        label: ' Details ',
-        left: '50%',
-        width: '50%',
-        height: '100%-1',
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        clickable: true,
-        border: { type: 'line' },
-        style: { focus: { border: { fg: 'green' } } },
-        content: '',
-      });
+      const detailComponent = new DetailComponent({ parent: screen, blessed: blessedImpl }).create();
+      const detail = detailComponent.getDetail();
+      const copyIdButton = detailComponent.getCopyIdButton();
 
-       const copyIdButton = blessedImpl.box({
-        parent: detail,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 11,
-        content: '[Copy ID]',
-        tags: false,
-        mouse: true,
-        align: 'right',
-        style: { fg: 'yellow' },
-      });
-
-       const help = blessedImpl.box({
+      const toastComponent = new ToastComponent({
         parent: screen,
-        bottom: 0,
-        left: 0,
-        height: 1,
-        width: '100%',
-        content: 'Press ? for help',
-        style: { fg: 'grey' },
-      });
-
-       const toast = blessedImpl.box({
-        parent: screen,
-        bottom: 1,
-        right: 1,
-        height: 1,
-        width: 12,
-        content: '',
-        hidden: true,
+        blessed: blessedImpl,
+        position: { bottom: 1, right: 1 },
         style: { fg: 'black', bg: 'green' },
-      });
+        duration: 1200,
+      }).create();
 
-       const detailOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
+      const overlaysComponent = new OverlaysComponent({ parent: screen, blessed: blessedImpl }).create();
+      const dialogsComponent = new DialogsComponent({ parent: screen, blessed: blessedImpl, overlays: overlaysComponent }).create();
 
-       const detailModal = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '70%',
-        height: '70%',
-        label: ' Item Details ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'green' } },
-        content: '',
-      });
+      const detailOverlay = overlaysComponent.detailOverlay;
+      const detailModal = dialogsComponent.detailModal;
+      const detailClose = dialogsComponent.detailClose;
 
-       const detailClose = blessedImpl.box({
-        parent: detailModal,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-      });
+      const closeOverlay = overlaysComponent.closeOverlay;
+      const closeDialog = dialogsComponent.closeDialog;
+      const closeDialogText = dialogsComponent.closeDialogText;
+      const closeDialogOptions = dialogsComponent.closeDialogOptions;
 
-       const closeOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
+      const updateOverlay = overlaysComponent.updateOverlay;
+      const updateDialog = dialogsComponent.updateDialog;
+      const updateDialogText = dialogsComponent.updateDialogText;
+      const updateDialogOptions = dialogsComponent.updateDialogOptions;
 
-       const closeDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '50%',
-        height: 10,
-        label: ' Close Work Item ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'magenta' } },
-      });
+      const helpMenu = new HelpMenuComponent({ parent: screen, blessed: blessedImpl }).create();
 
-       const closeDialogText = blessedImpl.box({
-        parent: closeDialog,
-        top: 1,
-        left: 2,
-        height: 2,
-        width: '100%-4',
-        content: 'Close selected item with stage:',
-        tags: false,
-      });
+      const modalDialogs = new ModalDialogsComponent({ parent: screen, blessed: blessedImpl }).create();
 
-       const closeDialogOptions = blessedImpl.list({
-        parent: closeDialog,
-        top: 4,
-        left: 2,
-        width: '100%-4',
-        height: 4,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' },
-        },
-        items: ['Close (in_review)', 'Close (done)', 'Close (deleted)', 'Cancel'],
-      });
-
-       const updateOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-       const updateDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '50%',
-        height: 14,
-        label: ' Update Work Item ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'magenta' } },
-      });
-
-       const updateDialogText = blessedImpl.box({
-        parent: updateDialog,
-        top: 1,
-        left: 2,
-        height: 2,
-        width: '100%-4',
-        content: 'Update selected item stage:',
-        tags: false,
-      });
-
-      // Stages offered here — keep list conservative; this UI is intended to grow.
-       const updateDialogOptions = blessedImpl.list({
-        parent: updateDialog,
-        top: 4,
-        left: 2,
-        width: '100%-4',
-        height: 8,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' },
-        },
-        items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
-      });
-
-       const overlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-      // Opencode prompt dialog
-       const opencodeOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
-
-      // Larger dialog and textbox for multi-line prompts
-       const opencodeDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '80%',
-        height: '60%',
-        label: ' Run opencode ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'yellow' } },
-      });
-      
-      // Server status indicator (footer centered)
-       const serverStatusBox = blessedImpl.box({
-        parent: screen,
-        bottom: 0,
-        left: 'center',
-        width: 1,
-        height: 1,
-        content: '',
-        tags: true,
-        align: 'center',
-        style: { fg: 'white' }
-      });
-
-      // Use a textarea so multi-line input works and Enter inserts newlines
-       const opencodeText = blessedImpl.textarea({
-        parent: opencodeDialog,
-        top: 1,
-        left: 2,
-        width: '100%-4',
-        height: '100%-6',
-        inputOnFocus: true,
-        keys: true,
-        vi: false,
-        mouse: true,
-        clickable: true,
-        scrollable: true,     // Enable scrolling
-        alwaysScroll: true,   // Always show scrollbar when needed
-        border: { type: 'line' },
-        style: { focus: { border: { fg: 'green' } } },
-      });
-      const opencodeTextDefaults = {
-        top: 1,
-        left: 2,
-        width: '100%-4',
-        height: '100%-6',
-        border: { type: 'line' }
-      };
+      const opencodeUi = new OpencodePaneComponent({ parent: screen, blessed: blessedImpl }).create();
+      const serverStatusBox = opencodeUi.serverStatusBox;
+      const opencodeDialog = opencodeUi.dialog;
+      const opencodeText = opencodeUi.textarea;
+      const suggestionHint = opencodeUi.suggestionHint;
+      const opencodeSend = opencodeUi.sendButton;
+      const opencodeCancel = opencodeUi.cancelButton;
 
       // Command autocomplete support
       const AVAILABLE_COMMANDS = [
@@ -486,20 +246,6 @@ export default function register(ctx: PluginContext): void {
       let isCommandMode = false;
       let userTypedText = '';
       let isWaitingForResponse = false; // Track if we're waiting for OpenCode response
-
-      // Create a text element to show the suggestion below the input
-       const suggestionHint = blessedImpl.text({
-        parent: opencodeDialog,
-        top: '100%-4',
-        left: 2,
-        width: '100%-4',
-        height: 1,
-        tags: true,
-        style: {
-          fg: 'gray'
-        },
-        content: ''
-      });
 
       function applyCommandSuggestion(target: any) {
         if (isCommandMode && currentSuggestion) {
@@ -594,30 +340,7 @@ export default function register(ctx: PluginContext): void {
         });
       });
 
-       const opencodeSend = blessedImpl.box({
-        parent: opencodeDialog,
-        bottom: 0,
-        right: 12,
-        height: 1,
-        width: 10,
-        tags: true,
-        content: '[ {underline}S{/underline}end ]',
-        mouse: true,
-        clickable: true,
-        style: { fg: 'white', bg: 'green' },
-      });
 
-       const opencodeCancel = blessedImpl.box({
-        parent: opencodeDialog,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-        clickable: true,
-      });
 
       // Active opencode pane/process tracking
       let opencodePane: any = null;
@@ -727,7 +450,7 @@ export default function register(ctx: PluginContext): void {
         updateOpencodeInputLayout();
         
         // Start the server if not already running
-        await startOpencodeServer();
+        await opencodeClient.startServer();
         
         // Open the response pane automatically
         ensureOpencodePane();
@@ -751,16 +474,13 @@ export default function register(ctx: PluginContext): void {
       }
 
       // OpenCode server management
-      let opencodeServerProc: ChildProcess | null = null;
-      let opencodeServerPort = 0;
-      let opencodeServerStatus: 'stopped' | 'starting' | 'running' | 'error' = 'stopped';
       const OPENCODE_SERVER_PORT = parseInt(process.env.OPENCODE_SERVER_PORT || '9999', 10);
-      
-      function updateServerStatus() {
+
+      function updateServerStatus(status: OpencodeServerStatus, port: number) {
         let statusText = '';
         let statusColor = 'white';
-        
-        switch (opencodeServerStatus) {
+
+        switch (status) {
           case 'stopped':
             statusText = '[-] Server stopped';
             statusColor = 'gray';
@@ -770,7 +490,7 @@ export default function register(ctx: PluginContext): void {
             statusColor = 'yellow';
             break;
           case 'running':
-            statusText = `[OK] Port: ${opencodeServerPort}`;
+            statusText = `[OK] Port: ${port}`;
             statusColor = 'green';
             break;
           case 'error':
@@ -784,1041 +504,45 @@ export default function register(ctx: PluginContext): void {
         serverStatusBox.width = Math.max(1, plainLength + 2);
         screen.render();
       }
-      
-      async function checkOpencodeServer(port: number): Promise<boolean> {
-        return new Promise((resolve) => {
-          const req = http.request({
-            hostname: '127.0.0.1',
-            port,
-            path: '/global/health',
-            method: 'GET',
-            timeout: 1000,
-          }, (res) => {
-            const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
-            res.resume();
-            debugLog(`health status=${res.statusCode ?? 'unknown'} ok=${ok}`);
-            resolve(ok);
-          });
 
-          req.on('timeout', () => {
-            req.destroy();
-            debugLog('health check timed out');
-            resolve(false);
-          });
+      const opencodeClient = new OpencodeClient({
+        port: OPENCODE_SERVER_PORT,
+        log: debugLog,
+        showToast,
+        modalDialogs,
+        render: () => screen.render(),
+        persistedState: {
+          load: loadPersistedState,
+          save: savePersistedState,
+          getPrefix: () => db.getPrefix?.(),
+        },
+        onStatusChange: updateServerStatus,
+      });
 
-          req.on('error', () => {
-            debugLog('health check error');
-            resolve(false);
-          });
-
-          req.end();
-        });
-      }
-      
-      async function startOpencodeServer(): Promise<boolean> {
-        // Check if server is already running on the configured port
-        const isRunning = await checkOpencodeServer(OPENCODE_SERVER_PORT);
-        if (isRunning) {
-          opencodeServerStatus = 'running';
-          opencodeServerPort = OPENCODE_SERVER_PORT;
-          updateServerStatus();
-          return true;
-        }
-        
-        opencodeServerStatus = 'starting';
-        updateServerStatus();
-        showToast('Starting OpenCode server...');
-        
-        try {
-          // Start the API server
-          debugLog(`starting opencode server port=${OPENCODE_SERVER_PORT}`);
-          opencodeServerProc = spawn('opencode', ['serve', '--port', String(OPENCODE_SERVER_PORT)], {
-            stdio: ['ignore', 'pipe', 'pipe'],
-            detached: false
-          });
-
-          if (opencodeServerProc.stdout) {
-            opencodeServerProc.stdout.on('data', (chunk) => {
-              debugLog(`server stdout: ${chunk.toString().trim()}`);
-            });
-          }
-          if (opencodeServerProc.stderr) {
-            opencodeServerProc.stderr.on('data', (chunk) => {
-              debugLog(`server stderr: ${chunk.toString().trim()}`);
-            });
-          }
-          opencodeServerProc.on('exit', (code, signal) => {
-            debugLog(`server exit code=${code ?? 'null'} signal=${signal ?? 'null'}`);
-          });
-          
-          opencodeServerPort = OPENCODE_SERVER_PORT;
-          
-          // Give the server time to start
-          let retries = 10;
-          while (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            const isUp = await checkOpencodeServer(OPENCODE_SERVER_PORT);
-            if (isUp) {
-              opencodeServerStatus = 'running';
-              updateServerStatus();
-              showToast('OpenCode server started');
-              return true;
-            }
-            retries--;
-          }
-          
-          // Server didn't start in time
-          opencodeServerStatus = 'error';
-          updateServerStatus();
-          showToast('OpenCode server failed to start');
-          if (opencodeServerProc) {
-            opencodeServerProc.kill();
-            opencodeServerProc = null;
-          }
-          return false;
-          
-        } catch (err) {
-          opencodeServerStatus = 'error';
-          updateServerStatus();
-          showToast(`Failed to start OpenCode server: ${String(err)}`);
-          return false;
-        }
-      }
-      
-      function stopOpencodeServer() {
-        if (opencodeServerProc) {
-          try {
-            opencodeServerProc.kill();
-            opencodeServerProc = null;
-            opencodeServerStatus = 'stopped';
-            updateServerStatus();
-          } catch (err) {
-            // ignore
-          }
-        }
-      }
-
-      // Store current session ID and associated work-item id for server communication
-      let currentSessionId: string | null = null;
-      let currentSessionWorkItemId: string | null = null;
-      
-      // Function to communicate with OpenCode server via HTTP API with SSE streaming
-      async function sendPromptToServer(
-        prompt: string, 
-        pane: any, 
-        indicator: any, 
-        inputField: any,
-        onComplete?: () => void
-      ): Promise<void> {
-        const serverUrl = `http://localhost:${opencodeServerPort}`;
-        debugLog(`send prompt length=${prompt.length}`);
-        
-        return new Promise((resolve, reject) => {
-          // First, create or reuse a session
-          // Prefer using the currently-selected work item ID as the OpenCode session ID
-          const preferredSessionId = (typeof getSelectedItem === 'function' && getSelectedItem()) ? getSelectedItem()?.id : null;
-          // If we already have a session that matches the preferred ID, reuse it.
-          const sessionPromise = (currentSessionId && preferredSessionId && currentSessionId === preferredSessionId)
-            ? Promise.resolve(currentSessionId)
-            : createSession(serverUrl, preferredSessionId);
-            
-           sessionPromise
-             .then(async (sessionObj) => {
-               // sessionObj may be a string (older behaviour) or an object { id, workItemId, existing }
-               const sessionId = typeof sessionObj === 'string' ? sessionObj : sessionObj.id;
-               const sessionWorkItemId = typeof sessionObj === 'string' ? null : (sessionObj.workItemId || null);
-               const sessionExisting = typeof sessionObj === 'object' && !!(sessionObj as any).existing;
-               currentSessionId = sessionId;
-               currentSessionWorkItemId = sessionWorkItemId;
-               // Update pane label to show the associated work-item id when available
-               if (pane.setLabel) {
-                 if (currentSessionWorkItemId) {
-                   pane.setLabel(` opencode - Work Item: ${currentSessionWorkItemId} [esc] `);
-                 } else {
-                   pane.setLabel(` opencode - Session: ${sessionId} [esc] `);
-                 }
-               }
-
-                // If we found an existing session, load its history into the pane first
-                if (sessionExisting) {
-                  try {
-                    const history = await getSessionMessages(sessionId);
-                    if (pane.setContent) {
-                     let histText = '';
-                     for (const m of history) {
-                       const role = m.info?.role || 'unknown';
-                       histText += `{gray-fg}[${role}]{/}\n`;
-                       const parts = m.parts || [];
-                       for (const p of parts) {
-                         if (p.type === 'text' && p.text) {
-                           histText += `${p.text}\n`;
-                         } else if (p.type === 'tool-result' && p.content) {
-                           histText += `{green-fg}[Tool Result]{/}\n`;
-                           histText += `${p.content}\n`;
-                         } else if (p.type === 'tool-use' && p.tool) {
-                           histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
-                           if (p.tool.description) histText += `${p.tool.description}\n`;
-                         }
-                       }
-                       histText += '\n';
-                     }
-                      pane.setContent(histText + '\n');
-                    }
-                  } catch (err) {
-                    debugLog(`failed to load session history: ${String(err)}`);
-                  }
-                } else {
-                  // No existing server session was found/used. If we have a locally
-                  // persisted history for this work-item, surface it read-only so
-                  // the user can inspect prior messages without auto-replaying them.
-                  try {
-                    const localHist = (sessionObj as any)?.localHistory;
-                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
-                      debugLog(`rendering local persisted history messages=${localHist.length} for workitem=${String(sessionWorkItemId)}`);
-                      if (pane.setContent) {
-                        let histText = '{yellow-fg}[Local persisted history - read-only]{/}\n\n';
-                        for (const m of localHist) {
-                          const role = m.info?.role || 'unknown';
-                          histText += `{gray-fg}[${role}]{/}\n`;
-                          const parts = m.parts || [];
-                          for (const p of parts) {
-                            if (p.type === 'text' && p.text) {
-                              histText += `${p.text}\n`;
-                            } else if (p.type === 'tool-result' && p.content) {
-                              histText += `{green-fg}[Tool Result]{/}\n`;
-                              histText += `${p.content}\n`;
-                            } else if (p.type === 'tool-use' && p.tool) {
-                              histText += `{yellow-fg}[Tool: ${p.tool.name}]{/}\n`;
-                              if (p.tool.description) histText += `${p.tool.description}\n`;
-                            }
-                          }
-                          histText += '\n';
-                        }
-                        // Add a clear separator so the user's new prompt is visually separated
-                        histText += '{yellow-fg}[End of local history]{/}\n\n';
-                        pane.setContent(histText + '\n');
-                      }
-                    }
-                  } catch (err) {
-                    debugLog(`failed to render local history: ${String(err)}`);
-                  }
-                }
-                // If we rendered a local history above (server session wasn't reused)
-                // offer the user a safe restore flow: Show only / Restore via summary / Full replay.
-                let finalPrompt = prompt;
-                if (!sessionExisting) {
-                  try {
-                    const localHist = (sessionObj as any)?.localHistory;
-                    if (localHist && Array.isArray(localHist) && localHist.length > 0) {
-                      // Present a small modal to ask how to proceed.
-                      const choice = await new Promise<number>((resolve) => {
-                        const restoreOverlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                        const restoreDialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 10, label: ' Restore session ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                        const text = blessedImpl.box({ parent: restoreDialog, top: 1, left: 2, width: '100%-4', height: 3, content: 'Local persisted conversation found. How would you like to proceed?', tags: false });
-                        const opts = blessedImpl.list({ parent: restoreDialog, top: 4, left: 2, width: '100%-4', height: 4, keys: true, mouse: true, items: ['Show only (no restore)', 'Restore via summary (recommended)', 'Full replay (danger)', 'Cancel'], style: { selected: { bg: 'blue' } } });
-                        opts.select(0);
-                        restoreOverlay.setFront(); restoreDialog.setFront(); opts.focus(); screen.render();
-                        function cleanup() { try { restoreDialog.hide(); restoreOverlay.hide(); restoreDialog.destroy(); restoreOverlay.destroy(); } catch (_) {} }
-                        opts.on('select', (_el: any, idx: number) => { cleanup(); resolve(idx); });
-                        // Allow escape to cancel
-                        restoreDialog.key(['escape'], () => { cleanup(); resolve(3); });
-                      });
-
-                      if (choice === 1) {
-                        // Restore via summary: generate editable summary, then prepend to prompt
-                        const generated = generateSummaryFromHistory(localHist);
-                        const edited = await new Promise<string>((resolve) => {
-                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '80%', height: '60%', label: ' Edit summary (sent as context) ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                           const ta = blessedImpl.textarea({ parent: dialog, top: 1, left: 1, width: '100%-2', height: '100%-4', inputOnFocus: true, keys: true, mouse: true, scrollable: true, alwaysScroll: true });
-                           try { if (typeof ta.setValue === 'function') ta.setValue(generated); } catch (_) {}
-                           const btns = blessedImpl.list({ parent: dialog, bottom: 0, left: 1, height: 1, width: '100%-2', items: ['Send summary', 'Cancel'], keys: true, mouse: true, style: { selected: { bg: 'blue' } } });
-                          btns.select(0);
-                          overlay.setFront(); dialog.setFront(); ta.focus(); screen.render();
-                          function cleanup() { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch (_) {} }
-                          btns.on('select', (_el: any, idx: number) => {
-                            const val = ta.getValue ? ta.getValue() : generated;
-                            cleanup(); if (idx === 0) resolve(val); else resolve('');
-                          });
-                          dialog.key(['escape'], () => { cleanup(); resolve(''); });
-                        });
-                        if (edited && edited.trim()) {
-                          finalPrompt = `Context summary (user-edited):\n${edited}\n\nUser prompt:\n${prompt}`;
-                        }
-                      } else if (choice === 2) {
-                        // Full replay chosen — confirm with the user
-                        const confirm = await new Promise<boolean>((resolve) => {
-                           const overlay = blessedImpl.box({ parent: screen, top: 0, left: 0, width: '100%', height: '100% - 1', mouse: true, clickable: true, style: { bg: 'black' } });
-                           const dialog = blessedImpl.box({ parent: screen, top: 'center', left: 'center', width: '60%', height: 8, label: ' Confirm full replay ', border: { type: 'line' }, tags: true, mouse: true, clickable: true });
-                           const text = blessedImpl.box({ parent: dialog, top: 1, left: 2, width: '100%-4', height: 3, content: '{red-fg}Warning:{/red-fg} Full replay may re-run tool calls or side-effects. Type YES to confirm, or select Cancel.', tags: true });
-                           const input = blessedImpl.textbox({ parent: dialog, bottom: 0, left: 2, width: '50%', height: 1, inputOnFocus: true });
-                           const cancelBtn = blessedImpl.box({ parent: dialog, bottom: 0, right: 2, height: 1, width: 8, content: '[Cancel]', mouse: true, clickable: true, style: { fg: 'yellow' } });
-                          overlay.setFront(); dialog.setFront(); input.focus(); screen.render();
-                          cancelBtn.on('click', () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
-                          input.on('submit', (val: string) => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve((val||'').trim() === 'YES'); });
-                          dialog.key(['escape'], () => { try { dialog.hide(); overlay.hide(); dialog.destroy(); overlay.destroy(); } catch(_){}; resolve(false); });
-                        });
-                        if (confirm) {
-                          // build a raw replay string — join textual parts
-                          const allText: string[] = [];
-                          for (const m of localHist) {
-                            const parts = m.parts || [];
-                            for (const p of parts) {
-                              if (p.type === 'text' && p.text) allText.push(p.text);
-                              else if (p.type === 'tool-result' && p.content) allText.push('[Tool Result]\n' + String(p.content));
-                            }
-                          }
-                          const replayText = allText.join('\n\n---\n\n');
-                          finalPrompt = `Full replay of previous conversation:\n${replayText}\n\nUser prompt:\n${prompt}`;
-                        }
-                      }
-                    }
-                  } catch (err) {
-                    debugLog(`restore flow error: ${String(err)}`);
-                  }
-                }
-
-                pane.pushLine('');
-                // Show the user's short prompt in the pane (finalPrompt may contain extra context)
-                pane.pushLine(`{gray-fg}${prompt}{/}`);
-                pane.pushLine('');
-               // Ensure we scroll to the bottom after adding content
-               if (pane.setScrollPerc) {
-                 pane.setScrollPerc(100);
-               }
-               screen.render();
-               debugLog(`session id=${sessionId} workitem=${String(currentSessionWorkItemId)}`);
-
-               // Use async prompt endpoint for better streaming
-                const messageData = JSON.stringify({
-                  parts: [{ type: 'text', text: finalPrompt }]
-                });
-
-               // First, send the prompt asynchronously
-               const sendOptions = {
-                 hostname: 'localhost',
-                 port: opencodeServerPort,
-                 path: `/session/${sessionId}/prompt_async`,
-                 method: 'POST',
-                 headers: {
-                   'Content-Type': 'application/json',
-                   'Content-Length': Buffer.byteLength(messageData)
-                 }
-               };
-
-               const sendReq = http.request(sendOptions, (res) => {
-                 debugLog(`prompt_async status=${res.statusCode ?? 'unknown'}`);
-                 if (res.statusCode === 204) {
-                   // Success - now connect to SSE for streaming response
-                    connectToSSE(sessionId, finalPrompt, pane, indicator, inputField, resolve, reject, onComplete);
-                 } else {
-                   let errorData = '';
-                   res.on('data', chunk => { errorData += chunk; });
-                   res.on('end', () => {
-                     debugLog(`prompt_async error response status=${res.statusCode} length=${errorData.length}`);
-                     const errorMsg = errorData || `HTTP ${res.statusCode} error`;
-                     pane.pushLine(`{red-fg}Error sending prompt: ${errorMsg}{/}`);
-                     screen.render();
-                     reject(new Error(`Failed to send prompt: ${errorMsg}`));
-                   });
-                 }
-               });
-
-               sendReq.on('error', (err) => {
-                 debugLog(`prompt_async request error: ${String(err)}`);
-                 pane.pushLine(`{red-fg}Request error: ${err}{/}`);
-                 screen.render();
-                 reject(err);
-               });
-
-               sendReq.write(messageData);
-               sendReq.end();
-             })
-             .catch(err => {
-               pane.pushLine(`{red-fg}Session error: ${err}{/}`);
-               screen.render();
-               reject(err);
-             });
-        });
-      }
-      
-      // Connect to SSE for streaming responses
-      function connectToSSE(
-        sessionId: string,
-        prompt: string,
-        pane: any,
-        indicator: any,
-        inputField: any,
-        resolve: Function,
-        reject: Function,
-        onComplete?: () => void
-      ) {
-        const getSessionId = (value: any) => {
-          return value?.sessionID || value?.sessionId || value?.session_id;
-        };
-        const partTextById = new Map<string, string>();
-        const messageRoleById = new Map<string, string>();
-        let lastUserMessageId: string | null = null;
-        let streamText = pane.getContent ? pane.getContent() : '';
-        let sseClosed = false;
-        const appendText = (text: string) => {
-          streamText += text;
-        };
-        const appendLine = (line: string) => {
-          if (streamText && !streamText.endsWith('\n')) {
-            streamText += '\n';
-          }
-          streamText += line;
-        };
-        const updatePane = () => {
-          if (pane.setContent) {
-            pane.setContent(streamText);
-          }
-          if (typeof pane.setScrollPerc === 'function') {
-            pane.setScrollPerc(100);
-          }
-          screen.render();
-        };
-        const options = {
-          hostname: 'localhost',
-          port: opencodeServerPort,
-          path: '/event',
-          method: 'GET',
-          headers: {
-            'Accept': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          }
-        };
-        debugLog(`sse connect session=${sessionId}`);
-        
-        const req = http.request(options, (res) => {
-          debugLog(`sse status=${res.statusCode ?? 'unknown'}`);
-          let buffer = '';
-          let waitingForInput = false;
-          
-          res.on('data', (chunk) => {
-            buffer += chunk.toString();
-            debugLog(`sse chunk bytes=${chunk.length}`);
-            const lines = buffer.split('\n');
-            
-            // Keep the last incomplete line in the buffer
-            buffer = lines.pop() || '';
-            
-            for (const line of lines) {
-              if (line.startsWith('data:')) {
-                try {
-                  const payload = line.slice(5).trimStart();
-                  if (!payload) {
-                    continue;
-                  }
-                  const payloadPreview = payload.length > 200 ? `${payload.slice(0, 200)}...` : payload;
-                  debugLog(`sse payload length=${payload.length} preview=${payloadPreview}`);
-                  const data = JSON.parse(payload);
-                  const dataType = data?.type || 'unknown';
-                  debugLog(`sse data type=${dataType}`);
-                  
-                  // Handle different event types
-                  const isMessagePart = data.type === 'message.part' || data.type === 'message.part.updated' || data.type === 'message.part.created';
-                  if (isMessagePart && data.properties) {
-                    const part = data.properties.part;
-                    const partSessionId = getSessionId(part);
-                    const eventSessionId = partSessionId || getSessionId(data.properties) || getSessionId(data);
-                    if (part && eventSessionId === sessionId) {
-                      const role = messageRoleById.get(part.messageID);
-                      const isUserMessage = role === 'user' || (lastUserMessageId !== null && part.messageID === lastUserMessageId);
-                      const promptMatches = prompt && part.text && part.text.trim() === prompt.trim();
-                      if (isUserMessage || promptMatches) {
-                        debugLog(`sse message.part skipped user prompt role=${role ?? 'unknown'} messageID=${part.messageID}`);
-                        partTextById.set(part.id || 'unknown', part.text || '');
-                        continue;
-                      }
-                      if (part.type === 'text' && part.text) {
-                        // Display text in real-time (append only new diff)
-                        const partId = part.id || 'unknown';
-                        const prevText = partTextById.get(partId) || '';
-                        if (part.text.startsWith(prevText)) {
-                          const diff = part.text.slice(prevText.length);
-                          if (diff) {
-                            appendText(diff);
-                            updatePane();
-                          }
-                          debugLog(`sse text diff chars=${diff.length}`);
-                        } else if (!prevText.startsWith(part.text)) {
-                          appendLine(part.text);
-                          updatePane();
-                          debugLog(`sse text reset chars=${part.text.length}`);
-                        } else {
-                          debugLog(`sse text unchanged chars=${part.text.length}`);
-                        }
-                        partTextById.set(partId, part.text);
-                      } else if (part.type === 'tool-use' && part.tool) {
-                        appendLine(`{yellow-fg}[Tool: ${part.tool.name}]{/}`);
-                        if (part.tool.description) {
-                          appendLine(`  ${part.tool.description}`);
-                        }
-                        updatePane();
-                        debugLog(`sse tool use=${part.tool.name}`);
-                      } else if (part.type === 'tool-result' && part.content) {
-                        appendLine('{green-fg}[Tool Result]{/}');
-                        const resultLines = part.content.split('\n');
-                        for (const line of resultLines.slice(0, 10)) {
-                          appendLine(`  ${line}`);
-                        }
-                        if (resultLines.length > 10) {
-                          appendLine(`  ... (${resultLines.length - 10} more lines)`);
-                        }
-                        updatePane();
-                        debugLog(`sse tool result lines=${resultLines.length}`);
-                      } else if (part.type === 'permission-request') {
-                        // Handle permission requests (similar to input)
-                        waitingForInput = true;
-                        indicator.setContent('{yellow-fg}[!] Permission Required{/}');
-                        indicator.show();
-                        inputField.setLabel(' Permission Request ');
-                        inputField.show();
-                        inputField.focus();
-                        updatePane();
-                        debugLog('sse permission request');
-                      }
-                    } else {
-                      debugLog(`sse message.part ignored session=${eventSessionId ?? 'unknown'}`);
-                    }
-                  } else if (data.type === 'message.updated' && data.properties?.info) {
-                    const info = data.properties.info;
-                    const messageId = info.id;
-                    const messageRole = info.role;
-                    if (messageId && messageRole) {
-                      messageRoleById.set(messageId, messageRole);
-                      if (messageRole === 'user') {
-                        lastUserMessageId = messageId;
-                      }
-                      debugLog(`sse message updated role=${messageRole} id=${messageId}`);
-                    }
-                  } else if (data.type === 'message.finish' && data.properties) {
-                    const finishSessionId = getSessionId(data.properties) || getSessionId(data);
-                    if (finishSessionId === sessionId) {
-                      debugLog('sse message finish');
-                      
-                      // Close SSE connection
-                      sseClosed = true;
-                      req.abort();
-                      if (onComplete) {
-                        onComplete();
-                      }
-                      resolve();
-                    }
-                  } else if (data.type === 'session.status' && data.properties) {
-                    const statusSessionId = getSessionId(data.properties) || getSessionId(data);
-                    const statusType = data.properties.status?.type;
-                    if (statusSessionId === sessionId && statusType === 'idle') {
-                      debugLog('sse session idle');
-                      sseClosed = true;
-                      req.abort();
-                      if (onComplete) {
-                        onComplete();
-                      }
-                      resolve();
-                    }
-                  } else if (data.type === 'question.asked' && data.properties) {
-                    // Handle question.asked events - auto-answer with first option (usually recommended)
-                    const questionSessionId = getSessionId(data.properties) || getSessionId(data);
-                    if (questionSessionId === sessionId) {
-                      const questions = data.properties.questions;
-                      if (questions && questions.length > 0) {
-                        const question = questions[0];
-                        const options = question.options || [];
-                        debugLog(`sse question asked: ${question.question}`);
-                        debugLog(`sse question options: ${JSON.stringify(options)}`);
-                        
-                        // Show the question in the response pane
-                        appendLine(`{yellow-fg}OpenCode asking: ${question.question}{/}`);
-                        
-                        // Auto-answer with first option (recommended) or "save" as fallback
-                        let answer = 'save';
-                        if (options.length > 0) {
-                          answer = options[0].label || options[0].value || 'save';
-                          appendLine(`{green-fg}Auto-answering with: ${answer}{/}`);
-                          debugLog(`sse question answering with: ${answer} from options: ${JSON.stringify(options[0])}`);
-                        } else {
-                          debugLog(`sse question no options, using default: ${answer}`);
-                        }
-                        
-                        // Send the answer back - try different formats
-                        // First try the format that might work
-                        const answerData = JSON.stringify({
-                          questionID: data.properties.id,
-                          answer: answer  // Try singular 'answer' instead of 'answers' array
-                        });
-                        
-                        debugLog(`sse question sending answer: ${answerData}`);
-                        
-                        const answerOptions = {
-                          hostname: 'localhost',
-                          port: opencodeServerPort,
-                          path: `/session/${sessionId}/answer`,  // Try /answer instead of /question
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Content-Length': Buffer.byteLength(answerData)
-                          }
-                        };
-                        
-                        const answerReq = http.request(answerOptions, (res) => {
-                          debugLog(`question answer status=${res.statusCode ?? 'unknown'}`);
-                        });
-                        
-                        answerReq.on('error', (err) => {
-                          debugLog(`question answer error: ${String(err)}`);
-                          appendLine(`{red-fg}Failed to answer question: ${String(err)}{/}`);
-                        });
-                        
-                        answerReq.write(answerData);
-                        answerReq.end();
-                      }
-                    }
-                  } else if (data.type === 'input.request' && data.properties) {
-                    // Handle input requests
-                    const inputSessionId = getSessionId(data.properties) || getSessionId(data);
-                    if (inputSessionId === sessionId) {
-                      waitingForInput = true;
-                      const inputType = data.properties.type || 'text';
-                      const prompt = data.properties.prompt || 'Input required';
-                      
-                      appendLine(`{yellow-fg}${prompt}{/}`);
-                      indicator.setContent('{yellow-fg}[!] Input Required{/}');
-                      indicator.show();
-                      
-                      if (inputType === 'boolean') {
-                        inputField.setLabel(' Yes/No Input ');
-                      } else if (inputType === 'password') {
-                        inputField.setLabel(' Password Input ');
-                      } else {
-                        inputField.setLabel(' Input Required ');
-                      }
-                      
-                      inputField.show();
-                      inputField.focus();
-                      updatePane();
-                      debugLog(`sse input request type=${inputType}`);
-                      
-                      // Set up input handler
-                      inputField.once('submit', (value: string) => {
-                        // Send input response back to server
-                        sendInputResponse(sessionId, value);
-                        
-                        // Hide input UI
-                        waitingForInput = false;
-                        indicator.hide();
-                        inputField.hide();
-                        inputField.clearValue();
-                        pane.focus();
-                        
-                        // Show user input in pane
-                        appendLine(`{cyan-fg}> ${value}{/}`);
-                        updatePane();
-                      });
-                    }
-                  }
-                } catch (err) {
-                  debugLog(`sse parse error: ${String(err)}`);
-                  // Ignore parse errors for incomplete data
-                }
-              }
-            }
-          });
-          
-          res.on('end', () => {
-            if (sseClosed) {
-              debugLog('sse ended after close');
-              resolve();
-              return;
-            }
-            appendLine('{yellow-fg}Stream ended{/}');
-            updatePane();
-            debugLog('sse ended');
-            resolve();
-          });
-          
-          res.on('error', (err) => {
-            const errMessage = String(err);
-            const errCode = (err as any)?.code;
-            if (sseClosed || errMessage.includes('aborted') || errCode === 'ECONNRESET') {
-              debugLog(`sse response closed: ${errMessage}`);
-              resolve();
-              return;
-            }
-            debugLog(`sse response error: ${errMessage}`);
-            appendLine(`{red-fg}SSE error: ${err}{/}`);
-            updatePane();
-            reject(err);
-          });
-        });
-        
-        req.on('error', (err) => {
-          const errMessage = String(err);
-          const errCode = (err as any)?.code;
-          if (sseClosed || errMessage.includes('aborted') || errCode === 'ECONNRESET') {
-            debugLog(`sse connection closed: ${errMessage}`);
-            resolve();
-            return;
-          }
-          debugLog(`sse connection error: ${errMessage}`);
-          pane.pushLine(`{red-fg}Connection error: ${errMessage}{/}`);
-          screen.render();
-          reject(err);
-        });
-        
-        req.end();
-      }
-      
-      // Send input response back to the server
-      function sendInputResponse(sessionId: string, input: string) {
-        const responseData = JSON.stringify({ input });
-        debugLog(`send input response length=${input.length}`);
-        
-        const options = {
-          hostname: 'localhost',
-          port: opencodeServerPort,
-          path: `/session/${sessionId}/input`,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(responseData)
-          }
-        };
-        
-        const req = http.request(options, (res) => {
-          // Response handled via SSE
-          debugLog(`input response status=${res.statusCode ?? 'unknown'}`);
-        });
-        
-        req.on('error', (err) => {
-          debugLog(`input response error: ${String(err)}`);
-          console.error('Failed to send input response:', err);
-        });
-        
-        req.write(responseData);
-        req.end();
-      }
-      
-      // Persisted session mapping helpers (workItemId -> sessionId)
-      function getPersistedSessionIdForWorkItem(workItemId: string): string | null {
-        try {
-          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
-          return persisted.sessionMap && persisted.sessionMap[workItemId] ? persisted.sessionMap[workItemId] : null;
-        } catch (_) { return null; }
-      }
-
-      function persistSessionMapping(workItemId: string, sessionId: string) {
-        try {
-          const prefix = db.getPrefix?.();
-          const state = loadPersistedState(prefix) || {};
-          state.sessionMap = state.sessionMap || {};
-          state.sessionMap[workItemId] = sessionId;
-          savePersistedState(prefix, state);
-          debugLog(`persistSessionMapping workitem=${workItemId} -> session=${sessionId}`);
-        } catch (err) {
-          debugLog(`failed to persist session mapping: ${String(err)}`);
-        }
-      }
-
-      function persistSessionHistory(workItemId: string, history: any[]) {
-        try {
-          const prefix = db.getPrefix?.();
-          const state = loadPersistedState(prefix) || {};
-          state.sessionHistories = state.sessionHistories || {};
-          state.sessionHistories[workItemId] = history;
-          savePersistedState(prefix, state);
-          debugLog(`persistSessionHistory workitem=${workItemId} messages=${(history || []).length}`);
-        } catch (err) {
-          debugLog(`failed to persist session history: ${String(err)}`);
-        }
-      }
-
-      function loadPersistedSessionHistory(workItemId: string): any[] | null {
-        try {
-          const persisted = loadPersistedState(db.getPrefix?.() || undefined) || {};
-          return persisted.sessionHistories && persisted.sessionHistories[workItemId] ? persisted.sessionHistories[workItemId] : null;
-        } catch (_) { return null; }
-      }
-
-      // Produce a short, editable summary from persisted session history.
-      // This is intentionally simple: extract recent text parts and join them
-      // into a paragraph suitable for sending as context to the server.
-      function generateSummaryFromHistory(history: any[]): string {
-        try {
-          if (!history || history.length === 0) return '';
-          const pieces: string[] = [];
-          // Walk from the end (most recent) back and collect text parts
-          for (let i = history.length - 1; i >= 0 && pieces.length < 8; i--) {
-            const m = history[i];
-            const parts = m.parts || [];
-            for (let j = parts.length - 1; j >= 0; j--) {
-              const p = parts[j];
-              if (p.type === 'text' && p.text) {
-                const t = String(p.text).trim();
-                if (t) pieces.push(t);
-              } else if (p.type === 'tool-result' && p.content) {
-                const t = String(p.content).split('\n').slice(0, 4).join(' ').trim();
-                if (t) pieces.push(`[Tool result] ${t}`);
-              }
-              if (pieces.length >= 8) break;
-            }
-          }
-          pieces.reverse(); // maintain chronological order
-          let joined = pieces.join('\n\n');
-          // Trim to reasonable length for sending
-          if (joined.length > 1200) joined = joined.slice(0, 1200) + '...';
-          return joined;
-        } catch (err) {
-          debugLog(`summary error: ${String(err)}`);
-          return '';
-        }
-      }
-
-      // Retrieve messages for a session: GET /session/:id/message
-      function getSessionMessages(sessionId: string): Promise<any[]> {
-        return new Promise((resolve, reject) => {
-          const opts = {
-            hostname: 'localhost',
-            port: opencodeServerPort,
-            path: `/session/${encodeURIComponent(sessionId)}/message`,
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-          };
-          const r = http.request(opts, (resp) => {
-            let body = '';
-            resp.on('data', c => body += c);
-            resp.on('end', () => {
-              if (!body) return resolve([]);
-              try {
-                const parsed = JSON.parse(body);
-                if (Array.isArray(parsed)) return resolve(parsed);
-                return resolve([]);
-              } catch (err) {
-                return reject(err);
-              }
-            });
-          });
-          r.on('error', (err) => reject(err));
-          r.end();
-        });
-      }
-
-      function checkSessionExists(sessionId: string): Promise<boolean> {
-        return new Promise((resolve) => {
-          const opts = {
-            hostname: 'localhost',
-            port: opencodeServerPort,
-            path: `/session/${encodeURIComponent(sessionId)}`,
-            method: 'GET',
-            timeout: 2000,
-            headers: { 'Accept': 'application/json' }
-          } as any;
-          const r = http.request(opts, (resp) => {
-            const ok = resp.statusCode !== undefined && resp.statusCode >= 200 && resp.statusCode < 300;
-            resp.resume();
-            resolve(ok);
-          });
-          r.on('error', () => resolve(false));
-          r.on('timeout', () => { r.destroy(); resolve(false); });
-          r.end();
-        });
-      }
-
-        // Find an existing session whose title contains the workitem marker.
-      function findSessionByTitle(preferredId: string): Promise<string | null> {
-        return new Promise((resolve) => {
-          const searchTitle = `workitem:${preferredId}`;
-          const opts = {
-            hostname: 'localhost',
-            port: opencodeServerPort,
-            path: '/session',
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-          };
-          const r = http.request(opts, (resp) => {
-            let body = '';
-            resp.on('data', c => body += c);
-            resp.on('end', () => {
-              if (!body) return resolve(null);
-              try {
-                const parsed = JSON.parse(body);
-                if (!Array.isArray(parsed)) return resolve(null);
-                for (const s of parsed) {
-                  const title = s?.title || s?.name || '';
-                  if (typeof title === 'string' && title.includes(searchTitle)) {
-                    return resolve(s.id || s.sessionId || s.session_id || null);
-                  }
-                }
-                return resolve(null);
-              } catch (_) {
-                return resolve(null);
-              }
-            });
-          });
-          r.on('error', () => resolve(null));
-          r.end();
-        });
-      }
-
-      // Helper function to create or reuse a session. Returns an object { id, workItemId, existing? }.
-      async function createSession(serverUrl: string, preferredId?: string | null): Promise<{ id: string; workItemId?: string | null; existing?: boolean; localHistory?: any[] | null }> {
-        const sessionPayload: any = { title: 'TUI Session ' + new Date().toISOString() };
-        if (preferredId) sessionPayload.title = `workitem:${preferredId} ${sessionPayload.title}`;
-        if (preferredId) sessionPayload.id = preferredId;
-        const sessionData = JSON.stringify(sessionPayload);
-        debugLog('create session');
-
-        try {
-          if (preferredId) {
-            const persistedId = getPersistedSessionIdForWorkItem(preferredId);
-            if (persistedId) {
-              const exists = await checkSessionExists(persistedId);
-              if (exists) {
-                debugLog(`reusing persisted session mapping for workitem=${preferredId} id=${persistedId}`);
-                return { id: persistedId, workItemId: preferredId, existing: true };
-              }
-              const persistedHistory = loadPersistedSessionHistory(preferredId);
-              if (persistedHistory) {
-                debugLog(`found ${persistedHistory.length} persisted messages for workitem=${preferredId} (will NOT auto-replay)`);
-                // keep local history to present to the user if we must create a new session
-                // it will be attached to the returned object as `localHistory`
-                // fallthrough to attempt to find session by title or create new one
-              }
-            }
-
-            const existing = await findSessionByTitle(preferredId);
-            if (existing) {
-              debugLog(`found existing session for workitem=${preferredId} id=${existing}`);
-              persistSessionMapping(preferredId, existing);
-              return { id: existing, workItemId: preferredId, existing: true };
-            }
-          }
-        } catch (err) {
-          debugLog(`session lookup error: ${String(err)}`);
-        }
-
-        // Create a new session on the server
-        const options = {
-          hostname: 'localhost',
-          port: opencodeServerPort,
-          path: '/session',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(sessionData)
-          }
-        } as any;
-
-        const sessionResponse: any = await new Promise((resolve, reject) => {
-          const req = http.request(options, (res) => {
-            let responseData = '';
-            debugLog(`create session status=${res.statusCode ?? 'unknown'}`);
-
-            res.on('data', (chunk) => {
-              responseData += chunk;
-            });
-
-            res.on('end', () => {
-              try {
-                const parsed = JSON.parse(responseData);
-                resolve(parsed);
-              } catch (err) {
-                reject(err);
-              }
-            });
-          });
-          req.on('error', reject);
-          req.write(sessionData);
-          req.end();
-        });
-
-          try {
-            const session = sessionResponse;
-            debugLog(`create session response length=${JSON.stringify(session).length}`);
-            const returnedId = session?.id || session?.sessionId || session?.session_id || preferredId;
-            let returnedWorkItemId: string | null = null;
-            const returnedTitle = session?.title || session?.name || '';
-            if (typeof returnedTitle === 'string') {
-              const m = returnedTitle.match(/workitem:([A-Za-z0-9_\-]+)/);
-              if (m) returnedWorkItemId = m[1];
-            }
-            if (preferredId && returnedId) {
-              persistSessionMapping(preferredId, returnedId);
-            }
-
-            // Persist server messages for future restarts
-            try {
-              const fetched = returnedId ? await getSessionMessages(returnedId as string) : null;
-              if (preferredId && fetched && fetched.length > 0) persistSessionHistory(preferredId, fetched);
-            } catch (err) {
-              // ignore
-            }
-
-            // Also surface any locally persisted history (from previous mapping) so the caller
-            // can render it when the server session couldn't be reused.
-            const localHistory = preferredId ? loadPersistedSessionHistory(preferredId) : null;
-
-            return { id: returnedId as string, workItemId: returnedWorkItemId || preferredId || null, localHistory };
-          } catch (err) {
-            debugLog(`create session parse error: ${String(err)}`);
-            throw new Error('Failed to create session: ' + String(err));
-          }
-        }
+      const initialStatus = opencodeClient.getStatus();
+      updateServerStatus(initialStatus.status, initialStatus.port);
       
       function ensureOpencodePane() {
-        if (opencodePane) {
-          opencodePane.show();
-          opencodePane.setFront();
-          // In compact mode, adjust pane position to be above the input
-          const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
-          opencodePane.bottom = currentHeight + FOOTER_HEIGHT;
-          opencodePane.height = paneHeight();
-          return;
-        }
+        // In compact mode, adjust pane position to be above the input
+        const currentHeight = opencodeDialog.height || MIN_INPUT_HEIGHT;
+        const bottomOffset = currentHeight + FOOTER_HEIGHT;
 
-        const bottomOffset = MIN_INPUT_HEIGHT + FOOTER_HEIGHT;
-
-        opencodePane = blessedImpl.box({
-          parent: screen,
+        opencodePane = opencodeUi.ensureResponsePane({
           bottom: bottomOffset,
-          left: 0,
-          width: '100%',
           height: paneHeight(),
-          label: ` opencode [esc] `,
-          border: { type: 'line' },
-          tags: true,
-          scrollable: true,
-          alwaysScroll: true,
-          keys: true,
-          vi: true,
-          mouse: true,
-          clickable: true,
-          style: { border: { fg: 'magenta' } },
+          label: ' opencode [esc] ',
+          onEscape: () => {
+            closeOpencodePane();
+            // Return focus to the input textbox if it's visible so the
+            // user can continue typing.
+            try {
+              opencodeText.focus();
+            } catch (_) {}
+            // Prevent the global Escape handler from acting immediately
+            // after we closed the pane.
+            suppressEscapeUntil = Date.now() + 250;
+          },
         });
-
-        // Add Escape key handler to close only the response pane.
-        // When Escape is pressed in the response pane we want to close
-        // the pane but leave the input dialog open so the user can edit
-        // or resubmit the prompt without re-opening the prompt dialog.
-      opencodePane.key(['escape'], () => {
-        closeOpencodePane();
-        // Return focus to the input textbox if it's visible so the
-        // user can continue typing. If the input dialog is in compact
-        // mode it will remain visible.
-        try {
-          opencodeText.focus();
-        } catch (_) {}
-        // Prevent the global Escape handler from acting immediately
-        // after we closed the pane.
-        suppressEscapeUntil = Date.now() + 250;
-      });
-        
-        opencodePane.show();
-        opencodePane.setFront();
-        opencodePane.focus();
       }
 
       async function runOpencode(prompt: string) {
@@ -1834,7 +558,8 @@ export default function register(ctx: PluginContext): void {
         }
 
         // Check server is running
-        if (opencodeServerStatus !== 'running' || opencodeServerPort === 0) {
+        const serverStatus = opencodeClient.getStatus();
+        if (serverStatus.status !== 'running' || serverStatus.port === 0) {
           showToast('OpenCode server not running');
           return;
         }
@@ -1851,11 +576,18 @@ export default function register(ctx: PluginContext): void {
 
         // Use HTTP API to communicate with server
         try {
-          await sendPromptToServer(prompt, opencodePane, null, opencodeText, () => {
+          await opencodeClient.sendPrompt({
+            prompt,
+            pane: opencodePane,
+            indicator: null,
+            inputField: opencodeText,
+            getSelectedItemId: () => getSelectedItem()?.id ?? null,
+            onComplete: () => {
             // Clear flag when response completes and restore label
             isWaitingForResponse = false;
             opencodeDialog.setLabel(' prompt [esc] ');
             openOpencodeDialog();
+            },
           });
         } catch (err) {
           // Clear flag on error too and restore label
@@ -1921,76 +653,6 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       });
 
-       const helpMenu = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '70%',
-        height: '70%',
-        label: ' Help ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        scrollable: true,
-        alwaysScroll: true,
-        keys: true,
-        vi: true,
-        mouse: true,
-        style: {
-          border: { fg: 'cyan' },
-        }
-      });
-
-       const helpClose = blessedImpl.box({
-        parent: helpMenu,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-      });
-
-      const helpText = [
-        'Keyboard shortcuts',
-        '',
-        'Navigation:',
-        '  Up/Down, j/k   Move selection',
-        '  PageUp/PageDown, Home/End   Jump',
-        '',
-        'Tree:',
-        '  Right/Enter    Expand node',
-        '  Left           Collapse node / parent',
-        '  Space          Toggle expand/collapse',
-        '',
-        'Focus:',
-        '  Tab            Cycle focus panes',
-        '',
-        'Filters:',
-        '  I              Show in-progress only',
-        '  A              Show open items',
-        '  B              Show blocked only',
-        '',
-        'Refresh:',
-        '  R              Reload items from database',
-        '',
-        'Clipboard:',
-        '  C              Copy selected item ID',
-        '',
-        'Preview:',
-        '  P              Open parent in modal',
-        '',
-        'Close:',
-        '  X              Close selected item (in_review/done/deleted)',
-        '',
-        'Help:',
-        '  ?              Toggle this help',
-        '',
-        'Exit:',
-        '  q, Esc, Ctrl-C  Quit'
-      ].join('\n');
-      helpMenu.setContent(helpText);
 
       let listLines: string[] = [];
       function renderListAndDetail(selectIndex = 0) {
@@ -2322,19 +984,8 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
-      let toastTimer: NodeJS.Timeout | null = null;
       function showToast(message: string) {
-        if (!message) return;
-        const padded = ` ${message} `;
-        toast.setContent(padded);
-        toast.width = padded.length;
-        toast.show();
-        screen.render();
-        if (toastTimer) clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => {
-          toast.hide();
-          screen.render();
-        }, 1200);
+        toastComponent.show(message);
       }
 
       // Initial render
@@ -2477,7 +1128,7 @@ export default function register(ctx: PluginContext): void {
         // Persist state before exiting
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         // Stop the OpenCode server if we started it
-        stopOpencodeServer();
+        opencodeClient.stopServer();
         screen.destroy();
         process.exit(0);
       });
@@ -2509,14 +1160,14 @@ export default function register(ctx: PluginContext): void {
           closeDetails();
           return;
         }
-        if (!helpMenu.hidden) {
+        if (helpMenu.isVisible()) {
           // If help overlay is visible, close it instead of quitting
           closeHelp();
           return;
         }
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         // Stop the OpenCode server if we started it
-        stopOpencodeServer();
+        opencodeClient.stopServer();
         screen.destroy();
         process.exit(0);
       });
@@ -2526,30 +1177,23 @@ export default function register(ctx: PluginContext): void {
       screen.render();
 
       function openHelp() {
-        overlay.show();
         helpMenu.show();
-        overlay.setFront();
-        helpMenu.setFront();
-        helpMenu.focus();
-        screen.render();
       }
 
       function closeHelp() {
         helpMenu.hide();
-        overlay.hide();
         list.focus();
-        screen.render();
       }
 
       // Toggle help
       screen.key(['?'], () => {
-        if (helpMenu.hidden) openHelp();
+        if (!helpMenu.isVisible()) openHelp();
         else closeHelp();
       });
 
       // Open opencode prompt dialog (shortcut O)
       screen.key(['o', 'O'], async () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
           await openOpencodeDialog();
         }
       });
@@ -2566,14 +1210,14 @@ export default function register(ctx: PluginContext): void {
 
       // Close selected item
       screen.key(['x', 'X'], () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden) {
           openCloseDialog();
         }
       });
 
       // Update selected item (quick edit) - shortcut U
       screen.key(['u', 'U'], () => {
-        if (detailModal.hidden && helpMenu.hidden && closeDialog.hidden && updateDialog.hidden) {
+        if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
           openUpdateDialog();
         }
       });
@@ -2616,26 +1260,8 @@ export default function register(ctx: PluginContext): void {
         openHelp();
       });
 
-      // Click help to close
-      helpMenu.on('click', () => {
-        closeHelp();
-      });
-
-      helpClose.on('click', () => {
-        closeHelp();
-      });
-
-      overlay.on('click', () => {
-        closeHelp();
-      });
-
       copyIdButton.on('click', () => {
         copySelectedId();
-      });
-
-      // Close help with Esc or q when focused
-      helpMenu.key(['escape', 'q'], () => {
-        closeHelp();
       });
 
       closeOverlay.on('click', () => {
@@ -2706,11 +1332,7 @@ export default function register(ctx: PluginContext): void {
           closeDetails();
           return;
         }
-        if (!helpMenu.hidden && !isInside(helpMenu, data.x, data.y)) {
-          closeHelp();
-          return;
-        }
-        if (detailModal.hidden && helpMenu.hidden && isInside(detail, data.x, data.y)) {
+        if (detailModal.hidden && !helpMenu.isVisible() && isInside(detail, data.x, data.y)) {
           if (data.action === 'click' || data.action === 'mousedown') {
             openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
           }

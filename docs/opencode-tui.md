@@ -7,19 +7,22 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 ## Features
 
 ### 1. Quick Access
-- Press `o` (lowercase o) from anywhere in the TUI to open the OpenCode dialog
+
+- Press `o` or `O` from anywhere in the TUI to open the OpenCode dialog
 - The dialog provides a text area for entering prompts and commands
 
 ### 2. Auto-start Server
+
 - The OpenCode server automatically starts when you open the dialog
 - Server status is displayed in the dialog header:
   - `[-]` - Server stopped
   - `[~]` - Server starting
   - `[OK] Port: 51625` - Server running
   - `[X]` - Server error
-- Default port: 51625 (configurable via `OPENCODE_SERVER_PORT` environment variable)
+- Default port: 9999 (configurable via `OPENCODE_SERVER_PORT` environment variable)
 
 ### 3. Slash Command Autocomplete
+
 - Type `/` to see available slash commands
 - 28 commands available including:
   - `/help` - Get help
@@ -32,17 +35,20 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 - Press Enter to accept the suggestion
 
 ### 4. Session Management
+
 - Sessions persist across multiple prompts
 - Each TUI session maintains its own OpenCode conversation context
 - Session ID is displayed at the start of each response
 
 ### 5. Real-time Streaming
+
 - Responses stream in real-time using Server-Sent Events (SSE)
 - See text as it's generated
 - Tool usage is highlighted in yellow
 - Tool results shown in green
 
 ### 6. Interactive Input
+
 - When OpenCode needs user input, an input field appears automatically
 - Input types are clearly labeled:
   - "Yes/No Input" for boolean questions
@@ -81,17 +87,20 @@ The Worklog TUI now includes full integration with OpenCode, an AI-powered codin
 ### Examples
 
 #### Simple Question
+
 ```
 What is the purpose of this repository?
 ```
 
 #### Using Slash Commands
+
 ```
 /edit src/commands/tui.ts
 Add a comment explaining the openOpencodeDialog function
 ```
 
 #### Multi-line Prompts
+
 ```
 Review the following code and suggest improvements:
 [paste code]
@@ -103,20 +112,22 @@ Focus on performance and readability.
 
 ### Environment Variables
 
-- `OPENCODE_SERVER_PORT` - Override the default server port (51625)
-- `OPENCODE_SERVER_PASSWORD` - Protect server with basic auth
-- `OPENCODE_SERVER_USERNAME` - Username for basic auth (default: "opencode")
+- `OPENCODE_SERVER_PORT` - Override the default server port (9999)
+
+Note: Worklog’s OpenCode client does not currently attach auth headers, so enabling OpenCode server auth will likely prevent the TUI from connecting.
 
 ### Server Management
 
 The server is managed automatically, but you can also:
-- Start manually: `opencode serve --port 51625`
-- Check if running: `lsof -i :51625`
-- View server API docs: http://localhost:51625/doc
+
+- Start manually: `opencode serve --port $OPENCODE_SERVER_PORT`
+- Check if running: `lsof -i :$OPENCODE_SERVER_PORT`
+- View server API docs: `http://localhost:$OPENCODE_SERVER_PORT/doc`
 
 ## Technical Details
 
 ### API Communication
+
 - Uses OpenCode's HTTP API for session and message management
 - Endpoints used:
   - `POST /session` - Create new session
@@ -125,11 +136,13 @@ The server is managed automatically, but you can also:
   - `POST /session/{id}/input` - Send user input
 
 ### Error Handling
+
 - Server starts automatically when opening dialog (API-only mode)
 - Connection errors displayed in red
 - Graceful degradation for network issues
 
 ### File Locations
+
 - Main implementation: `src/commands/tui.ts`
 - Server management: Lines 591-698
 - OpenCode dialog: Lines 383-397
@@ -139,21 +152,25 @@ The server is managed automatically, but you can also:
 ## Troubleshooting
 
 ### Server Won't Start
+
 - Check if port 51625 is already in use: `lsof -i :51625`
 - Try a different port: `export OPENCODE_SERVER_PORT=4096`
 - Ensure OpenCode is installed: `which opencode`
 
 ### No Response
+
 - Check server status indicator in dialog header
 - Verify server is running: `ps aux | grep "opencode serve"`
 - Check for errors in response pane
 
 ### Input Not Working
+
 - Ensure the input field is focused (green border)
 - Check that server connection is active
 - Try reopening the OpenCode dialog
 
 ### Session Lost
+
 - Sessions are maintained per TUI instance
 - Restarting TUI will create a new session
 - Previous conversations are not persisted to disk
@@ -161,6 +178,7 @@ The server is managed automatically, but you can also:
 ## Development
 
 ### Testing
+
 ```bash
 # Run the test script
 ./test-tui.sh
@@ -170,12 +188,14 @@ The server is managed automatically, but you can also:
 ```
 
 ### Building
+
 ```bash
 npm run build
 npm test
 ```
 
 ### Debugging
+
 - Server logs: The server runs with stdio inherited
 - Check response pane for error messages
 - Use `curl` to test server endpoints directly
@@ -183,6 +203,7 @@ npm test
 ## Future Enhancements
 
 Planned improvements include:
+
 - Session history and persistence
 - Multiple concurrent sessions
 - File upload support

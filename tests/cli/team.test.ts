@@ -6,6 +6,7 @@ import {
   execAsync,
   enterTempDir,
   leaveTempDir,
+  seedWorkItems,
   writeConfig,
   writeInitSemaphore
 } from './cli-helpers.js';
@@ -25,9 +26,11 @@ describe('CLI Team Tests', () => {
   });
 
   describe('export and import commands', () => {
-    beforeEach(async () => {
-      await execAsync(`tsx ${cliPath} create -t "Task 1"`);
-      await execAsync(`tsx ${cliPath} create -t "Task 2"`);
+    beforeEach(() => {
+      seedWorkItems(tempState.tempDir, [
+        { title: 'Task 1' },
+        { title: 'Task 2' },
+      ]);
     });
 
     it('should export data to a file', async () => {
