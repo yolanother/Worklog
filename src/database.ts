@@ -122,6 +122,77 @@ export class WorklogDatabase {
     console.error(message);
   }
 
+  private sortItemsByScore(items: WorkItem[], recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem[] {
+    const now = Date.now();
+    return items.slice().sort((a, b) => {
+      const scoreA = this.computeScore(a, now, recencyPolicy);
+      const scoreB = this.computeScore(b, now, recencyPolicy);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      const createdA = new Date(a.createdAt).getTime();
+      const createdB = new Date(b.createdAt).getTime();
+      if (createdA !== createdB) return createdA - createdB;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
+  private computeSortIndexOrder(): WorkItem[] {
+    const items = this.store.getAllWorkItems();
+    const childrenByParent = new Map<string | null, WorkItem[]>();
+
+    for (const item of items) {
+      const parentKey = item.parentId ?? null;
+      const list = childrenByParent.get(parentKey);
+      if (list) {
+        list.push(item);
+      } else {
+        childrenByParent.set(parentKey, [item]);
+      }
+    }
+
+    const order: WorkItem[] = [];
+
+    const traverse = (parentId: string | null) => {
+      const children = childrenByParent.get(parentId) || [];
+      const sorted = this.sortItemsByScore(children);
+      for (const child of sorted) {
+        order.push(child);
+        traverse(child.id);
+      }
+    };
+
+    traverse(null);
+    return order;
+  }
+
+  assignSortIndexValues(gap: number): { updated: number } {
+    const ordered = this.computeSortIndexOrder();
+    let updated = 0;
+    for (let index = 0; index < ordered.length; index += 1) {
+      const item = ordered[index];
+      const nextSortIndex = (index + 1) * gap;
+      if (item.sortIndex !== nextSortIndex) {
+        const updatedItem = {
+          ...item,
+          sortIndex: nextSortIndex,
+          updatedAt: new Date().toISOString(),
+        };
+        this.store.saveWorkItem(updatedItem);
+        updated += 1;
+      }
+    }
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return { updated };
+  }
+
+  previewSortIndexOrder(gap: number): Array<{ id: string; sortIndex: number } & WorkItem> {
+    const ordered = this.computeSortIndexOrder();
+    return ordered.map((item, index) => ({
+      ...item,
+      sortIndex: (index + 1) * gap,
+    }));
+  }
+
   /**
    * Set the prefix for this database
    */
@@ -198,6 +269,7 @@ export class WorklogDatabase {
       description: input.description || '',
       status: input.status || 'open',
       priority: input.priority || 'medium',
+      sortIndex: input.sortIndex ?? 0,
       parentId: input.parentId || null,
       createdAt: now,
       updatedAt: now,
@@ -220,6 +292,16 @@ export class WorklogDatabase {
     this.exportToJsonl();
     this.triggerAutoSync();
     return item;
+  }
+
+  createWithNextSortIndex(input: CreateWorkItemInput, gap: number = 100): WorkItem {
+    const siblings = this.store
+      .getAllWorkItems()
+      .filter(item => item.parentId === (input.parentId ?? null));
+    const ordered = this.sortItemsByScore(siblings);
+    const maxSortIndex = ordered.reduce((max, item) => Math.max(max, item.sortIndex ?? 0), 0);
+    const sortIndex = maxSortIndex + gap;
+    return this.create({ ...input, sortIndex });
   }
 
   /**
@@ -848,6 +930,10 @@ export class WorklogDatabase {
    */
   getAll(): WorkItem[] {
     return this.store.getAllWorkItems();
+  }
+
+  getAllOrderedByHierarchySortIndex(): WorkItem[] {
+    return this.store.getAllWorkItemsOrderedByHierarchySortIndex();
   }
 
   /**

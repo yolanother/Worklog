@@ -36,6 +36,7 @@ describe('WorklogDatabase', () => {
       expect(item.description).toBe('');
       expect(item.status).toBe('open');
       expect(item.priority).toBe('medium');
+      expect(item.sortIndex).toBe(0);
       expect(item.parentId).toBe(null);
       expect(item.tags).toEqual([]);
       expect(item.assignee).toBe('');
@@ -344,6 +345,7 @@ describe('WorklogDatabase', () => {
           description: '',
           status: 'open' as const,
           priority: 'medium' as const,
+          sortIndex: 0,
           parentId: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -363,6 +365,7 @@ describe('WorklogDatabase', () => {
           description: '',
           status: 'completed' as const,
           priority: 'high' as const,
+          sortIndex: 0,
           parentId: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),

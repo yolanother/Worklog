@@ -4,7 +4,7 @@ This guide describes how to migrate existing work item ordering to the new `sort
 
 ## Overview
 
-The migration adds a `sort_index` integer to `work_items`, initializes values based on current `wl next` ordering, and updates default list/next ordering to use the new field. Gaps (default 1000) are used to keep reordering efficient.
+The migration adds a `sort_index` integer to `work_items`, initializes values based on current `wl next` ordering, and updates default list/next ordering to use the new field. Gaps (default 100) are used to keep reordering efficient.
 
 ## Preconditions
 
@@ -19,16 +19,17 @@ The migration adds a `sort_index` integer to `work_items`, initializes values ba
 wl migrate sort-index --dry-run
 ```
 
+Dry-run output shows each item ID, title, and the proposed sort_index value.
+
 2) Apply migration:
 
 ```
 wl migrate sort-index
 ```
 
-3) Verify ordering and indexes:
+3) Verify ordering:
 
 ```
-wl migrate sort-index --verify
 wl list
 ```
 
@@ -52,29 +53,27 @@ Rebalance a level to restore gaps:
 wl move auto --parent WL-123
 ```
 
-## Rollback
+## Backup
 
-1) Export a backup before migration:
-
-```
-wl export --format json --output backup-before-sort-index.json
-```
-
-2) If you need to revert, run the rollback helper:
+Export a backup before migration:
 
 ```
-wl migrate rollback-sort-index
-```
-
-3) If the rollback helper cannot restore (missing backup), re-import:
-
-```
-wl import --format json --input backup-before-sort-index.json
+wl export --file backup-before-sort-index.json
 ```
 
 ## Notes for developers
 
-- Use integer gaps (default 1000) for `sort_index` to allow insertion without full reindexing.
+- Use integer gaps (default 100) for `sort_index` to allow insertion without full reindexing.
 - Reindex only the affected level (siblings with the same parent) to minimize churn.
 - Keep moves of a parent and its subtree stable by offsetting child indices.
 - Conflict resolution should prefer `updated_at`, then owner, then reindex deterministically.
+
+## Benchmarking
+
+Run the migration benchmark to validate performance up to 1000 items per level:
+
+```
+npm run benchmark:sort-index -- --level-size 1000 --depth 3 --gap 100
+```
+
+Record results in `docs/benchmarks/sort_index_migration.md`.

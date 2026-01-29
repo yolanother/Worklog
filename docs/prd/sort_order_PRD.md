@@ -23,13 +23,13 @@ Success criteria (testable)
 - `wl move` commands persist new `sort_index` values in DB and maintain hierarchical grouping (parent+children)
 - Adding new items inserts them at the correct hierarchy level using the `next` logic
 - Reindexing preserves relative ordering and is triggered only when gaps exhausted
-- Migration preserves current importance/next semantics and can be rolled back
+- Migration preserves current importance/next semantics; restore via backup if needed
 - Performance: ordering operations and queries remain acceptable for up to 1000 items per level
 
 Constraints
 - Backwards compatible CLI behavior; `--sort` overrides `sort_index`
-- Use large interval gaps (e.g., 1000) between adjacent `sort_index` values to limit reindexing frequency
-- Migration must support rollback (transactional where possible)
+- Use large interval gaps (e.g., 100) between adjacent `sort_index` values to limit reindexing frequency
+- Migration must support backups; rollback helper is out of scope for this phase
 
 Design
 
@@ -39,7 +39,7 @@ Design
 
 - Initial sort_index calculation
   - Use existing `next` selection logic applied across the tree: level-0 items ordered first, then each parent's children
-  - Assign starting values in increments of 1000 (configurable constant SORT_GAP = 1000)
+  - Assign starting values in increments of 100 (configurable constant SORT_GAP = 100)
 
 - Move operations
   - `wl move <id> --before <id2>`: assign new `sort_index` between predecessor and target; if gap < MIN_GAP, trigger redistribution for that level
@@ -51,13 +51,13 @@ Design
 
 Migration plan
 - Add migration: create `sort_index` column and index
-- Populate values in a single transaction where possible; if SQLite, use a migration script that writes to a temporary table and then swaps (or runs within a transaction)
-- Include a reversible path (backup export before migration; provide `wl migrate rollback-sort-index` helper that restores backup)
+- Populate values in a single transaction where possible; if SQLite, use a migration script that runs within a transaction
+- Include a reversible path via backup export before migration (no rollback helper in this phase)
 
 Testing and validation
 - Unit tests for helpers that compute insertion index and detect gap exhaustion
 - Integration tests for `wl move` commands (before/after/auto) asserting DB state and `wl list` output
-- Migration test: fixture DB with representative items -> run migration -> assert preserved ordering -> run rollback -> assert original
+- Migration test: fixture DB with representative items -> run migration -> assert preserved ordering
 - Performance test: generate 1000 items per level and measure list/query latency
 
 Milestones & child work items
@@ -71,12 +71,12 @@ Milestones & child work items
 8) Docs & rollout guide — child work item: "Docs: sort order and migration guide" (medium)
 
 Risks & mitigations
-- Migration corruption: mitigate by backup, dry-run mode, and rollback helper
+- Migration corruption: mitigate by backup and dry-run mode
 - Concurrent edits: mitigate by deterministic conflict resolution and reindex on sync
 - Gap exhaustion in hotspots: mitigate by `wl move auto` and periodic reindexing
 
 Open questions
-- Default SORT_GAP value — recommended 1000 (configurable). If you prefer a different default say so.
+- Default SORT_GAP value — recommended 100 (configurable). If you prefer a different default say so.
 - Should `wl move` accept a fractional-based approach (e.g., using decimals) instead of integer gaps? Recommendation: use integers to avoid float precision and make conflicts explicit.
 
 Acceptance test checklist (for reviewers)

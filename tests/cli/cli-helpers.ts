@@ -109,6 +109,7 @@ export function seedWorkItems(
     description: item.description ?? '',
     status: item.status ?? 'open',
     priority: item.priority ?? 'medium',
+    sortIndex: 0,
     parentId: item.parentId ?? null,
     createdAt: now,
     updatedAt: now,
@@ -119,8 +120,8 @@ export function seedWorkItems(
     createdBy: '',
     deletedBy: '',
     deleteReason: '',
-    risk: '',
-    effort: '',
+    risk: '' as const,
+    effort: '' as const,
   }));
 
   const dataPath = path.join(dir, '.worklog', 'worklog-data.jsonl');

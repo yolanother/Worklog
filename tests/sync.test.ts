@@ -33,6 +33,7 @@ describe('Sync Operations', () => {
           description: '',
           status: 'open',
           priority: 'medium',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
@@ -43,6 +44,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 
@@ -61,6 +64,7 @@ describe('Sync Operations', () => {
           description: '',
           status: 'open',
           priority: 'medium',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
@@ -71,6 +75,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 
@@ -81,6 +87,7 @@ describe('Sync Operations', () => {
           description: '',
           status: 'completed',
           priority: 'high',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-02T00:00:00.000Z',
           updatedAt: '2024-01-02T00:00:00.000Z',
@@ -91,6 +98,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 
@@ -108,6 +117,7 @@ describe('Sync Operations', () => {
         description: 'Same description',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T00:00:00.000Z',
@@ -118,6 +128,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([item], [item]);
@@ -134,6 +146,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T01:00:00.000Z',
@@ -144,6 +157,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -152,6 +167,7 @@ describe('Sync Operations', () => {
         description: 'Added description',
         status: 'in-progress',
         priority: 'high',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T02:00:00.000Z',
@@ -162,6 +178,8 @@ describe('Sync Operations', () => {
         createdBy: 'alice',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -182,6 +200,7 @@ describe('Sync Operations', () => {
         description: 'Local description',
         status: 'completed',
         priority: 'critical',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T02:00:00.000Z',
@@ -192,6 +211,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -200,6 +221,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T01:00:00.000Z',
@@ -210,6 +232,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -230,6 +254,7 @@ describe('Sync Operations', () => {
         description: 'Local description',
         status: 'in-progress',
         priority: 'high',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T10:00:00.000Z',
@@ -240,6 +265,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -248,6 +275,7 @@ describe('Sync Operations', () => {
         description: 'Remote description',
         status: 'completed',
         priority: 'low',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T12:00:00.000Z',
@@ -258,6 +286,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -277,6 +307,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T10:00:00.000Z',
@@ -287,6 +318,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -295,6 +328,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T12:00:00.000Z',
@@ -305,6 +339,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -320,6 +356,7 @@ describe('Sync Operations', () => {
         description: 'Description A',
         status: 'in-progress',
         priority: 'high',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T10:00:00.000Z',
@@ -330,6 +367,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -338,6 +377,7 @@ describe('Sync Operations', () => {
         description: 'Description B',
         status: 'completed',
         priority: 'low',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T10:00:00.000Z',
@@ -348,6 +388,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -366,6 +408,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'open',
         priority: 'medium',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-01T00:00:00.000Z',
         updatedAt: '2024-01-01T10:00:00.000Z',
@@ -376,6 +419,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const remoteItem: WorkItem = {
@@ -384,6 +429,7 @@ describe('Sync Operations', () => {
         description: '',
         status: 'completed',
         priority: 'high',
+        sortIndex: 0,
         parentId: null,
         createdAt: '2024-01-02T00:00:00.000Z',
         updatedAt: '2024-01-01T12:00:00.000Z',
@@ -394,6 +440,8 @@ describe('Sync Operations', () => {
         createdBy: '',
         deletedBy: '',
         deleteReason: '',
+        risk: '' as const,
+        effort: '' as const,
       };
 
       const result = mergeWorkItems([localItem], [remoteItem]);
@@ -409,6 +457,7 @@ describe('Sync Operations', () => {
           description: '',
           status: 'open',
           priority: 'medium',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
@@ -419,6 +468,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
         {
           id: 'WI-002',
@@ -426,6 +477,7 @@ describe('Sync Operations', () => {
           description: 'Local mod',
           status: 'in-progress',
           priority: 'high',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-02T00:00:00.000Z',
           updatedAt: '2024-01-02T10:00:00.000Z',
@@ -436,6 +488,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 
@@ -446,6 +500,7 @@ describe('Sync Operations', () => {
           description: 'Remote mod',
           status: 'completed',
           priority: 'low',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-02T00:00:00.000Z',
           updatedAt: '2024-01-02T12:00:00.000Z',
@@ -456,6 +511,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
         {
           id: 'WI-003',
@@ -463,6 +520,7 @@ describe('Sync Operations', () => {
           description: '',
           status: 'open',
           priority: 'medium',
+          sortIndex: 0,
           parentId: null,
           createdAt: '2024-01-03T00:00:00.000Z',
           updatedAt: '2024-01-03T00:00:00.000Z',
@@ -473,6 +531,8 @@ describe('Sync Operations', () => {
           createdBy: '',
           deletedBy: '',
           deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
         },
       ];
 

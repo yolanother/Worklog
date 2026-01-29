@@ -10,11 +10,12 @@ describe('Help grouping', () => {
     expect(result.exitCode).toBe(0);
     const out = result.stdout;
 
-    const groups = ['Issue Management:', 'Status:', 'Team:', 'Plugins:'];
+    const groups = ['Issue Management:', 'Status:', 'Team:', 'Maintenance:', 'Plugins:'];
     const expected: Record<string, string[]> = {
       'Issue Management:': ['create', 'update', 'delete', 'comment', 'close'],
       'Status:': ['list', 'show', 'next', 'in-progress', 'recent'],
       'Team:': ['export', 'import', 'sync', 'github'],
+      'Maintenance:': ['migrate'],
       'Plugins:': ['plugins']
     };
 

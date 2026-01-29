@@ -41,6 +41,12 @@ export function sortByPriorityAndDate(a: WorkItem, b: WorkItem): number {
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
+export function sortByPriorityDateAndId(a: WorkItem, b: WorkItem): number {
+  const byPriorityAndDate = sortByPriorityAndDate(a, b);
+  if (byPriorityAndDate !== 0) return byPriorityAndDate;
+  return a.id.localeCompare(b.id);
+}
+
 // Format title and id with consistent coloring used in tree/list outputs
 export function formatTitleAndId(item: WorkItem, prefix: string = ''): string {
   return `${prefix}${renderTitle(item)} ${chalk.gray('-')} ${chalk.gray(item.id)}`;
@@ -81,7 +87,7 @@ function renderTitle(item: WorkItem, prefix: string = ''): string {
 export function displayItemTree(items: WorkItem[]): void {
   const itemIds = new Set(items.map(i => i.id));
   
-  const rootItems = items.filter(item => {
+  let rootItems = items.filter(item => {
     if (item.parentId === null) return true;
     return !itemIds.has(item.parentId);
   });
@@ -98,12 +104,35 @@ export function displayItemTree(items: WorkItem[]): void {
 export function displayItemTreeWithFormat(items: WorkItem[], db: WorklogDatabase | null, format: string): void {
   const itemIds = new Set(items.map(i => i.id));
 
-  const rootItems = items.filter(item => {
+  let rootItems = items.filter(item => {
     if (item.parentId === null) return true;
     return !itemIds.has(item.parentId);
   });
 
-  rootItems.sort(sortByPriorityAndDate);
+  const orderedItems = db
+    ? db.getAllOrderedByHierarchySortIndex().filter(item => itemIds.has(item.id))
+    : null;
+  const sortChildren = (list: WorkItem[]): WorkItem[] => {
+    if (!orderedItems) {
+      return list.slice().sort(sortByPriorityAndDate);
+    }
+    const positions = new Map(orderedItems.map((item, index) => [item.id, index]));
+    return list
+      .slice()
+      .sort((a, b) => {
+        const aPos = positions.get(a.id);
+        const bPos = positions.get(b.id);
+        if (aPos === undefined && bPos === undefined) {
+          return sortByPriorityAndDate(a, b);
+        }
+        if (aPos === undefined) return 1;
+        if (bPos === undefined) return -1;
+        if (aPos !== bPos) return aPos - bPos;
+        return sortByPriorityAndDate(a, b);
+      });
+  };
+
+  rootItems = sortChildren(rootItems);
 
   const displayNode = (item: WorkItem, allItems: WorkItem[], indent: string, isLast: boolean, inheritedStage?: string) => {
     const prefix = indent + (isLast ? '└── ' : '├── ');
@@ -126,9 +155,9 @@ export function displayItemTreeWithFormat(items: WorkItem[], db: WorklogDatabase
 
     const children = allItems.filter(i => i.parentId === item.id);
     if (children.length > 0) {
-      children.sort(sortByPriorityAndDate);
-      children.forEach((child, idx) => {
-        const last = idx === children.length - 1;
+      const orderedChildren = sortChildren(children);
+      orderedChildren.forEach((child, idx) => {
+        const last = idx === orderedChildren.length - 1;
         displayNode(child, allItems, detailIndent, last, displayItem.stage);
       });
     }
@@ -157,7 +186,7 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
   
   const children = allItems.filter(i => i.parentId === item.id);
   if (children.length > 0) {
-    children.sort(sortByPriorityAndDate);
+    children.sort(sortByPriorityDateAndId);
     
     children.forEach((child, childIndex) => {
       const isLastChild = childIndex === children.length - 1;
@@ -169,6 +198,7 @@ function displayItemNode(item: WorkItem, allItems: WorkItem[], indent: string = 
 // Standard human formatter: supports 'concise' | 'normal' | 'full' | 'raw'
 export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, format: string | undefined): string {
   const fmt = (format || loadConfig()?.humanDisplay || 'concise').toLowerCase();
+  const sortIndexLabel = `SortIndex: ${item.sortIndex}`;
 
   const lines: string[] = [];
   const titleLine = `Title: ${formatTitleOnly(item)}`;
@@ -189,6 +219,7 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     } else {
       lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
     }
+    lines.push(sortIndexLabel);
     if (item.risk) lines.push(`Risk: ${item.risk}`);
     if (item.effort) lines.push(`Effort: ${item.effort}`);
     if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
@@ -206,6 +237,7 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     } else {
       lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
     }
+    lines.push(sortIndexLabel);
     if (item.risk) lines.push(`Risk: ${item.risk}`);
     if (item.effort) lines.push(`Effort: ${item.effort}`);
     if (item.assignee) lines.push(`Assignee: ${item.assignee}`);
@@ -217,10 +249,11 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   // full output
   lines.push(renderTitle(item, '# '));
   lines.push('');
-    const frontmatter: Array<[string, string]> = [
-      ['ID', chalk.gray(item.id)],
-      ['Status', item.stage !== undefined ? `${item.status} · Stage: ${item.stage === '' ? 'Undefined' : item.stage} | Priority: ${item.priority}` : `${item.status} | Priority: ${item.priority}`]
-    ];
+  const frontmatter: Array<[string, string]> = [
+    ['ID', chalk.gray(item.id)],
+    ['Status', item.stage !== undefined ? `${item.status} · Stage: ${item.stage === '' ? 'Undefined' : item.stage} | Priority: ${item.priority}` : `${item.status} | Priority: ${item.priority}`],
+    ['SortIndex', String(item.sortIndex)]
+  ];
   if (item.risk) frontmatter.push(['Risk', item.risk]);
   if (item.effort) frontmatter.push(['Effort', item.effort]);
   if (item.assignee) frontmatter.push(['Assignee', item.assignee]);

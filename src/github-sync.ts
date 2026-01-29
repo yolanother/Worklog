@@ -495,6 +495,7 @@ export function importIssuesToWorkItems(
           description: '',
           status: 'open',
           priority: 'medium',
+          sortIndex: 0,
           parentId: null,
           createdAt: updatedAt,
           updatedAt: updatedAt,

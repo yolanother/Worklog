@@ -162,7 +162,7 @@ export function mergeWorkItems(
         // This avoids "permanent divergence" across instances where the record differs but
         // timestamps prevent a clear winner.
         const merged: WorkItem = { ...localItem };
-        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'sortIndex', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
         const mergedFields: string[] = [];
         const fieldDetails: ConflictFieldDetail[] = [];
 
@@ -270,7 +270,7 @@ export function mergeWorkItems(
         // Different timestamps - perform field-by-field intelligent merge
         const isRemoteNewer = remoteUpdated > localUpdated;
         const merged: WorkItem = { ...localItem };  // Start with local
-        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
+        const fields: (keyof WorkItem)[] = ['title', 'description', 'status', 'priority', 'sortIndex', 'parentId', 'tags', 'assignee', 'stage', 'issueType', 'createdBy', 'deletedBy', 'deleteReason'];
         
         const mergedFields: string[] = [];
         const conflictedFields: string[] = [];
