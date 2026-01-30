@@ -310,13 +310,73 @@ worklog sync -f custom-data.jsonl
 worklog sync --dry-run --prefix PROJ
 ```
 
-### When to Use Sync
+## Automatic Sync with Git Hooks
+
+Worklog can automatically sync your work items when you interact with Git. This is controlled by two hooks:
+
+### Pre-Push Hook
+
+When enabled, the `pre-push` hook runs `wl sync` automatically before pushing to remote. This ensures your work items are synchronized with the team before your code changes are pushed.
+
+```bash
+# Disable pre-push hook for a single push
+WORKLOG_SKIP_PRE_PUSH=1 git push origin main
+
+# Force push without syncing
+WORKLOG_SKIP_PRE_PUSH=1 git push --force origin main
+```
+
+### Post-Checkout Hook
+
+When enabled, the `post-checkout` hook runs `wl sync` automatically after checking out a branch. This keeps your work items in sync whenever you switch branches.
+
+```bash
+# Disable post-checkout hook for a single checkout
+WORKLOG_SKIP_POST_CHECKOUT=1 git checkout other-branch
+```
+
+### Enabling Git Hooks
+
+Git hooks are created by `wl init` in two locations:
+
+1. **System Git Hooks** (`.git/hooks/`): Created automatically if Git repository config allows
+2. **Committed Hooks** (`.githooks/`): Always created for team consistency
+
+To use the committed hooks:
+
+```bash
+# Enable committed hooks for your repository
+git config core.hooksPath .githooks
+
+# Verify they're enabled
+git config core.hooksPath
+# Output: .githooks
+```
+
+Once enabled, hooks run automatically on the specified Git events. Both hook styles work the same way; the committed hooks approach allows the team to version control and share hook updates.
+
+### When Sync Hooks Run
+
+| Hook | Trigger | Command |
+|------|---------|---------|
+| `pre-push` | Before `git push` | `wl sync` |
+| `post-checkout` | After `git checkout` | `wl sync` |
+
+Both hooks gracefully handle failures:
+- **Pre-push**: Sync failures block the push (data integrity priority)
+- **Post-checkout**: Sync failures don't block checkout (branch switching priority)
+
+If a hook fails unexpectedly, you can bypass it temporarily by setting the appropriate environment variable (see examples above).
+
+### When to Use Sync Options
 
 - **At the start of your workday**: Get the latest updates from your team
 - **Before creating new items**: Ensure you have the latest data
 - **After making changes**: Share your updates with the team
-- **When switching branches**: After checking out a different git branch
+- **When switching branches**: After checking out a different git branch (automatic if `post-checkout` hook is enabled)
 - **Before major reorganizations**: Ensure you're working with the latest data
+
+**Note**: If the `post-checkout` hook is enabled (via `git config core.hooksPath .githooks` or installed in `.git/hooks`), `wl sync` will run automatically whenever you switch branches. You can disable this per-operation by setting `WORKLOG_SKIP_POST_CHECKOUT=1`.
 
 ## Migration and Sync
 
