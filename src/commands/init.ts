@@ -34,9 +34,9 @@ type NormalizedInitOptions = {
   prefix?: string;
   autoExport?: boolean;
   autoSync?: boolean;
-  agentsTemplateAction?: AgentTemplateAction;
-  workflowInline?: boolean;
-  statsPluginOverwrite?: boolean;
+  agentsTemplateAction: AgentTemplateAction;
+  workflowInline: boolean;
+  statsPluginOverwrite: boolean;
 };
 
 function normalizeBooleanOption(value: string | undefined, flagName: string): boolean | undefined {
@@ -72,9 +72,9 @@ function normalizeInitOptions(options: InitOptions): NormalizedInitOptions {
     prefix,
     autoExport: normalizeBooleanOption(options.autoExport, '--auto-export'),
     autoSync: normalizeBooleanOption(options.autoSync, '--auto-sync'),
-    agentsTemplateAction: normalizeAgentTemplateAction(options.agentsTemplate),
-    workflowInline: normalizeBooleanOption(options.workflowInline, '--workflow-inline'),
-    statsPluginOverwrite: normalizeBooleanOption(options.statsPluginOverwrite, '--stats-plugin-overwrite'),
+    agentsTemplateAction: normalizeAgentTemplateAction(options.agentsTemplate) ?? 'skip',
+    workflowInline: normalizeBooleanOption(options.workflowInline, '--workflow-inline') ?? false,
+    statsPluginOverwrite: normalizeBooleanOption(options.statsPluginOverwrite, '--stats-plugin-overwrite') ?? false,
   };
 }
 
