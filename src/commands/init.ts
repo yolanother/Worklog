@@ -18,6 +18,7 @@ import chalk from 'chalk';
 
 const WORKLOG_PRE_PUSH_HOOK_MARKER = 'worklog:pre-push-hook:v1';
 const WORKLOG_POST_PULL_HOOK_MARKER = 'worklog:post-pull-hook:v1';
+const WORKLOG_POST_CHECKOUT_HOOK_MARKER = 'worklog:post-checkout-hook:v1';
 const WORKLOG_GITIGNORE_SECTION_START = 'Worklog Specific Ignores';
 const WORKLOG_GITIGNORE_SECTION_END = '### End of Worklog Specific Ignores';
 const WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH = 'templates/AGENTS.md';
@@ -370,34 +371,58 @@ function installCommittedHooks(options: { silent: boolean }): { installed: boole
     `exec \"${centralPath}\" \"$@\"\n`
   );
 
-  const prePushContent =
-    `#!/bin/sh\n` +
-    `# ${WORKLOG_PRE_PUSH_HOOK_MARKER}\n` +
-    `# Auto-sync Worklog data before pushing (committed hooks).\n` +
-    `# Set WORKLOG_SKIP_PRE_PUSH=1 to bypass.\n` +
-    `set -e\n` +
-    `if [ \"$WORKLOG_SKIP_PRE_PUSH\" = \"1\" ]; then\n` +
-    `  exit 0\n` +
-    `fi\n` +
-    `skip=0\n` +
-    `while read local_ref local_sha remote_ref remote_sha; do\n` +
-    `  if [ \"$remote_ref\" = \"refs/worklog/data\" ]; then\n` +
-    `    skip=1\n` +
-    `  fi\n` +
-    `done\n` +
-    `if [ \"$skip\" = \"1\" ]; then\n` +
-    `  exit 0\n` +
-    `fi\n` +
-    `if command -v wl >/dev/null 2>&1; then\n` +
-    `  WL=wl\n` +
-    `elif command -v worklog >/dev/null 2>&1; then\n` +
-    `  WL=worklog\n` +
-    `else\n` +
-    `  echo \"worklog: wl/worklog not found; skipping pre-push sync\" >&2\n` +
-    `  exit 0\n` +
-    `fi\n` +
-    `\"$WL\" sync\n` +
-    `exit 0\n`;
+   const prePushContent =
+     `#!/bin/sh\n` +
+     `# ${WORKLOG_PRE_PUSH_HOOK_MARKER}\n` +
+     `# Auto-sync Worklog data before pushing (committed hooks).\n` +
+     `# Set WORKLOG_SKIP_PRE_PUSH=1 to bypass.\n` +
+     `set -e\n` +
+     `if [ \"$WORKLOG_SKIP_PRE_PUSH\" = \"1\" ]; then\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `skip=0\n` +
+     `while read local_ref local_sha remote_ref remote_sha; do\n` +
+     `  if [ \"$remote_ref\" = \"refs/worklog/data\" ]; then\n` +
+     `    skip=1\n` +
+     `  fi\n` +
+     `done\n` +
+     `if [ \"$skip\" = \"1\" ]; then\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `if command -v wl >/dev/null 2>&1; then\n` +
+     `  WL=wl\n` +
+     `elif command -v worklog >/dev/null 2>&1; then\n` +
+     `  WL=worklog\n` +
+     `else\n` +
+     `  echo \"worklog: wl/worklog not found; skipping pre-push sync\" >&2\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `\"$WL\" sync\n` +
+     `exit 0\n`;
+
+   const postCheckoutContent =
+     `#!/bin/sh\n` +
+     `# ${WORKLOG_POST_CHECKOUT_HOOK_MARKER}\n` +
+     `# Auto-sync Worklog data after branch checkout (committed hooks).\n` +
+     `# Set WORKLOG_SKIP_POST_CHECKOUT=1 to bypass.\n` +
+     `set -e\n` +
+     `if [ \"$WORKLOG_SKIP_POST_CHECKOUT\" = \"1\" ]; then\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `if command -v wl >/dev/null 2>&1; then\n` +
+     `  WL=wl\n` +
+     `elif command -v worklog >/dev/null 2>&1; then\n` +
+     `  WL=worklog\n` +
+     `else\n` +
+     `  echo \"worklog: wl/worklog not found; skipping post-checkout sync\" >&2\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `if \"$WL\" sync >/dev/null 2>&1; then\n` +
+     `  :\n` +
+     `else\n` +
+     `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
+     `fi\n` +
+     `exit 0\n`;
 
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -415,20 +440,23 @@ function installCommittedHooks(options: { silent: boolean }): { installed: boole
 
     const installed: string[] = [];
     for (const file of hookFiles) {
-      if (fs.existsSync(file)) {
-        const existing = fs.readFileSync(file, 'utf-8');
-        if (existing.includes(WORKLOG_POST_PULL_HOOK_MARKER) || existing.includes(WORKLOG_PRE_PUSH_HOOK_MARKER)) {
-          installed.push(file);
-          continue;
-        }
-        return { installed: false, skipped: true, present: true, dirPath: dir, files: installed, reason: `hook already exists at ${file} (not overwriting)` };
-      }
+       if (fs.existsSync(file)) {
+         const existing = fs.readFileSync(file, 'utf-8');
+         if (existing.includes(WORKLOG_POST_PULL_HOOK_MARKER) || existing.includes(WORKLOG_PRE_PUSH_HOOK_MARKER) || existing.includes(WORKLOG_POST_CHECKOUT_HOOK_MARKER)) {
+           installed.push(file);
+           continue;
+         }
+         return { installed: false, skipped: true, present: true, dirPath: dir, files: installed, reason: `hook already exists at ${file} (not overwriting)` };
+       }
 
-      if (path.basename(file) === 'pre-push') {
-        fs.writeFileSync(file, prePushContent, { encoding: 'utf-8', mode: 0o755 });
-      } else {
-        fs.writeFileSync(file, wrapperContent(centralScript), { encoding: 'utf-8', mode: 0o755 });
-      }
+       const basename = path.basename(file);
+       if (basename === 'pre-push') {
+         fs.writeFileSync(file, prePushContent, { encoding: 'utf-8', mode: 0o755 });
+       } else if (basename === 'post-checkout') {
+         fs.writeFileSync(file, postCheckoutContent, { encoding: 'utf-8', mode: 0o755 });
+       } else {
+         fs.writeFileSync(file, wrapperContent(centralScript), { encoding: 'utf-8', mode: 0o755 });
+       }
       try { fs.chmodSync(file, 0o755); } catch {}
       installed.push(file);
     }
