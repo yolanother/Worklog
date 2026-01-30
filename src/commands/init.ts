@@ -251,30 +251,35 @@ function installPostPullHooks(options: { silent: boolean }): { installed: boolea
   // Central script that performs the post-pull sync. Hook wrappers will call this
   // central script so we only manage one implementation location.
   const centralScript = path.join(hooksDir, 'worklog-post-pull');
-  const centralScriptContent =
-    `#!/bin/sh\n` +
-    `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
-    `# Central Worklog post-pull sync script.\n` +
-    `# Set WORKLOG_SKIP_POST_PULL=1 to bypass.\n` +
-    `set -e\n` +
-    `if [ \"$WORKLOG_SKIP_POST_PULL\" = \"1\" ]; then\n` +
-    `  exit 0\n` +
-    `fi\n` +
-    `if command -v wl >/dev/null 2>&1; then\n` +
-    `  WL=wl\n` +
-    `elif command -v worklog >/dev/null 2>&1; then\n` +
-    `  WL=worklog\n` +
-    `else\n` +
-    `  echo \"worklog: wl/worklog not found; skipping post-pull sync\" >&2\n` +
-    `  exit 0\n` +
-    `fi\n` +
-    `# Run sync but do not fail the checkout/merge if sync is not available or fails\n` +
-    `if \"$WL\" sync >/dev/null 2>&1; then\n` +
-    `  :\n` +
-    `else\n` +
-    `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
-    `fi\n` +
-    `exit 0\n`;
+   const centralScriptContent =
+     `#!/bin/sh\n` +
+     `# ${WORKLOG_POST_PULL_HOOK_MARKER}\n` +
+     `# Central Worklog post-pull sync script.\n` +
+     `# Set WORKLOG_SKIP_POST_PULL=1 to bypass.\n` +
+     `set -e\n` +
+     `if [ \"$WORKLOG_SKIP_POST_PULL\" = \"1\" ]; then\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `if command -v wl >/dev/null 2>&1; then\n` +
+     `  WL=wl\n` +
+     `elif command -v worklog >/dev/null 2>&1; then\n` +
+     `  WL=worklog\n` +
+     `else\n` +
+     `  echo \"worklog: wl/worklog not found; skipping post-pull sync\" >&2\n` +
+     `  exit 0\n` +
+     `fi\n` +
+     `# Run sync but do not fail the checkout/merge if sync is not available or fails\n` +
+     `if \"$WL\" sync >/dev/null 2>&1; then\n` +
+     `  :\n` +
+     `else\n` +
+     `  # Check if this is a new checkout/worktree (no .worklog directory)\n` +
+     `  if [ ! -d \".worklog\" ]; then\n` +
+     `    echo \"worklog: not initialized in this checkout/worktree. Run \\\"wl init\\\" to set up this location.\" >&2\n` +
+     `  else\n` +
+     `    echo \"worklog: sync failed; continuing\" >&2\n` +
+     `  fi\n` +
+     `fi\n` +
+     `exit 0\n`;
 
   // Small wrapper hooks that call the central script. These are the files Git
   // expects to exist: post-merge, post-checkout, post-rewrite.
@@ -360,7 +365,11 @@ function installCommittedHooks(options: { silent: boolean }): { installed: boole
     `if \"$WL\" sync >/dev/null 2>&1; then\n` +
     `  :\n` +
     `else\n` +
-    `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
+    `  if [ ! -d \".worklog\" ]; then\n` +
+    `    echo \"worklog: not initialized in this checkout/worktree. Run \\\"wl init\\\" to set up this location.\" >&2\n` +
+    `  else\n` +
+    `    echo \"worklog: sync failed; continuing\" >&2\n` +
+    `  fi\n` +
     `fi\n` +
     `exit 0\n`;
 
@@ -400,29 +409,33 @@ function installCommittedHooks(options: { silent: boolean }): { installed: boole
      `\"$WL\" sync\n` +
      `exit 0\n`;
 
-   const postCheckoutContent =
-     `#!/bin/sh\n` +
-     `# ${WORKLOG_POST_CHECKOUT_HOOK_MARKER}\n` +
-     `# Auto-sync Worklog data after branch checkout (committed hooks).\n` +
-     `# Set WORKLOG_SKIP_POST_CHECKOUT=1 to bypass.\n` +
-     `set -e\n` +
-     `if [ \"$WORKLOG_SKIP_POST_CHECKOUT\" = \"1\" ]; then\n` +
-     `  exit 0\n` +
-     `fi\n` +
-     `if command -v wl >/dev/null 2>&1; then\n` +
-     `  WL=wl\n` +
-     `elif command -v worklog >/dev/null 2>&1; then\n` +
-     `  WL=worklog\n` +
-     `else\n` +
-     `  echo \"worklog: wl/worklog not found; skipping post-checkout sync\" >&2\n` +
-     `  exit 0\n` +
-     `fi\n` +
-     `if \"$WL\" sync >/dev/null 2>&1; then\n` +
-     `  :\n` +
-     `else\n` +
-     `  echo \"worklog: sync failed or not initialized; continuing\" >&2\n` +
-     `fi\n` +
-     `exit 0\n`;
+    const postCheckoutContent =
+      `#!/bin/sh\n` +
+      `# ${WORKLOG_POST_CHECKOUT_HOOK_MARKER}\n` +
+      `# Auto-sync Worklog data after branch checkout (committed hooks).\n` +
+      `# Set WORKLOG_SKIP_POST_CHECKOUT=1 to bypass.\n` +
+      `set -e\n` +
+      `if [ \"$WORKLOG_SKIP_POST_CHECKOUT\" = \"1\" ]; then\n` +
+      `  exit 0\n` +
+      `fi\n` +
+      `if command -v wl >/dev/null 2>&1; then\n` +
+      `  WL=wl\n` +
+      `elif command -v worklog >/dev/null 2>&1; then\n` +
+      `  WL=worklog\n` +
+      `else\n` +
+      `  echo \"worklog: wl/worklog not found; skipping post-checkout sync\" >&2\n` +
+      `  exit 0\n` +
+      `fi\n` +
+      `if \"$WL\" sync >/dev/null 2>&1; then\n` +
+      `  :\n` +
+      `else\n` +
+      `  if [ ! -d \".worklog\" ]; then\n` +
+      `    echo \"worklog: not initialized in this checkout/worktree. Run \\\"wl init\\\" to set up this location.\" >&2\n` +
+      `  else\n` +
+      `    echo \"worklog: sync failed; continuing\" >&2\n` +
+      `  fi\n` +
+      `fi\n` +
+      `exit 0\n`;
 
   try {
     fs.mkdirSync(dir, { recursive: true });
