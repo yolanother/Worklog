@@ -817,9 +817,9 @@ export default function register(ctx: PluginContext): void {
     .option('--prefix <prefix>', 'Issue ID prefix (e.g., WI, PROJ, TASK)')
     .option('--auto-export <yes|no>', 'Auto-export data to JSONL after changes')
     .option('--auto-sync <yes|no>', 'Auto-sync data to git after changes')
-    .option('--agents-template <overwrite|append|skip>', 'What to do when AGENTS.md exists')
-    .option('--workflow-inline <yes|no>', 'Inline workflow into AGENTS.md when prompted')
-    .option('--stats-plugin-overwrite <yes|no>', 'Overwrite existing stats plugin if present')
+    .option('--agents-template <overwrite|append|skip>', 'What to do when AGENTS.md exists (default: skip)')
+    .option('--workflow-inline <yes|no>', 'Inline workflow into AGENTS.md when prompted (default: no)')
+    .option('--stats-plugin-overwrite <yes|no>', 'Overwrite existing stats plugin if present (default: no)')
     .action(async (_options: InitOptions) => {
       const isJsonMode = program.opts().json;
       let normalizedOptions: NormalizedInitOptions;
