@@ -67,7 +67,13 @@ export interface UpdateOptions {
 export interface ExportOptions { file?: string; prefix?: string }
 export interface ImportOptions { file?: string; prefix?: string }
 
-export interface NextOptions { assignee?: string; search?: string; number?: string; prefix?: string }
+export interface NextOptions {
+  assignee?: string;
+  search?: string;
+  number?: string;
+  prefix?: string;
+  includeInReview?: boolean;
+}
 export interface InProgressOptions { assignee?: string; prefix?: string }
 
 export interface MigrateOptions {

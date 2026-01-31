@@ -482,6 +482,23 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(openItem.id);
     });
 
+    it('should exclude in_review items by default', () => {
+      const inReview = db.create({ title: 'In review', status: 'open', stage: 'in_review', priority: 'high' });
+      const openItem = db.create({ title: 'Open', status: 'open', priority: 'low' });
+
+      const result = db.findNextWorkItem();
+      expect(result.workItem?.id).toBe(openItem.id);
+      expect(result.workItem?.id).not.toBe(inReview.id);
+    });
+
+    it('should include in_review items when requested', () => {
+      const inReview = db.create({ title: 'In review', status: 'open', stage: 'in_review', priority: 'high' });
+      db.create({ title: 'Open', status: 'open', priority: 'low' });
+
+      const result = db.findNextWorkItem(undefined, undefined, 'ignore', true);
+      expect(result.workItem?.id).toBe(inReview.id);
+    });
+
     it('should filter by assignee when provided', () => {
       const johnItem = db.create({ title: 'John task', priority: 'high', status: 'open', assignee: 'john' });
       db.create({ title: 'Jane task', priority: 'critical', status: 'open', assignee: 'jane' });

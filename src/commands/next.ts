@@ -18,6 +18,7 @@ export default function register(ctx: PluginContext): void {
     .option('-n, --number <n>', 'Number of items to return (default: 1)', '1')
     .option('--recency-policy <policy>', 'Recency policy: prefer|avoid|ignore (default: ignore)', 'ignore')
     .option('--prefix <prefix>', 'Override the default prefix')
+    .option('--include-in-review', 'Include items with stage in_review (default: excluded)')
     .action(async (options: any) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
@@ -27,9 +28,11 @@ export default function register(ctx: PluginContext): void {
       const recencyPolicy = options.recencyPolicy || 'ignore';
 
       // `findNextWorkItems` and `findNextWorkItem` gained an optional recencyPolicy
+      const includeInReview = Boolean(options.includeInReview);
+
       const results = (db as any).findNextWorkItems 
-        ? (db as any).findNextWorkItems(count, options.assignee, options.search, recencyPolicy) 
-        : [db.findNextWorkItem(options.assignee, options.search, recencyPolicy)];
+        ? (db as any).findNextWorkItems(count, options.assignee, options.search, recencyPolicy, includeInReview) 
+        : [db.findNextWorkItem(options.assignee, options.search, recencyPolicy, includeInReview)];
 
       if (utils.isJsonMode()) {
         if (results.length === 1) {
