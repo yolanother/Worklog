@@ -1135,7 +1135,7 @@ export default function register(ctx: PluginContext): void {
         if (item) {
           updateDialogText.setContent(`Update: ${item.title}\nID: ${item.id}`);
         } else {
-          updateDialogText.setContent('Update selected item stage:');
+          updateDialogText.setContent('Update selected item fields:');
         }
         updateOverlay.show();
         updateDialog.show();

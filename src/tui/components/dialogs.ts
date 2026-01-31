@@ -103,8 +103,8 @@ export class DialogsComponent {
       parent: this.screen,
       top: 'center',
       left: 'center',
-      width: '50%',
-      height: 14,
+      width: '70%',
+      height: 24,
       label: ' Update Work Item ',
       border: { type: 'line' },
       hidden: true,
@@ -120,16 +120,50 @@ export class DialogsComponent {
       left: 2,
       height: 2,
       width: '100%-4',
-      content: 'Update selected item stage:',
+      content: 'Update selected item fields:',
       tags: false,
     });
 
-    this.updateDialogOptions = this.blessedImpl.list({
+    const updateDialogColumnWidth = '33%-2';
+    const updateDialogListHeight = 15;
+    const updateDialogListTop = 6;
+
+    this.blessedImpl.box({
       parent: this.updateDialog,
       top: 4,
       left: 2,
-      width: '100%-4',
-      height: 8,
+      height: 1,
+      width: updateDialogColumnWidth,
+      content: 'Stage',
+      tags: false,
+    });
+
+    this.blessedImpl.box({
+      parent: this.updateDialog,
+      top: 4,
+      left: '33%+1',
+      height: 1,
+      width: updateDialogColumnWidth,
+      content: 'Status',
+      tags: false,
+    });
+
+    this.blessedImpl.box({
+      parent: this.updateDialog,
+      top: 4,
+      left: '66%+1',
+      height: 1,
+      width: updateDialogColumnWidth,
+      content: 'Priority',
+      tags: false,
+    });
+
+    const stageList = this.blessedImpl.list({
+      parent: this.updateDialog,
+      top: updateDialogListTop,
+      left: 2,
+      width: updateDialogColumnWidth,
+      height: updateDialogListHeight,
       keys: true,
       mouse: true,
       style: {
@@ -137,6 +171,60 @@ export class DialogsComponent {
       },
       items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
     });
+
+    const statusList = this.blessedImpl.list({
+      parent: this.updateDialog,
+      top: updateDialogListTop,
+      left: '33%+1',
+      width: updateDialogColumnWidth,
+      height: updateDialogListHeight,
+      keys: true,
+      mouse: true,
+      style: {
+        selected: { bg: 'blue' },
+      },
+      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel'],
+    });
+
+    const priorityList = this.blessedImpl.list({
+      parent: this.updateDialog,
+      top: updateDialogListTop,
+      left: '66%+1',
+      width: updateDialogColumnWidth,
+      height: updateDialogListHeight,
+      keys: true,
+      mouse: true,
+      style: {
+        selected: { bg: 'blue' },
+      },
+      items: ['critical', 'high', 'medium', 'low', 'Cancel'],
+    });
+
+    this.updateDialogOptions = stageList;
+
+    const updateLayout = () => {
+      const screenHeight = Math.max(0, this.screen.height as number);
+      const screenWidth = Math.max(0, this.screen.width as number);
+      if (!screenHeight || !screenWidth) return;
+
+      if (screenHeight < 28) {
+        const height = Math.max(16, screenHeight - 4);
+        this.updateDialog.height = height;
+        stageList.height = Math.max(6, height - 9);
+        statusList.height = stageList.height;
+        priorityList.height = stageList.height;
+      } else {
+        this.updateDialog.height = 24;
+        stageList.height = updateDialogListHeight;
+        statusList.height = updateDialogListHeight;
+        priorityList.height = updateDialogListHeight;
+      }
+
+      this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
+    };
+
+    this.updateDialog.on('show', updateLayout);
+    this.screen.on('resize', updateLayout);
   }
 
   create(): this {
