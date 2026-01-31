@@ -64,7 +64,7 @@ export function formatTitleOnlyTUI(item: WorkItem): string {
 
 // Return a chalk function appropriate for a given status (for console output)
 function titleColorForStatus(status?: string): (text: string) => string {
-  const s = (status || '').toLowerCase().trim();
+  const s = (status || '').toLowerCase().trim().replace(/_/g, '-');
   switch (s) {
     case 'completed':
       return chalk.gray;
@@ -81,7 +81,7 @@ function titleColorForStatus(status?: string): (text: string) => string {
 
 // Return blessed markup tags appropriate for a given status (for TUI output)
 function titleColorForStatusTUI(status?: string): (text: string) => string {
-  const s = (status || '').toLowerCase().trim();
+  const s = (status || '').toLowerCase().trim().replace(/_/g, '-');
   switch (s) {
     case 'completed':
       return text => `{gray-fg}${text}{/gray-fg}`;
