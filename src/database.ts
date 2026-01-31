@@ -357,7 +357,13 @@ export class WorklogDatabase {
 
     if (query) {
       if (query.status) {
-        items = items.filter(item => item.status === query.status);
+        // Normalize status: convert underscores to hyphens for matching
+        // (handles legacy data stored with underscores vs the canonical hyphenated format)
+        const normalizedQueryStatus = query.status.replace(/_/g, '-');
+        items = items.filter(item => {
+          const normalizedItemStatus = item.status.replace(/_/g, '-');
+          return normalizedItemStatus === normalizedQueryStatus;
+        });
       }
       if (query.priority) {
         items = items.filter(item => item.priority === query.priority);
@@ -718,7 +724,10 @@ export class WorklogDatabase {
     }
 
     // Find in-progress and blocked items
-    const inProgressItems = filteredItems.filter(item => item.status === 'in-progress' || item.status === 'blocked');
+    const inProgressItems = filteredItems.filter(item => {
+      const normalizedStatus = item.status.replace(/_/g, '-');
+      return normalizedStatus === 'in-progress' || normalizedStatus === 'blocked';
+    });
     this.debug(`${debugPrefix} in-progress/blocked items=${inProgressItems.length}`);
 
     if (inProgressItems.length === 0) {
