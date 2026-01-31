@@ -112,7 +112,7 @@ describe('TUI Update Dialog', () => {
   });
 
   describe('Update Dialog UI Behavior', () => {
-    it('should render update dialog with stage options', () => {
+    it('should render update dialog with stage, status, and priority options', () => {
       // Create blessed screen and dialog components
       const screen = blessed.screen({ mouse: true, smartCSR: true });
 
@@ -120,8 +120,8 @@ describe('TUI Update Dialog', () => {
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '50%',
-        height: 14,
+        width: '70%',
+        height: 24,
         label: ' Update Work Item ',
         border: { type: 'line' },
         hidden: true,
@@ -137,16 +137,46 @@ describe('TUI Update Dialog', () => {
         left: 2,
         height: 2,
         width: '100%-4',
-        content: 'Update selected item stage:',
+        content: 'Update selected item fields:',
         tags: false
       });
 
-      const updateDialogOptions = blessed.list({
+      blessed.box({
         parent: updateDialog,
         top: 4,
         left: 2,
-        width: '100%-4',
-        height: 8,
+        height: 1,
+        width: '33%-2',
+        content: 'Stage',
+        tags: false
+      });
+
+      blessed.box({
+        parent: updateDialog,
+        top: 4,
+        left: '33%+1',
+        height: 1,
+        width: '33%-2',
+        content: 'Status',
+        tags: false
+      });
+
+      blessed.box({
+        parent: updateDialog,
+        top: 4,
+        left: '66%+1',
+        height: 1,
+        width: '33%-2',
+        content: 'Priority',
+        tags: false
+      });
+
+      const stageOptions = blessed.list({
+        parent: updateDialog,
+        top: 6,
+        left: 2,
+        width: '33%-2',
+        height: 15,
         keys: true,
         mouse: true,
         style: {
@@ -164,10 +194,42 @@ describe('TUI Update Dialog', () => {
         ]
       });
 
+      const statusOptions = blessed.list({
+        parent: updateDialog,
+        top: 6,
+        left: '33%+1',
+        width: '33%-2',
+        height: 15,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' }
+        },
+        items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel']
+      });
+
+      const priorityOptions = blessed.list({
+        parent: updateDialog,
+        top: 6,
+        left: '66%+1',
+        width: '33%-2',
+        height: 15,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' }
+        },
+        items: ['critical', 'high', 'medium', 'low', 'Cancel']
+      });
+
       // Verify dialog is properly constructed
       expect(updateDialog.hidden).toBe(true);
-      // Verify the list has items (blessed list items API)
-      expect(updateDialogOptions.children.length).toBeGreaterThan(0);
+      expect(updateDialogText.getContent()).toContain('Update selected item fields:');
+
+      // Verify lists have items (blessed list items API)
+      expect(stageOptions.children.length).toBeGreaterThan(0);
+      expect(statusOptions.children.length).toBeGreaterThan(0);
+      expect(priorityOptions.children.length).toBeGreaterThan(0);
 
       screen.destroy();
     });
@@ -179,8 +241,8 @@ describe('TUI Update Dialog', () => {
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '50%',
-        height: 14,
+        width: '70%',
+        height: 24,
         label: ' Update Work Item ',
         border: { type: 'line' },
         hidden: true
@@ -222,8 +284,8 @@ describe('TUI Update Dialog', () => {
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '50%',
-        height: 14,
+        width: '70%',
+        height: 24,
         label: ' Update Work Item ',
         border: { type: 'line' },
         hidden: true
