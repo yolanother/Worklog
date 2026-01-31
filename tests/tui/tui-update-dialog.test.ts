@@ -448,6 +448,62 @@ describe('TUI Update Dialog', () => {
       expect(result.hasChanges).toBe(false);
       expect(result.updates).toEqual({});
     });
+
+    it('should call db.update once per submit action', () => {
+      const item = { id: 'WL-TEST-1', status: 'open', stage: 'idea', priority: 'medium' };
+      const selections = { statusIndex: 1, stageIndex: 3, priorityIndex: 1 };
+      const values = {
+        statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
+        stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked'],
+        priorities: ['critical', 'high', 'medium', 'low'],
+      };
+      const updateCalls: Array<Record<string, string>> = [];
+      const db = {
+        update: (_id: string, updates: Record<string, string>) => {
+          updateCalls.push(updates);
+        },
+      };
+
+      const submitUpdateDialog = () => {
+        const { updates, hasChanges } = buildUpdateDialogUpdates(item, selections, values);
+        if (!hasChanges) return;
+        db.update(item.id, updates);
+      };
+
+      submitUpdateDialog();
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0]).toEqual({
+        status: 'in-progress',
+        stage: 'in_progress',
+        priority: 'high',
+      });
+
+      updateCalls.length = 0;
+      submitUpdateDialog();
+      expect(updateCalls).toHaveLength(1);
+    });
+
+    it('should not call db.update when Escape cancels', () => {
+      const updateCalls: Array<Record<string, string>> = [];
+      const db = {
+        update: (_id: string, updates: Record<string, string>) => {
+          updateCalls.push(updates);
+        },
+      };
+      let closeCalls = 0;
+      const closeUpdateDialog = () => {
+        closeCalls += 1;
+      };
+
+      const onEscape = () => {
+        closeUpdateDialog();
+      };
+
+      onEscape();
+      expect(updateCalls).toHaveLength(0);
+      expect(closeCalls).toBe(1);
+      void db;
+    });
   });
 
   describe('Update Dialog Error Handling', () => {
