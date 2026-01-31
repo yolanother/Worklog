@@ -21,6 +21,8 @@ import {
   OverlaysComponent,
   ToastComponent,
 } from '../tui/components/index.js';
+import { createUpdateDialogFocusManager } from '../tui/update-dialog-navigation.js';
+import { buildUpdateDialogUpdates } from '../tui/update-dialog-submit.js';
 
 type Item = any;
 
@@ -196,6 +198,84 @@ export default function register(ctx: PluginContext): void {
       const updateDialog = dialogsComponent.updateDialog;
       const updateDialogText = dialogsComponent.updateDialogText;
       const updateDialogOptions = dialogsComponent.updateDialogOptions;
+      const updateDialogStageOptions = dialogsComponent.updateDialogStageOptions;
+      const updateDialogStatusOptions = dialogsComponent.updateDialogStatusOptions;
+      const updateDialogPriorityOptions = dialogsComponent.updateDialogPriorityOptions;
+      const updateDialogFieldOrder = [
+        updateDialogStatusOptions,
+        updateDialogStageOptions,
+        updateDialogPriorityOptions,
+      ];
+      const updateDialogFocusManager = createUpdateDialogFocusManager([
+        updateDialogStatusOptions,
+        updateDialogStageOptions,
+        updateDialogPriorityOptions,
+      ]);
+      const updateDialogStatusValues = ['open', 'in-progress', 'blocked', 'completed', 'deleted'];
+      const updateDialogStageValues = ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked'];
+      const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
+
+      const normalizeStatusValue = (value: string | undefined) => {
+        if (!value) return value;
+        return value.replace(/_/g, '-');
+      };
+
+      const applyUpdateDialogFocusStyles = (focused: any) => {
+        updateDialogFieldOrder.forEach((list) => {
+          if (!list || !list.style) return;
+          if (!list.style.selected) list.style.selected = {};
+          list.style.selected.bg = list === focused ? 'cyan' : 'blue';
+          list.style.selected.fg = list === focused ? 'black' : 'white';
+        });
+        if (!updateDialog.hidden) screen.render();
+      };
+
+      updateDialogFieldOrder.forEach((list) => {
+        list.on('focus', () => {
+          applyUpdateDialogFocusStyles(list);
+        });
+      });
+
+      updateDialogFieldOrder.forEach((list) => {
+        list.on('blur', () => {
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+        });
+      });
+
+      const findListIndex = (values: string[], value: string | undefined, fallback: number) => {
+        if (!value) return fallback;
+        const idx = values.indexOf(value);
+        return idx >= 0 ? idx : fallback;
+      };
+      const wireUpdateDialogFieldNavigation = (field: any) => {
+        field.key(['tab', 'C-i'], () => {
+          if (updateDialog.hidden) return;
+          updateDialogFocusManager.cycle(1);
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          return false;
+        });
+        field.key(['S-tab', 'C-S-i'], () => {
+          if (updateDialog.hidden) return;
+          updateDialogFocusManager.cycle(-1);
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          return false;
+        });
+        field.key(['left'], () => {
+          if (updateDialog.hidden) return;
+          updateDialogFocusManager.cycle(-1);
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          return false;
+        });
+        field.key(['right'], () => {
+          if (updateDialog.hidden) return;
+          updateDialogFocusManager.cycle(1);
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          return false;
+        });
+      };
+
+      [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions]
+        .forEach(wireUpdateDialogFieldNavigation);
 
       const nextOverlay = blessedImpl.box({
         parent: screen,
@@ -1134,15 +1214,21 @@ export default function register(ctx: PluginContext): void {
         const item = getSelectedItem();
         if (item) {
           updateDialogText.setContent(`Update: ${item.title}\nID: ${item.id}`);
+          updateDialogStatusOptions.select(findListIndex(updateDialogStatusValues, normalizeStatusValue(item.status), 0));
+          updateDialogStageOptions.select(findListIndex(updateDialogStageValues, item.stage, 0));
+          updateDialogPriorityOptions.select(findListIndex(updateDialogPriorityValues, item.priority, 2));
         } else {
           updateDialogText.setContent('Update selected item fields:');
+          updateDialogStatusOptions.select(0);
+          updateDialogStageOptions.select(0);
+          updateDialogPriorityOptions.select(2);
         }
         updateOverlay.show();
         updateDialog.show();
         updateOverlay.setFront();
         updateDialog.setFront();
-        updateDialogOptions.select(0);
-        updateDialogOptions.focus();
+        updateDialogFocusManager.focusIndex(0);
+        applyUpdateDialogFocusStyles(updateDialogFieldOrder[0]);
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
         screen.render();
@@ -1600,6 +1686,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['right', 'enter'], () => {
+        if (!updateDialog.hidden) return;
         const idx = list.selected as number;
         const visible = buildVisible();
         const node = visible[idx];
@@ -1610,6 +1697,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       screen.key(['left'], () => {
+        if (!updateDialog.hidden) return;
         const idx = list.selected as number;
         const visible = buildVisible();
         const node = visible[idx];
@@ -1882,28 +1970,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       updateDialogOptions.on('select', (_el: any, idx: number) => {
-        const item = getSelectedItem();
-        if (!item) {
-          showToast('No item selected');
-          closeUpdateDialog();
-          return;
-        }
-        try {
-          if (idx === 0) db.update(item.id, { stage: 'idea' });
-          else if (idx === 1) db.update(item.id, { stage: 'prd_complete' });
-          else if (idx === 2) db.update(item.id, { stage: 'plan_complete' });
-          else if (idx === 3) db.update(item.id, { stage: 'in_progress' });
-          else if (idx === 4) db.update(item.id, { stage: 'in_review' });
-          else if (idx === 5) db.update(item.id, { stage: 'done' });
-          else if (idx === 6) db.update(item.id, { stage: 'blocked' });
-          else if (idx === 7) { /* Cancel - no action */ }
-          if (idx !== 7) showToast('Updated');
-          else showToast('Cancelled');
-          refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
-        } catch (err) {
-          showToast('Update failed');
-        }
-        closeUpdateDialog();
+        void idx;
       });
 
       updateDialog.key(['escape'], () => {
@@ -1912,6 +1979,77 @@ export default function register(ctx: PluginContext): void {
 
       updateDialogOptions.key(['escape'], () => {
         closeUpdateDialog();
+      });
+
+      const submitUpdateDialog = () => {
+        const item = getSelectedItem();
+        if (!item) {
+          showToast('No item selected');
+          closeUpdateDialog();
+          return;
+        }
+
+        const statusIndex = (updateDialogStatusOptions as any).selected ?? 0;
+        const stageIndex = (updateDialogStageOptions as any).selected ?? 0;
+        const priorityIndex = (updateDialogPriorityOptions as any).selected ?? 2;
+
+        const { updates, hasChanges } = buildUpdateDialogUpdates(
+          item,
+          { statusIndex, stageIndex, priorityIndex },
+          {
+            statuses: updateDialogStatusValues,
+            stages: updateDialogStageValues,
+            priorities: updateDialogPriorityValues,
+          }
+        );
+
+        if (!hasChanges) {
+          showToast('No changes');
+          closeUpdateDialog();
+          return;
+        }
+
+        try {
+          db.update(item.id, updates);
+          showToast('Updated');
+          refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
+        } catch (err) {
+          showToast('Update failed');
+        }
+
+        closeUpdateDialog();
+      };
+
+      updateDialog.key(['enter'], () => {
+        if (updateDialog.hidden) return;
+        submitUpdateDialog();
+      });
+
+      updateDialog.key(['C-s'], () => {
+        if (updateDialog.hidden) return;
+        submitUpdateDialog();
+      });
+
+      updateDialogStatusOptions.key(['enter'], () => {
+        submitUpdateDialog();
+      });
+
+      updateDialogStageOptions.key(['enter'], () => {
+        submitUpdateDialog();
+      });
+
+      updateDialogPriorityOptions.key(['enter'], () => {
+        submitUpdateDialog();
+      });
+
+      updateDialog.key(['tab'], () => {
+        if (updateDialog.hidden) return;
+        updateDialogFocusManager.cycle(1);
+      });
+
+      updateDialog.key(['S-tab'], () => {
+        if (updateDialog.hidden) return;
+        updateDialogFocusManager.cycle(-1);
       });
 
       closeDialog.key(['escape'], () => {

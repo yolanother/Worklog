@@ -23,6 +23,9 @@ export class DialogsComponent {
   readonly updateDialog: BlessedBox;
   readonly updateDialogText: BlessedBox;
   readonly updateDialogOptions: BlessedList;
+  readonly updateDialogStageOptions: BlessedList;
+  readonly updateDialogStatusOptions: BlessedList;
+  readonly updateDialogPriorityOptions: BlessedList;
 
   constructor(options: DialogsComponentOptions) {
     this.screen = options.parent;
@@ -134,7 +137,7 @@ export class DialogsComponent {
       left: 2,
       height: 1,
       width: updateDialogColumnWidth,
-      content: 'Stage',
+      content: 'Status',
       tags: false,
     });
 
@@ -144,7 +147,7 @@ export class DialogsComponent {
       left: '33%+1',
       height: 1,
       width: updateDialogColumnWidth,
-      content: 'Status',
+      content: 'Stage',
       tags: false,
     });
 
@@ -158,7 +161,7 @@ export class DialogsComponent {
       tags: false,
     });
 
-    const stageList = this.blessedImpl.list({
+    const statusList = this.blessedImpl.list({
       parent: this.updateDialog,
       top: updateDialogListTop,
       left: 2,
@@ -169,10 +172,10 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
+      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel'],
     });
 
-    const statusList = this.blessedImpl.list({
+    const stageList = this.blessedImpl.list({
       parent: this.updateDialog,
       top: updateDialogListTop,
       left: '33%+1',
@@ -183,7 +186,7 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel'],
+      items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
     });
 
     const priorityList = this.blessedImpl.list({
@@ -201,6 +204,9 @@ export class DialogsComponent {
     });
 
     this.updateDialogOptions = stageList;
+    this.updateDialogStageOptions = stageList;
+    this.updateDialogStatusOptions = statusList;
+    this.updateDialogPriorityOptions = priorityList;
 
     const updateLayout = () => {
       const screenHeight = Math.max(0, this.screen.height as number);

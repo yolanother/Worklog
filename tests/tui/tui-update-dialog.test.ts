@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorklogDatabase } from '../../src/database.js';
 import blessed from 'blessed';
+import { createUpdateDialogFocusManager } from '../../src/tui/update-dialog-navigation.js';
+import { buildUpdateDialogUpdates } from '../../src/tui/update-dialog-submit.js';
 
 describe('TUI Update Dialog', () => {
   const tmpDir = path.join(process.cwd(), 'tmp-test-tui-update');
@@ -147,7 +149,7 @@ describe('TUI Update Dialog', () => {
         left: 2,
         height: 1,
         width: '33%-2',
-        content: 'Stage',
+        content: 'Status',
         tags: false
       });
 
@@ -157,7 +159,7 @@ describe('TUI Update Dialog', () => {
         left: '33%+1',
         height: 1,
         width: '33%-2',
-        content: 'Status',
+        content: 'Stage',
         tags: false
       });
 
@@ -171,10 +173,31 @@ describe('TUI Update Dialog', () => {
         tags: false
       });
 
-      const stageOptions = blessed.list({
+      const statusOptions = blessed.list({
         parent: updateDialog,
         top: 6,
         left: 2,
+        width: '33%-2',
+        height: 15,
+        keys: true,
+        mouse: true,
+        style: {
+          selected: { bg: 'blue' }
+        },
+        items: [
+          'open',
+          'in-progress',
+          'blocked',
+          'completed',
+          'deleted',
+          'Cancel'
+        ]
+      });
+
+      const stageOptions = blessed.list({
+        parent: updateDialog,
+        top: 6,
+        left: '33%+1',
         width: '33%-2',
         height: 15,
         keys: true,
@@ -192,20 +215,6 @@ describe('TUI Update Dialog', () => {
           'blocked',
           'Cancel'
         ]
-      });
-
-      const statusOptions = blessed.list({
-        parent: updateDialog,
-        top: 6,
-        left: '33%+1',
-        width: '33%-2',
-        height: 15,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' }
-        },
-        items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel']
       });
 
       const priorityOptions = blessed.list({
@@ -345,6 +354,99 @@ describe('TUI Update Dialog', () => {
 
       const itemAfter = db.get('WL-TEST-1');
       expect(itemAfter?.stage).toBe(originalStage);
+    });
+  });
+
+  describe('Update Dialog Focus Navigation', () => {
+    it('should cycle focus forward and backward', () => {
+      const screen = blessed.screen({ mouse: true, smartCSR: true });
+
+      const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
+      const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
+      const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+
+      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList]);
+
+      focusManager.focusIndex(0);
+      expect(focusManager.getIndex()).toBe(0);
+
+      focusManager.cycle(1);
+      expect(focusManager.getIndex()).toBe(1);
+
+      focusManager.cycle(1);
+      expect(focusManager.getIndex()).toBe(2);
+
+      focusManager.cycle(1);
+      expect(focusManager.getIndex()).toBe(0);
+
+      focusManager.cycle(-1);
+      expect(focusManager.getIndex()).toBe(2);
+
+      screen.destroy();
+    });
+  });
+
+  describe('Update Dialog Default Selection', () => {
+    it('should select current item values when opening dialog', () => {
+      const screen = blessed.screen({ mouse: true, smartCSR: true });
+
+      const statusOptions = blessed.list({ parent: screen, items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel'] });
+      const stageOptions = blessed.list({ parent: screen, items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'] });
+      const priorityOptions = blessed.list({ parent: screen, items: ['critical', 'high', 'medium', 'low', 'Cancel'] });
+
+      const item = {
+        status: 'blocked',
+        stage: 'in_review',
+        priority: 'high'
+      };
+
+      statusOptions.select(2);
+      stageOptions.select(4);
+      priorityOptions.select(1);
+
+      expect((statusOptions as any).selected).toBe(2);
+      expect((stageOptions as any).selected).toBe(4);
+      expect((priorityOptions as any).selected).toBe(1);
+
+      screen.destroy();
+    });
+  });
+
+  describe('Update Dialog Submit Updates', () => {
+    it('should build updates only for changed fields', () => {
+      const item = { status: 'open', stage: 'idea', priority: 'medium' };
+      const result = buildUpdateDialogUpdates(
+        item,
+        { statusIndex: 2, stageIndex: 3, priorityIndex: 1 },
+        {
+          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
+          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked'],
+          priorities: ['critical', 'high', 'medium', 'low'],
+        }
+      );
+
+      expect(result.hasChanges).toBe(true);
+      expect(result.updates).toEqual({
+        status: 'blocked',
+        stage: 'in_progress',
+        priority: 'high',
+      });
+    });
+
+    it('should return no changes when selections match current values', () => {
+      const item = { status: 'open', stage: 'idea', priority: 'medium' };
+      const result = buildUpdateDialogUpdates(
+        item,
+        { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
+        {
+          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
+          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked'],
+          priorities: ['critical', 'high', 'medium', 'low'],
+        }
+      );
+
+      expect(result.hasChanges).toBe(false);
+      expect(result.updates).toEqual({});
     });
   });
 
