@@ -57,7 +57,12 @@ export function formatTitleOnly(item: WorkItem): string {
   return renderTitle(item);
 }
 
-// Return a chalk function appropriate for a given status
+// Format only the title with TUI colors (blessed markup) for use in TUI tree view
+export function formatTitleOnlyTUI(item: WorkItem): string {
+  return renderTitleTUI(item);
+}
+
+// Return a chalk function appropriate for a given status (for console output)
 function titleColorForStatus(status?: string): (text: string) => string {
   const s = (status || '').toLowerCase().trim();
   switch (s) {
@@ -74,9 +79,31 @@ function titleColorForStatus(status?: string): (text: string) => string {
   }
 }
 
-// Render a work item title with the color appropriate to its status
+// Return blessed markup tags appropriate for a given status (for TUI output)
+function titleColorForStatusTUI(status?: string): (text: string) => string {
+  const s = (status || '').toLowerCase().trim();
+  switch (s) {
+    case 'completed':
+      return text => `{gray-fg}${text}{/gray-fg}`;
+    case 'in-progress':
+    case 'in progress':
+      return text => `{cyan-fg}${text}{/cyan-fg}`; // cyan for in-progress
+    case 'blocked':
+      return text => `{red-fg}${text}{/red-fg}`;
+    case 'open':
+    default:
+      return text => `{green-fg}${text}{/green-fg}`;
+  }
+}
+
+// Render a work item title with the color appropriate to its status (console output)
 function renderTitle(item: WorkItem, prefix: string = ''): string {
   return titleColorForStatus(item.status)(prefix + item.title);
+}
+
+// Render a work item title with blessed markup colors for TUI output
+function renderTitleTUI(item: WorkItem, prefix: string = ''): string {
+  return titleColorForStatusTUI(item.status)(prefix + item.title);
 }
 
 // Helper to display work items in a tree structure

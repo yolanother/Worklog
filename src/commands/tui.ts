@@ -4,7 +4,7 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import blessed from 'blessed';
-import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly } from './helpers.js';
+import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly, formatTitleOnlyTUI } from './helpers.js';
 import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -946,7 +946,7 @@ export default function register(ctx: PluginContext): void {
         const lines = visible.map(n => {
           const indent = '  '.repeat(n.depth);
           const marker = n.hasChildren ? (expanded.has(n.item.id) ? '▾' : '▸') : ' ';
-          const title = formatTitleOnly(n.item);
+          const title = formatTitleOnlyTUI(n.item);
           return `${indent}${marker} ${title} {gray-fg}({underline}${n.item.id}{/underline}){/gray-fg}`;
         });
         listLines = lines;
