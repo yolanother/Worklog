@@ -23,6 +23,9 @@ export class DialogsComponent {
   readonly updateDialog: BlessedBox;
   readonly updateDialogText: BlessedBox;
   readonly updateDialogOptions: BlessedList;
+  readonly updateDialogStageOptions: BlessedList;
+  readonly updateDialogStatusOptions: BlessedList;
+  readonly updateDialogPriorityOptions: BlessedList;
 
   constructor(options: DialogsComponentOptions) {
     this.screen = options.parent;
@@ -118,7 +121,7 @@ export class DialogsComponent {
       parent: this.updateDialog,
       top: 1,
       left: 2,
-      height: 2,
+      height: 3,
       width: '100%-4',
       content: 'Update selected item fields:',
       tags: false,
@@ -130,35 +133,38 @@ export class DialogsComponent {
 
     this.blessedImpl.box({
       parent: this.updateDialog,
-      top: 4,
+      top: 5,
       left: 2,
-      height: 1,
-      width: updateDialogColumnWidth,
-      content: 'Stage',
-      tags: false,
-    });
-
-    this.blessedImpl.box({
-      parent: this.updateDialog,
-      top: 4,
-      left: '33%+1',
       height: 1,
       width: updateDialogColumnWidth,
       content: 'Status',
       tags: false,
+      style: { fg: 'cyan', bold: true },
     });
 
     this.blessedImpl.box({
       parent: this.updateDialog,
-      top: 4,
+      top: 5,
+      left: '33%+1',
+      height: 1,
+      width: updateDialogColumnWidth,
+      content: 'Stage',
+      tags: false,
+      style: { fg: 'cyan', bold: true },
+    });
+
+    this.blessedImpl.box({
+      parent: this.updateDialog,
+      top: 5,
       left: '66%+1',
       height: 1,
       width: updateDialogColumnWidth,
       content: 'Priority',
       tags: false,
+      style: { fg: 'cyan', bold: true },
     });
 
-    const stageList = this.blessedImpl.list({
+    const statusList = this.blessedImpl.list({
       parent: this.updateDialog,
       top: updateDialogListTop,
       left: 2,
@@ -169,10 +175,10 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked', 'Cancel'],
+      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
     });
 
-    const statusList = this.blessedImpl.list({
+    const stageList = this.blessedImpl.list({
       parent: this.updateDialog,
       top: updateDialogListTop,
       left: '33%+1',
@@ -183,7 +189,7 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted', 'Cancel'],
+      items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
     });
 
     const priorityList = this.blessedImpl.list({
@@ -197,10 +203,13 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['critical', 'high', 'medium', 'low', 'Cancel'],
+      items: ['critical', 'high', 'medium', 'low'],
     });
 
     this.updateDialogOptions = stageList;
+    this.updateDialogStageOptions = stageList;
+    this.updateDialogStatusOptions = statusList;
+    this.updateDialogPriorityOptions = priorityList;
 
     const updateLayout = () => {
       const screenHeight = Math.max(0, this.screen.height as number);

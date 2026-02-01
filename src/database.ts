@@ -641,7 +641,8 @@ export class WorklogDatabase {
     searchTerm?: string,
     recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore',
     excluded?: Set<string>,
-    debugPrefix: string = '[next]'
+    debugPrefix: string = '[next]',
+    includeInReview: boolean = false
   ): NextWorkItemResult {
     this.debug(`${debugPrefix} recencyPolicy=${recencyPolicy} assignee=${assignee || ''} search=${searchTerm || ''} excluded=${excluded?.size || 0}`);
     let filteredItems = items;
@@ -649,6 +650,9 @@ export class WorklogDatabase {
 
     // Filter out deleted items first
     filteredItems = filteredItems.filter(item => item.status !== 'deleted');
+    if (!includeInReview) {
+      filteredItems = filteredItems.filter(item => item.stage !== 'in_review');
+    }
     if (excluded && excluded.size > 0) {
       filteredItems = filteredItems.filter(item => !excluded.has(item.id));
     }
@@ -823,16 +827,27 @@ export class WorklogDatabase {
    * @param searchTerm - Optional search term for fuzzy matching
    * @returns The next work item and a reason for the selection, or null if none found
    */
-  findNextWorkItem(assignee?: string, searchTerm?: string, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): NextWorkItemResult {
+  findNextWorkItem(
+    assignee?: string,
+    searchTerm?: string,
+    recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore',
+    includeInReview: boolean = false
+  ): NextWorkItemResult {
     const items = this.store.getAllWorkItems();
-    return this.findNextWorkItemFromItems(items, assignee, searchTerm, recencyPolicy, undefined, '[next]');
+    return this.findNextWorkItemFromItems(items, assignee, searchTerm, recencyPolicy, undefined, '[next]', includeInReview);
   }
 
   /**
    * Find multiple next work items (up to `count`) using the same selection logic
    * as `findNextWorkItem`, but excluding already-selected items between iterations.
    */
-  findNextWorkItems(count: number, assignee?: string, searchTerm?: string, recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): NextWorkItemResult[] {
+  findNextWorkItems(
+    count: number,
+    assignee?: string,
+    searchTerm?: string,
+    recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore',
+    includeInReview: boolean = false
+  ): NextWorkItemResult[] {
     const results: NextWorkItemResult[] = [];
     const excluded = new Set<string>();
 
@@ -843,7 +858,8 @@ export class WorklogDatabase {
         searchTerm,
         recencyPolicy,
         excluded,
-        `[next batch ${i + 1}/${count}]`
+        `[next batch ${i + 1}/${count}]`,
+        includeInReview
       );
 
       results.push(result);

@@ -151,6 +151,7 @@ Options:
 `-a, --assignee <assignee>` (optional)
 `-s, --search <term>` (optional)
 `-n, --number <n>` — Number of items to return (optional; default: `1`).
+`--include-in-review` — Include items with stage `in_review` (optional).
 `--prefix <prefix>` (optional)
 
 Examples:
