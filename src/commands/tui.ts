@@ -3,6 +3,7 @@
  */
 
 import type { PluginContext } from '../plugin-types.js';
+import type { WorkItemStatus } from '../types.js';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly, formatTitleOnlyTUI } from './helpers.js';
 import chalk from 'chalk';
@@ -23,6 +24,12 @@ import {
 } from '../tui/components/index.js';
 import { createUpdateDialogFocusManager } from '../tui/update-dialog-navigation.js';
 import { buildUpdateDialogUpdates } from '../tui/update-dialog-submit.js';
+import {
+  STATUS_STAGE_COMPATIBILITY,
+  STAGE_STATUS_COMPATIBILITY,
+  WORK_ITEM_STATUSES,
+  WORK_ITEM_STAGES,
+} from '../tui/status-stage-rules.js';
 
 type Item = any;
 
@@ -202,22 +209,131 @@ export default function register(ctx: PluginContext): void {
       const updateDialogStatusOptions = dialogsComponent.updateDialogStatusOptions;
       const updateDialogPriorityOptions = dialogsComponent.updateDialogPriorityOptions;
       const updateDialogFieldOrder = [
+        updateDialogStageOptions,
+        updateDialogStatusOptions,
+        updateDialogPriorityOptions,
+      ];
+      const updateDialogFieldLayout = [
         updateDialogStatusOptions,
         updateDialogStageOptions,
         updateDialogPriorityOptions,
       ];
       const updateDialogFocusManager = createUpdateDialogFocusManager([
-        updateDialogStatusOptions,
         updateDialogStageOptions,
+        updateDialogStatusOptions,
         updateDialogPriorityOptions,
       ]);
-      const updateDialogStatusValues = ['open', 'in-progress', 'blocked', 'completed', 'deleted'];
-      const updateDialogStageValues = ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done', 'blocked'];
+      const updateDialogStatusValues = [...WORK_ITEM_STATUSES];
+      const updateDialogStageValues = WORK_ITEM_STAGES.filter(stage => stage !== '');
       const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
 
       const normalizeStatusValue = (value: string | undefined) => {
         if (!value) return value;
         return value.replace(/_/g, '-');
+      };
+
+      const normalizeStageValue = (value: string | undefined) => {
+        if (!value) return value;
+        return value === 'Undefined' ? '' : value;
+      };
+
+      const getListItemValue = (list: any, fallback: string) => {
+        const selectedIndex = (list as any).selected;
+        if (selectedIndex === undefined) return fallback;
+        const item = list.getItem(selectedIndex);
+        const content = item?.getContent?.();
+        return content ?? fallback;
+      };
+
+      const buildStageItems = (allowed: readonly string[], item?: Item | null) => {
+        const allowBlank = allowed.includes('') && (item?.stage === '' || allowed.length === 1);
+        const filtered = allowed.filter(stage => stage !== '');
+        if (allowBlank) return ['Undefined', ...filtered];
+        if (filtered.length > 0) return filtered;
+        return ['Undefined'];
+      };
+
+      const setListItems = (list: any, items: string[], preferred?: string) => {
+        list.setItems(items);
+        const target = preferred && items.includes(preferred) ? preferred : items[0];
+        if (target !== undefined) {
+          list.select(items.indexOf(target));
+        }
+      };
+
+      const resetUpdateDialogItems = (item?: Item | null) => {
+        updateDialogStatusOptions.setItems([...updateDialogStatusValues]);
+        updateDialogPriorityOptions.setItems([...updateDialogPriorityValues]);
+        const stageItems = item?.stage === ''
+          ? ['Undefined', ...updateDialogStageValues]
+          : [...updateDialogStageValues];
+        updateDialogStageOptions.setItems(stageItems);
+      };
+
+      let updateDialogLastChanged: 'status' | 'stage' | 'priority' | null = null;
+      let updateDialogItem: Item | null = null;
+      let updateDialogApplying = false;
+
+      const updateDialogHeader = (item: Item | null, overrides?: { status?: string; stage?: string; priority?: string; adjusted?: boolean }) => {
+        if (!item) {
+          updateDialogText.setContent('Update selected item fields:');
+          return;
+        }
+        const statusValue = overrides?.status ?? normalizeStatusValue(item.status) ?? '';
+        const stageValue = overrides?.stage ?? (item.stage === '' ? 'Undefined' : item.stage);
+        const priorityValue = overrides?.priority ?? item.priority ?? '';
+        const adjustedSuffix = overrides?.adjusted ? ' (Adjusted)' : '';
+        updateDialogText.setContent(
+          `Update: ${item.title}\nID: ${item.id}\nStatus: ${statusValue} · Stage: ${stageValue} · Priority: ${priorityValue}${adjustedSuffix}`
+        );
+      };
+
+      const applyStatusStageCompatibility = (item?: Item | null) => {
+        if (updateDialogApplying) return;
+        updateDialogApplying = true;
+        const complete = () => { updateDialogApplying = false; };
+        const statusValue = getListItemValue(updateDialogStatusOptions, updateDialogStatusValues[0]);
+        const stageValue = getListItemValue(updateDialogStageOptions, updateDialogStageValues[0]);
+        const priorityValue = getListItemValue(updateDialogPriorityOptions, updateDialogPriorityValues[2]);
+
+        const normalizedStageValue = normalizeStageValue(stageValue) ?? '';
+        const allowedStages = STATUS_STAGE_COMPATIBILITY[statusValue as WorkItemStatus] || [];
+        const allowedStatuses = STAGE_STATUS_COMPATIBILITY[normalizedStageValue] || [];
+
+        if (!updateDialogLastChanged) {
+          if (item) {
+            updateDialogHeader(item, {
+              status: normalizeStatusValue(item.status),
+              stage: item.stage === '' ? 'Undefined' : item.stage,
+              priority: item.priority,
+            });
+          }
+          updateDialogApplying = false;
+          return;
+        }
+
+        try {
+          if (updateDialogLastChanged === 'status') {
+            const stageItems = buildStageItems(allowedStages, item);
+            setListItems(updateDialogStageOptions, stageItems, stageValue);
+          } else if (updateDialogLastChanged === 'stage') {
+            const statusItems = allowedStatuses.length ? [...allowedStatuses] : updateDialogStatusValues;
+            setListItems(updateDialogStatusOptions, statusItems, statusValue);
+          }
+
+          const currentStatus = getListItemValue(updateDialogStatusOptions, updateDialogStatusValues[0]);
+          const currentStage = getListItemValue(updateDialogStageOptions, updateDialogStageValues[0]);
+          const currentPriority = getListItemValue(updateDialogPriorityOptions, updateDialogPriorityValues[2]);
+          const adjusted = currentStatus !== statusValue || currentStage !== stageValue;
+          updateDialogHeader(item ?? null, {
+            status: currentStatus,
+            stage: currentStage,
+            priority: currentPriority,
+            adjusted,
+          });
+        } finally {
+          complete();
+        }
       };
 
       const applyUpdateDialogFocusStyles = (focused: any) => {
@@ -233,17 +349,19 @@ export default function register(ctx: PluginContext): void {
       updateDialogFieldOrder.forEach((list) => {
         list.on('focus', () => {
           applyUpdateDialogFocusStyles(list);
+          if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
         });
       });
 
       updateDialogFieldOrder.forEach((list) => {
         list.on('blur', () => {
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
         });
       });
 
       const findListIndex = (values: string[], value: string | undefined, fallback: number) => {
-        if (!value) return fallback;
+        if (value === undefined) return fallback;
         const idx = values.indexOf(value);
         return idx >= 0 ? idx : fallback;
       };
@@ -262,20 +380,47 @@ export default function register(ctx: PluginContext): void {
         });
         field.key(['left'], () => {
           if (updateDialog.hidden) return;
-          updateDialogFocusManager.cycle(-1);
-          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          const layoutIndex = updateDialogFieldLayout.indexOf(field);
+          const nextIndex = layoutIndex <= 0 ? updateDialogFieldLayout.length - 1 : layoutIndex - 1;
+          const target = updateDialogFieldLayout[nextIndex];
+          updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
+          applyUpdateDialogFocusStyles(target);
           return false;
         });
         field.key(['right'], () => {
           if (updateDialog.hidden) return;
-          updateDialogFocusManager.cycle(1);
-          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+          const layoutIndex = updateDialogFieldLayout.indexOf(field);
+          const nextIndex = layoutIndex >= updateDialogFieldLayout.length - 1 ? 0 : layoutIndex + 1;
+          const target = updateDialogFieldLayout[nextIndex];
+          updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
+          applyUpdateDialogFocusStyles(target);
           return false;
         });
       };
 
       [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions]
         .forEach(wireUpdateDialogFieldNavigation);
+
+      const handleUpdateDialogSelectionChange = (source?: 'status' | 'stage' | 'priority') => {
+        updateDialogLastChanged = source ?? updateDialogLastChanged;
+        if (!updateDialog.hidden) applyStatusStageCompatibility(updateDialogItem);
+      };
+
+      const wireUpdateDialogSelectionListeners = (list: any, source: 'status' | 'stage' | 'priority') => {
+        list.on('select', () => handleUpdateDialogSelectionChange(source));
+        list.on('select item', () => handleUpdateDialogSelectionChange(source));
+        list.on('click', () => handleUpdateDialogSelectionChange(source));
+        list.on('keypress', (_ch: string, key: { name?: string }) => {
+          if (!key?.name) return;
+          if (['up', 'down', 'home', 'end', 'pageup', 'pagedown'].includes(key.name)) {
+            handleUpdateDialogSelectionChange(source);
+          }
+        });
+      };
+
+      wireUpdateDialogSelectionListeners(updateDialogStatusOptions, 'status');
+      wireUpdateDialogSelectionListeners(updateDialogStageOptions, 'stage');
+      wireUpdateDialogSelectionListeners(updateDialogPriorityOptions, 'priority');
 
       const nextOverlay = blessedImpl.box({
         parent: screen,
@@ -1212,23 +1357,32 @@ export default function register(ctx: PluginContext): void {
 
       function openUpdateDialog() {
         const item = getSelectedItem();
+        updateDialogItem = item ?? null;
         if (item) {
-          updateDialogText.setContent(`Update: ${item.title}\nID: ${item.id}`);
+          resetUpdateDialogItems(item);
+          updateDialogHeader(item, { status: normalizeStatusValue(item.status), stage: item.stage === '' ? 'Undefined' : item.stage, priority: item.priority });
           updateDialogStatusOptions.select(findListIndex(updateDialogStatusValues, normalizeStatusValue(item.status), 0));
-          updateDialogStageOptions.select(findListIndex(updateDialogStageValues, item.stage, 0));
+          const selectedStage = item.stage === '' ? undefined : item.stage;
+          updateDialogStageOptions.select(findListIndex(updateDialogStageValues, selectedStage, 0));
           updateDialogPriorityOptions.select(findListIndex(updateDialogPriorityValues, item.priority, 2));
+          updateDialogLastChanged = null;
+          applyStatusStageCompatibility(item);
         } else {
           updateDialogText.setContent('Update selected item fields:');
+          resetUpdateDialogItems();
           updateDialogStatusOptions.select(0);
           updateDialogStageOptions.select(0);
           updateDialogPriorityOptions.select(2);
+          updateDialogLastChanged = null;
+          applyStatusStageCompatibility();
         }
         updateOverlay.show();
         updateDialog.show();
         updateOverlay.setFront();
         updateDialog.setFront();
-        updateDialogFocusManager.focusIndex(0);
-        applyUpdateDialogFocusStyles(updateDialogFieldOrder[0]);
+          updateDialogFocusManager.focusIndex(0);
+          updateDialogStageOptions.focus();
+          applyUpdateDialogFocusStyles(updateDialogFieldOrder[0]);
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
         screen.render();
@@ -1237,6 +1391,7 @@ export default function register(ctx: PluginContext): void {
       function closeUpdateDialog() {
         updateDialog.hide();
         updateOverlay.hide();
+        updateDialogItem = null;
         list.focus();
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
@@ -1993,23 +2148,35 @@ export default function register(ctx: PluginContext): void {
         const stageIndex = (updateDialogStageOptions as any).selected ?? 0;
         const priorityIndex = (updateDialogPriorityOptions as any).selected ?? 2;
 
+        const listItemsToValues = (list: any, map?: (value: string) => string) => {
+          const items = list.items?.map((node: any) => node.getContent?.()) || [];
+          const values = items.map((value: string) => (map ? map(value) : value));
+          return values.filter((value: string) => value !== undefined);
+        };
+        const statusValues = listItemsToValues(updateDialogStatusOptions);
+        const stageValues = listItemsToValues(updateDialogStageOptions, (value) => (value === 'Undefined' ? '' : value));
+        const priorityValues = listItemsToValues(updateDialogPriorityOptions);
+
         const { updates, hasChanges } = buildUpdateDialogUpdates(
           item,
           { statusIndex, stageIndex, priorityIndex },
           {
-            statuses: updateDialogStatusValues,
-            stages: updateDialogStageValues,
-            priorities: updateDialogPriorityValues,
+            statuses: statusValues,
+            stages: stageValues,
+            priorities: priorityValues,
+          },
+          {
+            statusStage: STATUS_STAGE_COMPATIBILITY,
+            stageStatus: STAGE_STATUS_COMPATIBILITY,
           }
         );
 
-        if (!hasChanges) {
-          showToast('No changes');
-          closeUpdateDialog();
-          return;
-        }
-
         try {
+          if (!hasChanges) {
+            showToast('No changes');
+            closeUpdateDialog();
+            return;
+          }
           db.update(item.id, updates);
           showToast('Updated');
           refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
