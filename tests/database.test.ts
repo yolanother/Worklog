@@ -336,6 +336,52 @@ describe('WorklogDatabase', () => {
     });
   });
 
+  describe('dependency edges', () => {
+    it('should add and list outbound dependency edges', () => {
+      const from = db.create({ title: 'From' });
+      const to = db.create({ title: 'To' });
+
+      const edge = db.addDependencyEdge(from.id, to.id);
+      expect(edge).toBeDefined();
+      expect(edge?.fromId).toBe(from.id);
+      expect(edge?.toId).toBe(to.id);
+
+      const outbound = db.listDependencyEdgesFrom(from.id);
+      expect(outbound).toHaveLength(1);
+      expect(outbound[0].fromId).toBe(from.id);
+      expect(outbound[0].toId).toBe(to.id);
+    });
+
+    it('should list inbound dependency edges', () => {
+      const from = db.create({ title: 'From' });
+      const to = db.create({ title: 'To' });
+
+      db.addDependencyEdge(from.id, to.id);
+
+      const inbound = db.listDependencyEdgesTo(to.id);
+      expect(inbound).toHaveLength(1);
+      expect(inbound[0].fromId).toBe(from.id);
+      expect(inbound[0].toId).toBe(to.id);
+    });
+
+    it('should remove dependency edges', () => {
+      const from = db.create({ title: 'From' });
+      const to = db.create({ title: 'To' });
+      db.addDependencyEdge(from.id, to.id);
+
+      const removed = db.removeDependencyEdge(from.id, to.id);
+      expect(removed).toBe(true);
+      expect(db.listDependencyEdgesFrom(from.id)).toHaveLength(0);
+      expect(db.listDependencyEdgesTo(to.id)).toHaveLength(0);
+    });
+
+    it('should return null when adding edge with missing items', () => {
+      const from = db.create({ title: 'From' });
+      const edge = db.addDependencyEdge(from.id, 'TEST-NOTFOUND');
+      expect(edge).toBeNull();
+    });
+  });
+
   describe('import and export', () => {
     it('should import work items', () => {
       const items = [

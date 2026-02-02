@@ -5,7 +5,7 @@
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput, NextWorkItemResult } from './types.js';
+import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput, NextWorkItemResult, DependencyEdge } from './types.js';
 import { SqlitePersistentStore } from './persistent-store.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 import { mergeWorkItems, mergeComments } from './sync.js';
@@ -88,8 +88,14 @@ export class WorklogDatabase {
          // Debug: send to stderr so JSON stdout is preserved for --json mode
          this.debug(`Refreshing database from ${this.jsonlPath}...`);
        }
-       const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
-       this.store.importData(jsonlItems, jsonlComments);
+        const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
+        const existingEdges = this.store.getAllDependencyEdges();
+        this.store.importData(jsonlItems, jsonlComments);
+        for (const edge of existingEdges) {
+          if (this.store.getWorkItem(edge.fromId) && this.store.getWorkItem(edge.toId)) {
+            this.store.saveDependencyEdge(edge);
+          }
+        }
        
        // Update metadata
        this.store.setMetadata('lastJsonlImportMtime', jsonlMtime.toString());
@@ -110,9 +116,9 @@ export class WorklogDatabase {
     }
     
      const items = this.store.getAllWorkItems();
-     const comments = this.store.getAllComments();
-     let itemsToExport = items;
-     let commentsToExport = comments;
+      const comments = this.store.getAllComments();
+      let itemsToExport = items;
+      let commentsToExport = comments;
      if (fs.existsSync(this.jsonlPath)) {
        try {
          const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
@@ -131,7 +137,7 @@ export class WorklogDatabase {
        // Debug: use stderr for diagnostic logs
        this.debug(`WorklogDatabase.exportToJsonl: exporting ${itemsToExport.length} items and ${commentsToExport.length} comments to ${this.jsonlPath}`);
      }
-     exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath);
+      exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath);
   }
 
   private debug(message: string): void {
@@ -1010,6 +1016,56 @@ export class WorklogDatabase {
     }
     this.exportToJsonl();
     this.triggerAutoSync();
+  }
+
+  /**
+   * Add a dependency edge (fromId depends on toId)
+   */
+  addDependencyEdge(fromId: string, toId: string): DependencyEdge | null {
+    this.refreshFromJsonlIfNewer();
+    if (!this.store.getWorkItem(fromId) || !this.store.getWorkItem(toId)) {
+      return null;
+    }
+
+    const edge: DependencyEdge = {
+      fromId,
+      toId,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.store.saveDependencyEdge(edge);
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return edge;
+  }
+
+  /**
+   * Remove a dependency edge (fromId depends on toId)
+   */
+  removeDependencyEdge(fromId: string, toId: string): boolean {
+    this.refreshFromJsonlIfNewer();
+    const removed = this.store.deleteDependencyEdge(fromId, toId);
+    if (removed) {
+      this.exportToJsonl();
+      this.triggerAutoSync();
+    }
+    return removed;
+  }
+
+  /**
+   * List outbound dependency edges (fromId depends on toId)
+   */
+  listDependencyEdgesFrom(fromId: string): DependencyEdge[] {
+    this.refreshFromJsonlIfNewer();
+    return this.store.getDependencyEdgesFrom(fromId);
+  }
+
+  /**
+   * List inbound dependency edges (items that depend on toId)
+   */
+  listDependencyEdgesTo(toId: string): DependencyEdge[] {
+    this.refreshFromJsonlIfNewer();
+    return this.store.getDependencyEdgesTo(toId);
   }
 
   /**
