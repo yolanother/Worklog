@@ -16,6 +16,7 @@ export default function register(ctx: PluginContext): void {
     .argument('[search]', 'Search term (matches title and description)')
     .option('-s, --status <status>', 'Filter by status')
     .option('-p, --priority <priority>', 'Filter by priority')
+    .option('--parent <id>', 'Filter by parent id (direct children only)')
     
     .option('-n, --number <n>', 'Limit the number of items returned')
     .option('--tags <tags>', 'Filter by tags (comma-separated)')
@@ -29,6 +30,15 @@ export default function register(ctx: PluginContext): void {
       const query: WorkItemQuery = {};
       if (options.status) query.status = options.status as WorkItemStatus;
       if (options.priority) query.priority = options.priority as WorkItemPriority;
+      if (options.parent) {
+        const normalizedParentId = utils.normalizeCliId(options.parent, options.prefix) || options.parent;
+        const parent = db.get(normalizedParentId);
+        if (!parent) {
+          output.error(`Work item not found: ${normalizedParentId}`, { success: false, error: `Work item not found: ${normalizedParentId}` });
+          process.exit(1);
+        }
+        query.parentId = normalizedParentId;
+      }
       
       if (options.tags) {
         query.tags = options.tags.split(',').map((t: string) => t.trim());

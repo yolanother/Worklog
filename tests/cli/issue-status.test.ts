@@ -66,6 +66,39 @@ describe('CLI Issue Status Tests', () => {
       expect(result.workItems[0].status).toBe('open');
       expect(result.workItems[0].priority).toBe('high');
     });
+
+    it('should filter by parent id', async () => {
+      const parentResult = await execAsync(`tsx ${cliPath} --json create -t "Parent"`);
+      const parent = JSON.parse(parentResult.stdout).workItem;
+
+      const child1 = await execAsync(`tsx ${cliPath} --json create -t "Child 1" -P ${parent.id}`);
+      const child2 = await execAsync(`tsx ${cliPath} --json create -t "Child 2" -P ${parent.id}`);
+      const unrelated = await execAsync(`tsx ${cliPath} --json create -t "Other"`);
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list --parent ${parent.id}`);
+      const result = JSON.parse(stdout);
+
+      const child1Id = JSON.parse(child1.stdout).workItem.id;
+      const child2Id = JSON.parse(child2.stdout).workItem.id;
+      const unrelatedId = JSON.parse(unrelated.stdout).workItem.id;
+
+      const listedIds = result.workItems.map((item: any) => item.id);
+      expect(result.success).toBe(true);
+      expect(listedIds).toContain(child1Id);
+      expect(listedIds).toContain(child2Id);
+      expect(listedIds).not.toContain(parent.id);
+      expect(listedIds).not.toContain(unrelatedId);
+    });
+
+    it('should error for invalid parent id', async () => {
+      try {
+        await execAsync(`tsx ${cliPath} --json list --parent TEST-NOTFOUND`);
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || '{}');
+        expect(result.success).toBe(false);
+      }
+    });
   });
 
   describe('show command', () => {
