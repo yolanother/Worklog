@@ -4,9 +4,9 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { SyncOptions, SyncDebugOptions } from '../cli-types.js';
-import type { WorkItem, Comment } from '../types.js';
+import type { WorkItem, Comment, DependencyEdge } from '../types.js';
 import type { GitTarget, SyncResult } from '../sync.js';
-import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments } from '../sync.js';
+import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, mergeDependencyEdges } from '../sync.js';
 import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from '../sync-defaults.js';
 import { importFromJsonlContent, exportToJsonl } from '../jsonl.js';
 import { loadConfig } from '../config.js';
@@ -51,6 +51,7 @@ async function performSync(
   const db = getDatabase(options.prefix);
   const localItems = db.getAll();
   const localComments = db.getAllComments();
+  const localEdges = db.getAllDependencyEdges();
   logLine(`Local state: ${localItems.length} work items, ${localComments.length} comments`);
   
   if (!isJsonMode && !isSilent) {
@@ -71,12 +72,14 @@ async function performSync(
 
   let remoteItems: WorkItem[] = [];
   let remoteComments: Comment[] = [];
+  let remoteEdges: DependencyEdge[] = [];
 
   const remoteContent = await getRemoteDataFileContent(options.file, gitTarget);
   if (remoteContent) {
     const remoteData = importFromJsonlContent(remoteContent);
     remoteItems = remoteData.items;
     remoteComments = remoteData.comments;
+    remoteEdges = remoteData.dependencyEdges || [];
   }
 
   if (!isJsonMode && !isSilent) {
@@ -93,6 +96,7 @@ async function performSync(
     console.log('Merging comments...');
   }
   const commentMergeResult = mergeComments(localComments, remoteComments);
+  const edgeMergeResult = mergeDependencyEdges(localEdges, remoteEdges || []);
   
   const itemsAdded = itemMergeResult.merged.length - localItems.length;
   const itemsUpdated = itemMergeResult.conflicts.filter(c => c.includes('Conflicting fields') || c.includes('Same updatedAt')).length;
@@ -173,7 +177,7 @@ async function performSync(
   if (autoSyncEnabled) {
     db.setAutoSync(false);
   }
-  db.import(itemMergeResult.merged);
+  db.import(itemMergeResult.merged, edgeMergeResult.merged);
   db.importComments(commentMergeResult.merged);
   if (autoSyncEnabled) {
     db.setAutoSync(true, () => Promise.resolve());
@@ -183,7 +187,7 @@ async function performSync(
     console.log('\nMerged data saved locally');
   }
 
-  exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file);
+  exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, options.file, edgeMergeResult.merged);
   
   if (options.push) {
     if (!isJsonMode && !isSilent) {

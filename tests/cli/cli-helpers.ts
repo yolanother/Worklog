@@ -125,6 +125,6 @@ export function seedWorkItems(
   }));
 
   const dataPath = path.join(dir, '.worklog', 'worklog-data.jsonl');
-  exportToJsonl(seeded, comments, dataPath);
+  exportToJsonl(seeded, comments, dataPath, []);
   return seeded;
 }

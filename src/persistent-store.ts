@@ -458,6 +458,13 @@ export class SqlitePersistentStore {
   }
 
   /**
+   * Clear all dependency edges
+   */
+  clearDependencyEdges(): void {
+    this.db.prepare('DELETE FROM dependency_edges').run();
+  }
+
+  /**
    * Import work items and comments (replaces existing data)
    */
   importData(items: WorkItem[], comments: Comment[]): void {

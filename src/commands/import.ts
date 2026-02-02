@@ -17,8 +17,8 @@ export default function register(ctx: PluginContext): void {
     .action((options: ImportOptions) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
-      const { items, comments } = importFromJsonl(options.file || dataPath);
-      db.import(items);
+      const { items, comments, dependencyEdges } = importFromJsonl(options.file || dataPath);
+      db.import(items, dependencyEdges);
       db.importComments(comments);
       
       if (utils.isJsonMode()) {

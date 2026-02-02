@@ -6,7 +6,7 @@ import { WorklogDatabase } from './database.js';
 import { createAPI } from './api.js';
 import { loadConfig } from './config.js';
 import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from './sync-defaults.js';
-import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, GitTarget } from './sync.js';
+import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, mergeDependencyEdges, GitTarget } from './sync.js';
 import { importFromJsonlContent, exportToJsonl, getDefaultDataPath } from './jsonl.js';
 
 const PORT = process.env.PORT || 3000;
@@ -42,18 +42,20 @@ async function performServerSync(): Promise<void> {
 
   try {
     const remoteContent = await getRemoteDataFileContent(dataPath, gitTarget);
-    const remoteData = remoteContent ? importFromJsonlContent(remoteContent) : { items: [], comments: [] };
+    const remoteData = remoteContent ? importFromJsonlContent(remoteContent) : { items: [], comments: [], dependencyEdges: [] };
     const localItems = db.getAll();
     const localComments = db.getAllComments();
+    const localEdges = db.getAllDependencyEdges();
 
     const itemMergeResult = mergeWorkItems(localItems, remoteData.items);
     const commentMergeResult = mergeComments(localComments, remoteData.comments);
+    const edgeMergeResult = mergeDependencyEdges(localEdges, remoteData.dependencyEdges || []);
 
     const originalAutoSync = autoSync;
     if (originalAutoSync) {
       db.setAutoSync(false);
     }
-    db.import(itemMergeResult.merged);
+    db.import(itemMergeResult.merged, edgeMergeResult.merged);
     db.importComments(commentMergeResult.merged);
     if (originalAutoSync) {
       db.setAutoSync(true, () => {
@@ -61,7 +63,7 @@ async function performServerSync(): Promise<void> {
         return Promise.resolve();
       });
     }
-    exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, dataPath);
+    exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, dataPath, edgeMergeResult.merged);
 
     await gitPushDataFileToBranch(dataPath, 'Sync work items and comments', gitTarget);
   } catch (error) {

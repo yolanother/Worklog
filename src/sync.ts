@@ -2,7 +2,7 @@
  * Sync functionality for merging local and remote work items with conflict resolution
  */
 
-import { WorkItem, Comment, ConflictDetail, ConflictFieldDetail } from './types.js';
+import { WorkItem, Comment, ConflictDetail, ConflictFieldDetail, DependencyEdge } from './types.js';
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -106,14 +106,16 @@ function stableItemKey(item: WorkItem): string {
     ...item,
     tags: [...(item.tags || [])].slice().sort(),
   };
-  const keys = Object.keys(normalized).sort();
+  const keys = Object.keys(normalized)
+    .filter(key => key !== 'dependencies')
+    .sort();
   return JSON.stringify(normalized, keys);
 }
 
 function mergeTags(a: string[] | undefined, b: string[] | undefined): string[] {
   const out = new Set<string>();
-  for (const t of a || []) out.add(t);
-  for (const t of b || []) out.add(t);
+  for (const t of a || []) out.add(String(t));
+  for (const t of b || []) out.add(String(t));
   return Array.from(out).sort();
 }
 
@@ -173,7 +175,7 @@ export function mergeWorkItems(
           if (valuesEqual) continue;
 
           if (field === 'tags') {
-            const mergedTags = mergeTags(localValue as any, remoteValue as any);
+            const mergedTags = mergeTags(localValue as string[] | undefined, remoteValue as string[] | undefined);
             (merged as any)[field] = mergedTags;
             mergedFields.push('tags (union)');
             fieldDetails.push({
@@ -293,8 +295,8 @@ export function mergeWorkItems(
             const localIsDefault = isDefaultValue(localValue, field, options);
             const remoteIsDefault = isDefaultValue(remoteValue, field, options);
 
-            if (field === 'tags' && Array.isArray(localValue) && Array.isArray(remoteValue)) {
-              const mergedTags = mergeTags(localValue, remoteValue);
+            if (field === 'tags') {
+              const mergedTags = mergeTags(localValue as string[] | undefined, remoteValue as string[] | undefined);
               (merged as any)[field] = mergedTags;
               mergedFields.push('tags (union)');
               fieldDetails.push({
@@ -307,6 +309,7 @@ export function mergeWorkItems(
               });
               continue;
             }
+
             
             if (localIsDefault && !remoteIsDefault) {
               // Remote has a value, local is default - use remote
@@ -426,6 +429,26 @@ export function mergeComments(
     merged: Array.from(mergedMap.values()),
     conflicts: [] // Comments don't have conflicts in this simple model
   };
+}
+
+/**
+ * Merge dependency edges by unique from/to pairs.
+ */
+export function mergeDependencyEdges(
+  localEdges: DependencyEdge[],
+  remoteEdges: DependencyEdge[]
+): { merged: DependencyEdge[] } {
+  const merged = new Map<string, DependencyEdge>();
+  for (const edge of localEdges) {
+    merged.set(`${edge.fromId}::${edge.toId}`, edge);
+  }
+  for (const edge of remoteEdges) {
+    const key = `${edge.fromId}::${edge.toId}`;
+    if (!merged.has(key)) {
+      merged.set(key, edge);
+    }
+  }
+  return { merged: Array.from(merged.values()) };
 }
 
 /**

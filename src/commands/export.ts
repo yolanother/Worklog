@@ -19,7 +19,8 @@ export default function register(ctx: PluginContext): void {
       const db = utils.getDatabase(options.prefix);
       const items = db.getAll();
       const comments = db.getAllComments();
-      exportToJsonl(items, comments, options.file || dataPath);
+      const dependencyEdges = db.getAllDependencyEdges();
+      exportToJsonl(items, comments, options.file || dataPath, dependencyEdges);
       
       if (utils.isJsonMode()) {
         output.json({ 

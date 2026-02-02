@@ -88,10 +88,9 @@ export class WorklogDatabase {
          // Debug: send to stderr so JSON stdout is preserved for --json mode
          this.debug(`Refreshing database from ${this.jsonlPath}...`);
        }
-        const { items: jsonlItems, comments: jsonlComments } = importFromJsonl(this.jsonlPath);
-        const existingEdges = this.store.getAllDependencyEdges();
+        const { items: jsonlItems, comments: jsonlComments, dependencyEdges } = importFromJsonl(this.jsonlPath);
         this.store.importData(jsonlItems, jsonlComments);
-        for (const edge of existingEdges) {
+        for (const edge of dependencyEdges) {
           if (this.store.getWorkItem(edge.fromId) && this.store.getWorkItem(edge.toId)) {
             this.store.saveDependencyEdge(edge);
           }
@@ -115,29 +114,30 @@ export class WorklogDatabase {
       return;
     }
     
-     const items = this.store.getAllWorkItems();
-      const comments = this.store.getAllComments();
-      let itemsToExport = items;
-      let commentsToExport = comments;
-     if (fs.existsSync(this.jsonlPath)) {
-       try {
-         const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
-         const itemMergeResult = mergeWorkItems(items, diskItems);
-         const commentMergeResult = mergeComments(comments, diskComments);
-         itemsToExport = itemMergeResult.merged;
-         commentsToExport = commentMergeResult.merged;
-       } catch (error) {
-         if (!this.silent) {
-           const message = error instanceof Error ? error.message : String(error);
-           this.debug(`WorklogDatabase.exportToJsonl: merge failed, exporting local snapshot. ${message}`);
-         }
-       }
-     }
-     if (!this.silent) {
-       // Debug: use stderr for diagnostic logs
-       this.debug(`WorklogDatabase.exportToJsonl: exporting ${itemsToExport.length} items and ${commentsToExport.length} comments to ${this.jsonlPath}`);
-     }
-      exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath);
+    const items = this.store.getAllWorkItems();
+    const comments = this.store.getAllComments();
+    let itemsToExport = items;
+    let commentsToExport = comments;
+    if (fs.existsSync(this.jsonlPath)) {
+      try {
+        const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
+        const itemMergeResult = mergeWorkItems(items, diskItems);
+        const commentMergeResult = mergeComments(comments, diskComments);
+        itemsToExport = itemMergeResult.merged;
+        commentsToExport = commentMergeResult.merged;
+      } catch (error) {
+        if (!this.silent) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.debug(`WorklogDatabase.exportToJsonl: merge failed, exporting local snapshot. ${message}`);
+        }
+      }
+    }
+    if (!this.silent) {
+      // Debug: use stderr for diagnostic logs
+      this.debug(`WorklogDatabase.exportToJsonl: exporting ${itemsToExport.length} items and ${commentsToExport.length} comments to ${this.jsonlPath}`);
+    }
+    const dependencyEdges = this.store.getAllDependencyEdges();
+    exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath, dependencyEdges);
   }
 
   private debug(message: string): void {
@@ -1009,10 +1009,18 @@ export class WorklogDatabase {
   /**
    * Import work items (replaces existing data)
    */
-  import(items: WorkItem[]): void {
+  import(items: WorkItem[], dependencyEdges?: DependencyEdge[]): void {
     this.store.clearWorkItems();
     for (const item of items) {
       this.store.saveWorkItem(item);
+    }
+    if (dependencyEdges) {
+      this.store.clearDependencyEdges();
+      for (const edge of dependencyEdges) {
+        if (this.store.getWorkItem(edge.fromId) && this.store.getWorkItem(edge.toId)) {
+          this.store.saveDependencyEdge(edge);
+        }
+      }
     }
     this.exportToJsonl();
     this.triggerAutoSync();
@@ -1164,6 +1172,10 @@ export class WorklogDatabase {
    */
   getAllComments(): Comment[] {
     return this.store.getAllComments();
+  }
+
+  getAllDependencyEdges(): DependencyEdge[] {
+    return this.store.getAllDependencyEdges();
   }
 
   /**

@@ -8,6 +8,14 @@ export type WorkItemRiskLevel = 'Low' | 'Medium' | 'High' | 'Severe';
 export type WorkItemEffortLevel = 'XS' | 'S' | 'M' | 'L' | 'XL';
 
 /**
+ * JSONL dependency edge representation
+ */
+export interface WorkItemDependency {
+  from: string;
+  to: string;
+}
+
+/**
  * Represents a work item in the system
  */
 export interface WorkItem {
@@ -23,6 +31,9 @@ export interface WorkItem {
   tags: string[];
   assignee: string;
   stage: string;
+
+  // Optional dependency edges (JSONL import/export)
+  dependencies?: WorkItemDependency[];
 
   // Optional metadata for import/interoperability with other issue trackers
   issueType: string;
