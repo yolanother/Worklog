@@ -242,6 +242,54 @@ describe('TUI integration: style preservation', () => {
     expect(content).toContain('{close}');
   });
 
+  it('renders all comments for selected item in details', async () => {
+    vi.resetModules();
+    let savedAction: Function | null = null;
+    const program: any = {
+      opts: () => ({ verbose: false }),
+      command() { return this; },
+      description() { return this; },
+      option() { return this; },
+      action(fn: Function) { savedAction = fn; return this; },
+    };
+
+    const comments = [
+      { id: 'WL-C1', workItemId: 'WL-TEST-1', author: 'first', comment: 'First comment', createdAt: '2026-02-01T10:00:00.000Z', references: [] },
+      { id: 'WL-C2', workItemId: 'WL-TEST-1', author: 'second', comment: 'Second comment', createdAt: '2026-02-02T10:00:00.000Z', references: [] },
+    ];
+
+    const utils = {
+      requireInitialized: () => {},
+      getDatabase: () => ({
+        list: () => [{ id: 'WL-TEST-1', title: 'Detail item', status: 'open' }],
+        getPrefix: () => 'default',
+        getCommentsForWorkItem: (_id: string) => comments,
+        get: () => ({ id: 'WL-TEST-1', title: 'Detail item', status: 'open' }),
+      }),
+    };
+
+    const mod = await import('../src/commands/tui');
+    const register = mod.default || mod;
+    register({ program, utils, blessed: blessedMock } as any);
+
+    await (savedAction as any)({});
+
+    const boxMock = (blessedMock as any).box?.mock;
+    const boxCalls = boxMock?.calls || [];
+    const detailIndex = boxCalls.findIndex((call: any[]) => call?.[0]?.label === ' Details ');
+    const detail = detailIndex >= 0 ? boxMock.results[detailIndex]?.value : null;
+
+    const selectHandler = handlers['select'] || handlers['select item'];
+    expect(typeof selectHandler).toBe('function');
+    selectHandler(null, 0);
+
+    const setContentCalls = detail?.setContent?.mock?.calls || [];
+    const content = setContentCalls.length > 0 ? setContentCalls[setContentCalls.length - 1][0] : '';
+    expect(content).toContain('First comment');
+    expect(content).toContain('Second comment');
+    expect(content.indexOf('First comment')).toBeLessThan(content.indexOf('Second comment'));
+  });
+
   it('cycles focus panes with Ctrl+W then w', async () => {
     vi.resetModules();
     let savedAction: Function | null = null;
