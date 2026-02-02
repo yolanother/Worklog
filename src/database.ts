@@ -1099,6 +1099,7 @@ export class WorklogDatabase {
    * Get all comments for a work item
    */
   getCommentsForWorkItem(workItemId: string): Comment[] {
+    this.refreshFromJsonlIfNewer();
     return this.store.getCommentsForWorkItem(workItemId);
   }
 
