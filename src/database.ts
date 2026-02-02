@@ -8,6 +8,7 @@ import * as path from 'path';
 import { WorkItem, CreateWorkItemInput, UpdateWorkItemInput, WorkItemQuery, Comment, CreateCommentInput, UpdateCommentInput, NextWorkItemResult } from './types.js';
 import { SqlitePersistentStore } from './persistent-store.js';
 import { importFromJsonl, exportToJsonl, getDefaultDataPath } from './jsonl.js';
+import { mergeWorkItems, mergeComments } from './sync.js';
 
 const UNIQUE_TIME_LENGTH = 9;
 const UNIQUE_RANDOM_BYTES = 4;
@@ -110,11 +111,27 @@ export class WorklogDatabase {
     
      const items = this.store.getAllWorkItems();
      const comments = this.store.getAllComments();
+     let itemsToExport = items;
+     let commentsToExport = comments;
+     if (fs.existsSync(this.jsonlPath)) {
+       try {
+         const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
+         const itemMergeResult = mergeWorkItems(items, diskItems);
+         const commentMergeResult = mergeComments(comments, diskComments);
+         itemsToExport = itemMergeResult.merged;
+         commentsToExport = commentMergeResult.merged;
+       } catch (error) {
+         if (!this.silent) {
+           const message = error instanceof Error ? error.message : String(error);
+           this.debug(`WorklogDatabase.exportToJsonl: merge failed, exporting local snapshot. ${message}`);
+         }
+       }
+     }
      if (!this.silent) {
        // Debug: use stderr for diagnostic logs
-       this.debug(`WorklogDatabase.exportToJsonl: exporting ${items.length} items and ${comments.length} comments to ${this.jsonlPath}`);
+       this.debug(`WorklogDatabase.exportToJsonl: exporting ${itemsToExport.length} items and ${commentsToExport.length} comments to ${this.jsonlPath}`);
      }
-     exportToJsonl(items, comments, this.jsonlPath);
+     exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath);
   }
 
   private debug(message: string): void {
@@ -315,6 +332,7 @@ export class WorklogDatabase {
    * Update a work item
    */
   update(id: string, input: UpdateWorkItemInput): WorkItem | null {
+    this.refreshFromJsonlIfNewer();
     const item = this.store.getWorkItem(id);
     if (!item) {
       return null;
@@ -341,6 +359,7 @@ export class WorklogDatabase {
    * Delete a work item
    */
   delete(id: string): boolean {
+    this.refreshFromJsonlIfNewer();
     const result = this.store.deleteWorkItem(id);
     if (result) {
       this.exportToJsonl();

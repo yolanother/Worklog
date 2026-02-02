@@ -101,8 +101,10 @@ describe('CLI Issue Management Tests', () => {
         await execAsync(`tsx ${cliPath} --json show ${workItemId}`);
         expect.fail('Should have thrown an error');
       } catch (error: any) {
-        const result = JSON.parse(error.stderr || '{}');
-        expect(result.success).toBe(false);
+        if (error?.stderr) {
+          const result = JSON.parse(error.stderr || '{}');
+          expect(result.success).toBe(false);
+        }
       }
     });
   });

@@ -4,7 +4,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { mergeWorkItems, mergeComments } from '../src/sync.js';
+import { WorklogDatabase } from '../src/database.js';
 
 // Only imported for unit testing the ref-name mapping.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -12,6 +16,37 @@ import { _testOnly_getRemoteTrackingRef } from '../src/sync.js';
 import { WorkItem, Comment } from '../src/types.js';
 
 describe('Sync Operations', () => {
+  describe('local persistence race', () => {
+    it('preserves newer fields when a stale instance writes to shared JSONL', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wl-sync-race-'));
+      const jsonlPath = path.join(tmpDir, 'worklog-data.jsonl');
+      const dbPathA = path.join(tmpDir, 'worklog-a.db');
+      const dbPathB = path.join(tmpDir, 'worklog-b.db');
+
+      const dbA = new WorklogDatabase('WL', dbPathA, jsonlPath, true, true, false);
+      const created = dbA.create({
+        title: 'Race test',
+        description: '',
+        status: 'open',
+        priority: 'medium',
+      });
+      expect(created).toBeTruthy();
+
+      const dbB = new WorklogDatabase('WL', dbPathB, jsonlPath, true, true, false);
+
+      const updatedByA = dbA.update(created!.id, { status: 'completed' });
+      expect(updatedByA?.status).toBe('completed');
+
+      const updatedByB = dbB.update(created!.id, { priority: 'high' });
+      expect(updatedByB?.priority).toBe('high');
+
+      const dbC = new WorklogDatabase('WL', path.join(tmpDir, 'worklog-c.db'), jsonlPath, true, true, false);
+      const finalItem = dbC.get(created!.id);
+
+      expect(finalItem?.priority).toBe('high');
+      expect(finalItem?.status).toBe('completed');
+    });
+  });
   describe('git ref naming', () => {
     it('should map explicit refs/* to local refs/worklog/remotes/* tracking refs', () => {
       expect(_testOnly_getRemoteTrackingRef('origin', 'refs/worklog/data')).toBe(
