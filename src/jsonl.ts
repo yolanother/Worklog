@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItem, Comment } from './types.js';
+import { WorkItem, Comment, DependencyEdge, WorkItemDependency } from './types.js';
 import { stripWorklogMarkers } from './github.js';
 import { resolveWorklogDir } from './worklog-paths.js';
 
@@ -30,13 +30,46 @@ interface JsonlRecord {
   data: WorkItem | Comment;
 }
 
+function normalizeDependencies(input: WorkItemDependency[] | undefined): WorkItemDependency[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter(edge => edge && typeof edge.from === 'string' && typeof edge.to === 'string')
+    .map(edge => ({ from: edge.from, to: edge.to }));
+}
+
+export function dependenciesFromEdges(edges: DependencyEdge[], itemId: string): WorkItemDependency[] {
+  return edges
+    .filter(edge => edge.fromId === itemId)
+    .map(edge => ({ from: edge.fromId, to: edge.toId }))
+    .sort((a, b) => {
+      const fromDiff = a.from.localeCompare(b.from);
+      if (fromDiff !== 0) return fromDiff;
+      return a.to.localeCompare(b.to);
+    });
+}
+
+function mergeDependencyEdges(edges: DependencyEdge[]): DependencyEdge[] {
+  const merged = new Map<string, DependencyEdge>();
+  for (const edge of edges) {
+    merged.set(`${edge.fromId}::${edge.toId}`, edge);
+  }
+  return Array.from(merged.values());
+}
+
+
 /**
  * Export work items and comments to a JSONL file
  */
-export function exportToJsonl(items: WorkItem[], comments: Comment[], filepath: string): void {
+export function exportToJsonl(
+  items: WorkItem[],
+  comments: Comment[],
+  filepath: string,
+  dependencyEdges: DependencyEdge[] = []
+): void {
   const lines: string[] = [];
 
   const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id));
+  const normalizedEdges = mergeDependencyEdges(dependencyEdges);
   const sortedComments = [...comments].sort((a, b) => {
     const wi = a.workItemId.localeCompare(b.workItemId);
     if (wi !== 0) return wi;
@@ -47,7 +80,12 @@ export function exportToJsonl(items: WorkItem[], comments: Comment[], filepath: 
   
   // Add work items
   sortedItems.forEach(item => {
-    lines.push(stableStringify({ type: 'workitem', data: item }));
+    const dependencies = dependenciesFromEdges(normalizedEdges, item.id);
+    const itemWithDeps: WorkItem = {
+      ...item,
+      dependencies: dependencies.length > 0 ? dependencies : [],
+    };
+    lines.push(stableStringify({ type: 'workitem', data: itemWithDeps }));
   });
   
   // Add comments
@@ -67,7 +105,7 @@ export function exportToJsonl(items: WorkItem[], comments: Comment[], filepath: 
 /**
  * Import work items and comments from a JSONL file
  */
-export function importFromJsonl(filepath: string): { items: WorkItem[], comments: Comment[] } {
+export function importFromJsonl(filepath: string): { items: WorkItem[], comments: Comment[], dependencyEdges: DependencyEdge[] } {
   if (!fs.existsSync(filepath)) {
     throw new Error(`File not found: ${filepath}`);
   }
@@ -76,11 +114,12 @@ export function importFromJsonl(filepath: string): { items: WorkItem[], comments
   return importFromJsonlContent(content);
 }
 
-export function importFromJsonlContent(content: string): { items: WorkItem[], comments: Comment[] } {
+export function importFromJsonlContent(content: string): { items: WorkItem[], comments: Comment[], dependencyEdges: DependencyEdge[] } {
   const lines = content.split('\n').filter(line => line.trim() !== '');
   
   const items: WorkItem[] = [];
   const comments: Comment[] = [];
+  const dependencyEdges: DependencyEdge[] = [];
   
   for (const line of lines) {
     try {
@@ -89,6 +128,7 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
       // Handle new format with type field
       if (parsed.type === 'workitem' && parsed.data) {
         const item = parsed.data as WorkItem;
+        const dependencies = normalizeDependencies(item.dependencies);
         // Ensure backward compatibility
         if (item.assignee === undefined) {
           item.assignee = '';
@@ -135,7 +175,11 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if (item.description) {
           item.description = stripWorklogMarkers(item.description);
         }
+        item.dependencies = dependencies;
         items.push(item);
+        for (const dep of dependencies) {
+          dependencyEdges.push({ fromId: dep.from, toId: dep.to, createdAt: new Date().toISOString() });
+        }
       } else if (parsed.type === 'comment' && parsed.data) {
         const comment = parsed.data as Comment;
         if (comment.comment) {
@@ -146,6 +190,7 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         // Handle old format (no type field) - assume it's a work item
         console.warn(`Warning: Found entry without type field, assuming it's a work item. Consider migrating to the new format.`);
         const item = parsed as WorkItem;
+        const dependencies = normalizeDependencies(item.dependencies);
         if (item.assignee === undefined) {
           item.assignee = '';
         }
@@ -191,7 +236,11 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if (item.description) {
           item.description = stripWorklogMarkers(item.description);
         }
+        item.dependencies = dependencies;
         items.push(item);
+        for (const dep of dependencies) {
+          dependencyEdges.push({ fromId: dep.from, toId: dep.to, createdAt: new Date().toISOString() });
+        }
       }
     } catch (error) {
       console.error(`Error parsing line: ${line}`);
@@ -199,7 +248,7 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
     }
   }
   
-  return { items, comments };
+  return { items, comments, dependencyEdges };
 }
 
 /**

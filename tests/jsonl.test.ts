@@ -334,12 +334,98 @@ describe('JSONL Import/Export', () => {
 
       // Verify items
       expect(items).toHaveLength(originalItems.length);
-      expect(items[0]).toEqual(originalItems[0]);
-      expect(items[1]).toEqual(originalItems[1]);
+      expect(items[0]).toEqual({ ...originalItems[0], dependencies: [] });
+      expect(items[1]).toEqual({ ...originalItems[1], dependencies: [] });
 
       // Verify comments
       expect(comments).toHaveLength(originalComments.length);
       expect(comments[0]).toEqual(originalComments[0]);
+    });
+  });
+
+  describe('dependencies', () => {
+    it('should include dependency edges in JSONL export and import', () => {
+      const items: WorkItem[] = [
+        {
+          id: 'WI-001',
+          title: 'Parent',
+          description: 'Has deps',
+          status: 'open',
+          priority: 'medium',
+          sortIndex: 0,
+          parentId: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          tags: [],
+          assignee: '',
+          stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
+        },
+        {
+          id: 'WI-002',
+          title: 'Dep',
+          description: '',
+          status: 'open',
+          priority: 'medium',
+          sortIndex: 0,
+          parentId: null,
+          createdAt: '2024-01-02T00:00:00.000Z',
+          updatedAt: '2024-01-02T00:00:00.000Z',
+          tags: [],
+          assignee: '',
+          stage: '',
+          issueType: '',
+          createdBy: '',
+          deletedBy: '',
+          deleteReason: '',
+          risk: '' as const,
+          effort: '' as const,
+        },
+      ];
+
+      const edges = [
+        { fromId: 'WI-001', toId: 'WI-002', createdAt: '2024-01-03T00:00:00.000Z' },
+      ];
+
+      exportToJsonl(items, [], testFilePath, edges);
+
+      const { items: importedItems, dependencyEdges } = importFromJsonl(testFilePath);
+
+      const item = importedItems.find(it => it.id === 'WI-001');
+      expect(item?.dependencies).toEqual([{ from: 'WI-001', to: 'WI-002' }]);
+      expect(dependencyEdges).toHaveLength(1);
+      expect(dependencyEdges[0].fromId).toBe('WI-001');
+      expect(dependencyEdges[0].toId).toBe('WI-002');
+    });
+
+    it('should default missing dependencies to empty array', () => {
+      const content = [
+        JSON.stringify({ type: 'workitem', data: {
+          id: 'WI-001',
+          title: 'Task',
+          description: '',
+          status: 'open',
+          priority: 'medium',
+          sortIndex: 0,
+          parentId: null,
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          tags: [],
+          assignee: '',
+          stage: '',
+        }}),
+      ].join('\n') + '\n';
+
+      fs.writeFileSync(testFilePath, content, 'utf-8');
+
+      const result = importFromJsonl(testFilePath);
+      expect(result.items[0].dependencies).toEqual([]);
+      expect(result.dependencyEdges).toHaveLength(0);
     });
   });
 });

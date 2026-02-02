@@ -4,9 +4,10 @@
 
 import type { PluginContext } from '../plugin-types.js';
 import type { InitOptions } from '../cli-types.js';
+import type { DependencyEdge } from '../types.js';
 import { initConfig, loadConfig, configExists, isInitialized, readInitSemaphore, writeInitSemaphore, type InitConfigOptions } from '../config.js';
 import { exportToJsonl } from '../jsonl.js';
-import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments } from '../sync.js';
+import { getRemoteDataFileContent, gitPushDataFileToBranch, mergeWorkItems, mergeComments, mergeDependencyEdges } from '../sync.js';
 import { DEFAULT_GIT_REMOTE, DEFAULT_GIT_BRANCH } from '../sync-defaults.js';
 import { importFromJsonlContent } from '../jsonl.js';
 import * as fs from 'fs';
@@ -778,32 +779,36 @@ async function performInitSync(dataPath: string, prefix?: string, isJsonMode: bo
   
   const localItems = db.getAll();
   const localComments = db.getAllComments();
+  const localEdges = db.getAllDependencyEdges();
   
   const gitTarget = { remote: defaults.gitRemote, branch: defaults.gitBranch };
   const remoteContent = await getRemoteDataFileContent(dataPath, gitTarget);
   
   let remoteItems: any[] = [];
   let remoteComments: any[] = [];
+  let remoteEdges: DependencyEdge[] = [];
   if (remoteContent) {
     const remoteData = importFromJsonlContent(remoteContent);
     remoteItems = remoteData.items;
     remoteComments = remoteData.comments;
+    remoteEdges = remoteData.dependencyEdges || [];
   }
   
   const itemMergeResult = mergeWorkItems(localItems, remoteItems);
   const commentMergeResult = mergeComments(localComments, remoteComments);
+  const edgeMergeResult = mergeDependencyEdges(localEdges, remoteEdges);
   
   const autoSyncEnabled = config?.autoSync === true;
   if (autoSyncEnabled) {
     db.setAutoSync(false);
   }
-  db.import(itemMergeResult.merged);
+  db.import(itemMergeResult.merged, edgeMergeResult.merged);
   db.importComments(commentMergeResult.merged);
   if (autoSyncEnabled) {
     db.setAutoSync(true, () => Promise.resolve());
   }
   
-  exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, dataPath);
+  exportToJsonl(itemMergeResult.merged, commentMergeResult.merged, dataPath, edgeMergeResult.merged);
   await gitPushDataFileToBranch(dataPath, 'Sync work items and comments', gitTarget);
 }
 

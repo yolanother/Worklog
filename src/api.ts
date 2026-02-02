@@ -371,7 +371,8 @@ export function createAPI(db: WorklogDatabase) {
       const filepath = req.body.filepath || getDefaultDataPath();
       const items = db.getAll();
       const comments = db.getAllComments();
-      exportToJsonl(items, comments, filepath);
+      const dependencyEdges = db.getAllDependencyEdges();
+      exportToJsonl(items, comments, filepath, dependencyEdges);
       res.json({ message: 'Export successful', filepath, count: items.length, commentCount: comments.length });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -383,8 +384,8 @@ export function createAPI(db: WorklogDatabase) {
     try {
       db.setPrefix(defaultPrefix);
       const filepath = req.body.filepath || getDefaultDataPath();
-      const { items, comments } = importFromJsonl(filepath);
-      db.import(items);
+      const { items, comments, dependencyEdges } = importFromJsonl(filepath);
+      db.import(items, dependencyEdges);
       db.importComments(comments);
       res.json({ message: 'Import successful', count: items.length, commentCount: comments.length });
     } catch (error) {
