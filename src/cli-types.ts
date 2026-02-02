@@ -108,3 +108,5 @@ export interface RecentOptions { number?: string; children?: boolean; prefix?: s
 export interface CloseOptions { reason?: string; author?: string; prefix?: string }
 
 export interface DeleteOptions { prefix?: string }
+
+export interface DepOptions { prefix?: string }

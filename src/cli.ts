@@ -27,6 +27,7 @@ import recentCommand from './commands/recent.js';
 import pluginsCommand from './commands/plugins.js';
 import tuiCommand from './commands/tui.js';
 import migrateCommand from './commands/migrate.js';
+import depCommand from './commands/dep.js';
 
 // Watch flag parsing - supports -w, -wN, --watch, --watch=N
 function parseWatchFlag(argv: string[]) {
@@ -218,6 +219,7 @@ const builtInCommands = [
   pluginsCommand,
   tuiCommand,
   migrateCommand,
+  depCommand,
   // onboard command removed
 ];
 
@@ -241,6 +243,7 @@ const builtInCommandNames = new Set([
   'plugins',
   'tui',
   'migrate',
+  'dep',
   // 'onboard' removed
 ]);
 
@@ -272,7 +275,7 @@ const formatHelp = (cmd: any, helper: any) => {
 
   // Build groups and mapping of command name -> group
   const groupsDef: { name: string; names: string[] }[] = [
-    { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete'] },
+    { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete', 'dep'] },
     { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
     { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
     { name: 'Maintenance', names: ['migrate'] },

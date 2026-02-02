@@ -162,4 +162,43 @@ describe('CLI Issue Management Tests', () => {
       expect(result.deletedId).toBe(commentId);
     });
   });
+
+  describe('dep commands', () => {
+    it('should add a dependency edge', async () => {
+      const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
+      const { stdout: toStdout } = await execAsync(`tsx ${cliPath} --json create -t "To"`);
+      const fromId = JSON.parse(fromStdout).workItem.id;
+      const toId = JSON.parse(toStdout).workItem.id;
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json dep add ${fromId} ${toId}`);
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.edge.fromId).toBe(fromId);
+      expect(result.edge.toId).toBe(toId);
+    });
+
+    it('should remove a dependency edge', async () => {
+      const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
+      const { stdout: toStdout } = await execAsync(`tsx ${cliPath} --json create -t "To"`);
+      const fromId = JSON.parse(fromStdout).workItem.id;
+      const toId = JSON.parse(toStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${fromId} ${toId}`);
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json dep rm ${fromId} ${toId}`);
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.removed).toBe(true);
+      expect(result.edge.fromId).toBe(fromId);
+      expect(result.edge.toId).toBe(toId);
+    });
+
+    it('should warn for missing ids and exit 0', async () => {
+      const { stdout } = await execAsync(`tsx ${cliPath} --json dep add TEST-NOTFOUND TEST-NOTFOUND-2`);
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.warnings)).toBe(true);
+      expect(result.warnings.length).toBeGreaterThan(0);
+    });
+  });
 });
