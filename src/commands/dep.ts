@@ -2,6 +2,7 @@
  * Dependency commands - Manage dependency edges
  */
 
+import chalk from 'chalk';
 import type { PluginContext } from '../plugin-types.js';
 import type { DepOptions } from '../cli-types.js';
 
@@ -21,27 +22,48 @@ export default function register(ctx: PluginContext): void {
       const db = utils.getDatabase(options.prefix);
       const normalizedItemId = utils.normalizeCliId(itemId, options.prefix) || itemId;
       const normalizedDependsOnId = utils.normalizeCliId(dependsOnId, options.prefix) || dependsOnId;
+      const itemIdLookup = normalizedItemId.toUpperCase();
+      const dependsOnIdLookup = normalizedDependsOnId.toUpperCase();
 
       const warnings: string[] = [];
-      const item = db.get(normalizedItemId);
-      const dependsOn = db.get(normalizedDependsOnId);
+      const item = db.get(itemIdLookup);
+      const dependsOn = db.get(dependsOnIdLookup);
       if (!item) warnings.push(`Work item not found: ${normalizedItemId}`);
       if (!dependsOn) warnings.push(`Work item not found: ${normalizedDependsOnId}`);
 
       if (warnings.length > 0) {
         if (utils.isJsonMode()) {
-          output.json({ success: true, warnings, edge: null });
+          output.error('One or more work items were not found', { success: false, errors: warnings });
         } else {
-          warnings.forEach(w => console.warn(`Warning: ${w}`));
+          warnings.forEach(w => console.error(chalk.red(`Error: ${w}`)));
         }
-        return;
+        process.exit(1);
       }
 
-      const edge = db.addDependencyEdge(normalizedItemId, normalizedDependsOnId);
+      const existing = db.listDependencyEdgesFrom(itemIdLookup).some(edge => edge.toId === dependsOnIdLookup);
+      if (existing) {
+        if (utils.isJsonMode()) {
+          output.error('Dependency already exists.', { success: false, error: 'Dependency already exists.' });
+        } else {
+          console.error('Dependency already exists.');
+        }
+        process.exit(1);
+      }
+
+      const edge = db.addDependencyEdge(itemIdLookup, dependsOnIdLookup);
+      if (dependsOn && !['in_review', 'done'].includes(dependsOn.stage)) {
+        if (item && !['completed', 'deleted'].includes(item.status)) {
+          db.update(itemIdLookup, { status: 'blocked' });
+        }
+      }
       if (utils.isJsonMode()) {
         output.json({ success: true, edge });
       } else {
-        console.log(`Added dependency: ${normalizedItemId} depends on ${normalizedDependsOnId}`);
+        console.log(chalk.green('Successfully added dependency between'));
+        const itemLabel = `${item?.title || itemIdLookup} ${chalk.gray(`(${itemIdLookup})`)}`;
+        const dependsOnLabel = `${dependsOn?.title || dependsOnIdLookup} ${chalk.gray(`(${dependsOnIdLookup})`)}`;
+        console.log(`${itemLabel} ${chalk.green('which depends on')}`);
+        console.log(`${dependsOnLabel}.`);
       }
     });
 
@@ -54,10 +76,12 @@ export default function register(ctx: PluginContext): void {
       const db = utils.getDatabase(options.prefix);
       const normalizedItemId = utils.normalizeCliId(itemId, options.prefix) || itemId;
       const normalizedDependsOnId = utils.normalizeCliId(dependsOnId, options.prefix) || dependsOnId;
+      const itemIdLookup = normalizedItemId.toUpperCase();
+      const dependsOnIdLookup = normalizedDependsOnId.toUpperCase();
 
       const warnings: string[] = [];
-      const item = db.get(normalizedItemId);
-      const dependsOn = db.get(normalizedDependsOnId);
+      const item = db.get(itemIdLookup);
+      const dependsOn = db.get(dependsOnIdLookup);
       if (!item) warnings.push(`Work item not found: ${normalizedItemId}`);
       if (!dependsOn) warnings.push(`Work item not found: ${normalizedDependsOnId}`);
 
@@ -70,13 +94,28 @@ export default function register(ctx: PluginContext): void {
         return;
       }
 
-      const removed = db.removeDependencyEdge(normalizedItemId, normalizedDependsOnId);
+      const removed = db.removeDependencyEdge(itemIdLookup, dependsOnIdLookup);
       if (utils.isJsonMode()) {
-        output.json({ success: true, removed, edge: { fromId: normalizedItemId, toId: normalizedDependsOnId } });
+        output.json({ success: true, removed, edge: { fromId: itemIdLookup, toId: dependsOnIdLookup } });
       } else if (removed) {
-        console.log(`Removed dependency: ${normalizedItemId} depends on ${normalizedDependsOnId}`);
+        console.log(chalk.green('Successfully removed dependency between'));
+        const itemLabel = `${item?.title || itemIdLookup} ${chalk.gray(`(${itemIdLookup})`)}`;
+        const dependsOnLabel = `${dependsOn?.title || dependsOnIdLookup} ${chalk.gray(`(${dependsOnIdLookup})`)}`;
+        console.log(`${itemLabel} ${chalk.green('no longer depends on')}`);
+        console.log(`${dependsOnLabel}.`);
       } else {
-        console.log(`No dependency found: ${normalizedItemId} depends on ${normalizedDependsOnId}`);
+        console.log(`No dependency found: ${itemIdLookup} depends on ${dependsOnIdLookup}`);
+      }
+
+      if (removed && item && !['completed', 'deleted'].includes(item.status)) {
+        const remaining = db.listDependencyEdgesFrom(itemIdLookup);
+        const stillBlocked = remaining.some(edge => {
+          const dep = db.get(edge.toId);
+          return dep && !['in_review', 'done'].includes(dep.stage);
+        });
+        if (!stillBlocked) {
+          db.update(itemIdLookup, { status: 'open' });
+        }
       }
     });
 }

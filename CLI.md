@@ -119,6 +119,29 @@ wl close WL-ABC123 -r "Resolved by PR #42" -a alice
 wl close WL-ABC123 WL-DEF456 -r "Cleanup after release"
 ```
 
+### `dep` (subcommands)
+
+Manage dependency edges attached to work items. Use `wl dep <subcommand>`.
+
+Subcommands:
+
+- `add <itemId> <dependsOnId>` — Create a dependency where `itemId` depends on `dependsOnId`.
+- `rm <itemId> <dependsOnId>` — Remove a dependency where `itemId` depends on `dependsOnId`.
+
+Behavior:
+
+- `dep add` errors if either work item does not exist.
+- `dep add` errors if the dependency already exists.
+- `dep rm` warns and exits 0 when ids are missing.
+
+Examples:
+
+```sh
+wl dep add WL-ABC123 WL-DEF456
+wl dep rm WL-ABC123 WL-DEF456
+wl --json dep add WL-ABC123 WL-DEF456
+```
+
 ---
 
 ## Status
