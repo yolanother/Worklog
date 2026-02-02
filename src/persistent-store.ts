@@ -5,7 +5,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorkItem, Comment } from './types.js';
+import { WorkItem, Comment, DependencyEdge } from './types.js';
 
 interface DbMetadata {
   lastJsonlImportMtime?: number;
@@ -13,7 +13,7 @@ interface DbMetadata {
   schemaVersion: number;
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export class SqlitePersistentStore {
   private db: Database.Database;
@@ -143,6 +143,19 @@ export class SqlitePersistentStore {
       }
     }
 
+    if (existingVersion < 6) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS dependency_edges (
+          fromId TEXT NOT NULL,
+          toId TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          PRIMARY KEY (fromId, toId),
+          FOREIGN KEY (fromId) REFERENCES workitems(id) ON DELETE CASCADE,
+          FOREIGN KEY (toId) REFERENCES workitems(id) ON DELETE CASCADE
+        )
+      `);
+    }
+
     // Create comments table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS comments (
@@ -156,6 +169,17 @@ export class SqlitePersistentStore {
       )
     `);
 
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS dependency_edges (
+        fromId TEXT NOT NULL,
+        toId TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        PRIMARY KEY (fromId, toId),
+        FOREIGN KEY (fromId) REFERENCES workitems(id) ON DELETE CASCADE,
+        FOREIGN KEY (toId) REFERENCES workitems(id) ON DELETE CASCADE
+      )
+    `);
+
     // Create indexes for common queries
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_workitems_status ON workitems(status);
@@ -164,6 +188,8 @@ export class SqlitePersistentStore {
       CREATE INDEX IF NOT EXISTS idx_workitems_parent_sortIndex ON workitems(parentId, sortIndex);
       CREATE INDEX IF NOT EXISTS idx_workitems_parentId ON workitems(parentId);
       CREATE INDEX IF NOT EXISTS idx_comments_workItemId ON comments(workItemId);
+      CREATE INDEX IF NOT EXISTS idx_dependency_edges_fromId ON dependency_edges(fromId);
+      CREATE INDEX IF NOT EXISTS idx_dependency_edges_toId ON dependency_edges(toId);
     `);
 
     // Set schema version if not exists
@@ -439,6 +465,7 @@ export class SqlitePersistentStore {
     const importTransaction = this.db.transaction(() => {
       this.clearWorkItems();
       this.clearComments();
+      this.db.prepare('DELETE FROM dependency_edges').run();
       
       for (const item of items) {
         this.saveWorkItem(item);
@@ -450,6 +477,56 @@ export class SqlitePersistentStore {
     });
 
     importTransaction();
+  }
+
+  /**
+   * Create or update a dependency edge
+   */
+  saveDependencyEdge(edge: DependencyEdge): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO dependency_edges (fromId, toId, createdAt)
+      VALUES (?, ?, ?)
+      ON CONFLICT(fromId, toId) DO UPDATE SET
+        createdAt = excluded.createdAt
+    `);
+
+    stmt.run(edge.fromId, edge.toId, edge.createdAt);
+  }
+
+  /**
+   * Remove a dependency edge
+   */
+  deleteDependencyEdge(fromId: string, toId: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM dependency_edges WHERE fromId = ? AND toId = ?');
+    const result = stmt.run(fromId, toId);
+    return result.changes > 0;
+  }
+
+  /**
+   * List all dependency edges
+   */
+  getAllDependencyEdges(): DependencyEdge[] {
+    const stmt = this.db.prepare('SELECT * FROM dependency_edges');
+    const rows = stmt.all() as any[];
+    return rows.map(row => this.rowToDependencyEdge(row));
+  }
+
+  /**
+   * List outbound dependency edges (fromId depends on toId)
+   */
+  getDependencyEdgesFrom(fromId: string): DependencyEdge[] {
+    const stmt = this.db.prepare('SELECT * FROM dependency_edges WHERE fromId = ?');
+    const rows = stmt.all(fromId) as any[];
+    return rows.map(row => this.rowToDependencyEdge(row));
+  }
+
+  /**
+   * List inbound dependency edges (items that depend on toId)
+   */
+  getDependencyEdgesTo(toId: string): DependencyEdge[] {
+    const stmt = this.db.prepare('SELECT * FROM dependency_edges WHERE toId = ?');
+    const rows = stmt.all(toId) as any[];
+    return rows.map(row => this.rowToDependencyEdge(row));
   }
 
   /**
@@ -543,5 +620,16 @@ export class SqlitePersistentStore {
         references: [],
       };
     }
+  }
+
+  /**
+   * Convert database row to DependencyEdge
+   */
+  private rowToDependencyEdge(row: any): DependencyEdge {
+    return {
+      fromId: row.fromId,
+      toId: row.toId,
+      createdAt: row.createdAt,
+    };
   }
 }

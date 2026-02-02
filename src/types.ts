@@ -132,6 +132,16 @@ export interface Comment {
 }
 
 /**
+ * Represents a dependency edge between work items
+ * fromId depends on toId
+ */
+export interface DependencyEdge {
+  fromId: string;
+  toId: string;
+  createdAt: string;
+}
+
+/**
  * Input for creating a new comment
  */
 export interface CreateCommentInput {
