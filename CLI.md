@@ -123,6 +123,10 @@ wl close WL-ABC123 WL-DEF456 -r "Cleanup after release"
 
 Manage dependency edges attached to work items. Use `wl dep <subcommand>`.
 
+Notes:
+
+- Prefer dependency edges for new work; they are the recommended way to track blockers.
+
 Subcommands:
 
 - `add <itemId> <dependsOnId>` — Create a dependency where `itemId` depends on `dependsOnId`.
