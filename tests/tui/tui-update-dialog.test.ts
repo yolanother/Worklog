@@ -458,6 +458,15 @@ describe('TUI Update Dialog', () => {
 
       expect(updateDialogText.getContent()).toContain('Status: in-progress · Stage: in_progress · Priority: critical');
 
+      updateDialogHeader({
+        status: 'completed',
+        stage: 'in_review',
+        priority: 'high',
+        adjusted: true
+      });
+
+      expect(updateDialogText.getContent()).toContain('(Adjusted)');
+
       screen.destroy();
     });
   });
@@ -471,6 +480,26 @@ describe('TUI Update Dialog', () => {
         {
           statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
           stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          priorities: ['critical', 'high', 'medium', 'low'],
+        },
+        {
+          statusStage: STATUS_STAGE_COMPATIBILITY,
+          stageStatus: STAGE_STATUS_COMPATIBILITY,
+        }
+      );
+
+      expect(result.hasChanges).toBe(false);
+      expect(result.updates).toEqual({});
+    });
+
+    it('should reject incompatible selections based on list items', () => {
+      const item = { status: 'open', stage: 'idea', priority: 'medium' };
+      const result = buildUpdateDialogUpdates(
+        item,
+        { statusIndex: 0, stageIndex: 0, priorityIndex: 0 },
+        {
+          statuses: ['completed', 'open'],
+          stages: ['idea', 'in_review'],
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -560,6 +589,26 @@ describe('TUI Update Dialog', () => {
       updateCalls.length = 0;
       submitUpdateDialog();
       expect(updateCalls).toHaveLength(1);
+    });
+
+    it('should treat blank stage as compatible with deleted status', () => {
+      const item = { status: 'open', stage: '', priority: 'medium' };
+      const result = buildUpdateDialogUpdates(
+        item,
+        { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
+        {
+          statuses: ['deleted'],
+          stages: [''],
+          priorities: ['critical', 'high', 'medium', 'low'],
+        },
+        {
+          statusStage: STATUS_STAGE_COMPATIBILITY,
+          stageStatus: STAGE_STATUS_COMPATIBILITY,
+        }
+      );
+
+      expect(result.hasChanges).toBe(true);
+      expect(result.updates).toEqual({ status: 'deleted' });
     });
 
     it('should not call db.update when Escape cancels', () => {
