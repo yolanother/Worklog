@@ -118,4 +118,81 @@ export default function register(ctx: PluginContext): void {
         }
       }
     });
+
+  depCommand
+    .command('list <itemId>')
+    .description('List inbound and outbound dependency edges for a work item')
+    .option('--prefix <prefix>', 'Override the default prefix')
+    .action((itemId: string, options: DepOptions) => {
+      utils.requireInitialized();
+      const db = utils.getDatabase(options.prefix);
+      const normalizedItemId = utils.normalizeCliId(itemId, options.prefix) || itemId;
+      const itemIdLookup = normalizedItemId.toUpperCase();
+
+      const warnings: string[] = [];
+      const item = db.get(itemIdLookup);
+      if (!item) warnings.push(`Work item not found: ${normalizedItemId}`);
+
+      if (warnings.length > 0) {
+        if (utils.isJsonMode()) {
+          output.json({ success: true, warnings, inbound: [], outbound: [] });
+        } else {
+          warnings.forEach(w => console.warn(`Warning: ${w}`));
+        }
+        return;
+      }
+
+      const outboundEdges = db.listDependencyEdgesFrom(itemIdLookup);
+      const inboundEdges = db.listDependencyEdgesTo(itemIdLookup);
+
+      const outbound = outboundEdges.map(edge => {
+        const dep = db.get(edge.toId);
+        return {
+          id: edge.toId,
+          title: dep?.title || '(missing)',
+          status: dep?.status || 'deleted',
+          priority: dep?.priority || 'medium',
+          direction: 'depends-on',
+        };
+      });
+
+      const inbound = inboundEdges.map(edge => {
+        const dep = db.get(edge.fromId);
+        return {
+          id: edge.fromId,
+          title: dep?.title || '(missing)',
+          status: dep?.status || 'deleted',
+          priority: dep?.priority || 'medium',
+          direction: 'depended-on-by',
+        };
+      });
+
+      if (utils.isJsonMode()) {
+        output.json({ success: true, item: itemIdLookup, inbound, outbound });
+        return;
+      }
+
+      console.log(`Dependencies for ${item?.title || itemIdLookup} ${chalk.gray(`(${itemIdLookup})`)}`);
+      console.log('');
+      console.log('Depends on:');
+      if (outbound.length === 0) {
+        console.log('  (none)');
+      } else {
+        outbound.forEach(dep => {
+          const titleText = dep.status === 'completed'
+            ? chalk.green(chalk.strikethrough(dep.title))
+            : chalk.red(dep.title);
+          console.log(`  - ${titleText} ${chalk.gray(`(${dep.id})`)} Status: ${dep.status} Priority: ${dep.priority} Direction: ${dep.direction}`);
+        });
+      }
+      console.log('');
+      console.log('Depended on by:');
+      if (inbound.length === 0) {
+        console.log('  (none)');
+      } else {
+        inbound.forEach(dep => {
+          console.log(`  - ${dep.title} ${chalk.gray(`(${dep.id})`)} Status: ${dep.status} Priority: ${dep.priority} Direction: ${dep.direction}`);
+        });
+      }
+    });
 }

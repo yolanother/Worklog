@@ -127,18 +127,21 @@ Subcommands:
 
 - `add <itemId> <dependsOnId>` — Create a dependency where `itemId` depends on `dependsOnId`.
 - `rm <itemId> <dependsOnId>` — Remove a dependency where `itemId` depends on `dependsOnId`.
+- `list <itemId>` — Show inbound and outbound dependencies for `itemId`.
 
 Behavior:
 
 - `dep add` errors if either work item does not exist.
 - `dep add` errors if the dependency already exists.
 - `dep rm` warns and exits 0 when ids are missing.
+- `dep list` warns and exits 0 when ids are missing.
 
 Examples:
 
 ```sh
 wl dep add WL-ABC123 WL-DEF456
 wl dep rm WL-ABC123 WL-DEF456
+wl dep list WL-ABC123
 wl --json dep add WL-ABC123 WL-DEF456
 ```
 
