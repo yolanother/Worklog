@@ -493,7 +493,7 @@ export default function register(ctx: PluginContext): void {
         style: {
           selected: { bg: 'blue' },
         },
-        items: ['View', 'Close'],
+        items: ['View', 'Next recommendation', 'Close'],
       });
 
       const helpMenu = new HelpMenuComponent({ parent: screen, blessed: blessedImpl }).create();
@@ -1560,6 +1560,9 @@ export default function register(ctx: PluginContext): void {
       let nextWorkItem: Item | null = null;
       let nextWorkItemReason = '';
       let nextWorkItemRunning = false;
+      let nextWorkItems: Item[] = [];
+      let nextWorkItemReasons: string[] = [];
+      let nextWorkItemIndex = 0;
 
       function formatStageLabel(stage: string | undefined): string | null {
         if (stage === undefined) return null;
@@ -1572,9 +1575,41 @@ export default function register(ctx: PluginContext): void {
         screen.render();
       }
 
-      function openNextDialog() {
+      function resetNextDialogState() {
         nextWorkItem = null;
         nextWorkItemReason = '';
+        nextWorkItems = [];
+        nextWorkItemReasons = [];
+        nextWorkItemIndex = 0;
+      }
+
+      function renderNextDialogItem(item: Item | null, reason: string, notice?: string) {
+        if (!item) {
+          const reasonLine = reason ? `\nReason: ${reason}` : '';
+          setNextDialogContent(`No work item found.${reasonLine}`);
+          return;
+        }
+        const stageLabel = formatStageLabel(item.stage);
+        const lines = [
+          `{bold}${item.title}{/bold}`,
+          `ID: ${item.id}`,
+          `Status: ${item.status}${stageLabel ? ` · Stage: ${stageLabel}` : ''}`,
+          `Priority: ${item.priority || 'none'}`,
+        ];
+        if (reason) lines.push(`Reason: ${reason}`);
+        if (notice) lines.push(`Note: ${notice}`);
+        setNextDialogContent(lines.join('\n'));
+      }
+
+      function setNextWorkItemFromIndex(index: number, notice?: string) {
+        nextWorkItemIndex = index;
+        nextWorkItem = nextWorkItems[index] || null;
+        nextWorkItemReason = nextWorkItemReasons[index] || '';
+        renderNextDialogItem(nextWorkItem, nextWorkItemReason, notice);
+      }
+
+      function openNextDialog() {
+        resetNextDialogState();
         nextDialogOptions.select(0);
         nextOverlay.show();
         nextDialog.show();
@@ -1584,7 +1619,7 @@ export default function register(ctx: PluginContext): void {
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
         setNextDialogContent('Evaluating next work item...');
-        runNextWorkItem();
+        runNextWorkItems(0);
       }
 
       function closeNextDialog() {
@@ -1665,10 +1700,11 @@ export default function register(ctx: PluginContext): void {
         return false;
       }
 
-      function runNextWorkItem() {
+      function runNextWorkItems(targetIndex: number) {
         if (nextWorkItemRunning) return;
         nextWorkItemRunning = true;
-        const args = ['next', '--json'];
+        const count = Math.max(1, targetIndex + 1);
+        const args = ['next', '--json', '--number', String(count)];
         if (options.prefix) {
           args.push('--prefix', options.prefix);
         }
@@ -1711,28 +1747,33 @@ export default function register(ctx: PluginContext): void {
             return;
           }
 
-          const workItem = payload.workItem;
-          nextWorkItem = workItem || null;
-          nextWorkItemReason = payload.reason || '';
+          const results = Array.isArray(payload.results)
+            ? payload.results
+            : [{ workItem: payload.workItem, reason: payload.reason }];
 
-          if (!workItem) {
+          const usable = results.filter((result: any) => result && result.workItem);
+          nextWorkItems = usable.map((result: any) => result.workItem);
+          nextWorkItemReasons = usable.map((result: any) => result.reason || '');
+
+          if (nextWorkItems.length === 0) {
             const reason = payload.reason ? `\nReason: ${payload.reason}` : '';
             setNextDialogContent(`No work item found.${reason}`);
             return;
           }
 
-          const stageLabel = formatStageLabel(workItem.stage);
-          const lines = [
-            `{bold}${workItem.title}{/bold}`,
-            `ID: ${workItem.id}`,
-            `Status: ${workItem.status}${stageLabel ? ` · Stage: ${stageLabel}` : ''}`,
-            `Priority: ${workItem.priority || 'none'}`,
-          ];
-          if (nextWorkItemReason) {
-            lines.push(`Reason: ${nextWorkItemReason}`);
+          if (targetIndex >= nextWorkItems.length) {
+            renderNextDialogItem(nextWorkItem, nextWorkItemReason, 'No further recommendations available.');
+            return;
           }
-          setNextDialogContent(lines.join('\n'));
+
+          setNextWorkItemFromIndex(targetIndex);
         });
+      }
+
+      function advanceNextRecommendation() {
+        if (nextWorkItemRunning) return;
+        const nextIndex = nextWorkItemIndex + 1;
+        runNextWorkItems(nextIndex);
       }
 
       // Initial render
@@ -2269,6 +2310,10 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         if (idx === 1) {
+          advanceNextRecommendation();
+          return;
+        }
+        if (idx === 2) {
           closeNextDialog();
         }
       });
@@ -2289,6 +2334,10 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         if (idx === 1) {
+          advanceNextRecommendation();
+          return;
+        }
+        if (idx === 2) {
           closeNextDialog();
         }
       });
@@ -2304,8 +2353,17 @@ export default function register(ctx: PluginContext): void {
           return;
         }
         if (idx === 1) {
+          advanceNextRecommendation();
+          return;
+        }
+        if (idx === 2) {
           closeNextDialog();
         }
+      });
+
+      nextDialogOptions.key(['n', 'N'], () => {
+        if (nextDialog.hidden) return;
+        advanceNextRecommendation();
       });
 
       nextDialogOptions.key(['escape'], () => {

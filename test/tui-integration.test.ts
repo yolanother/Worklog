@@ -94,7 +94,14 @@ const blessedMock = {
         widget._screen!.focused = widget;
         handlersByEvent['focus']?.();
       }),
-      key: vi.fn(),
+      key: vi.fn((keys: any, h: Function) => {
+        const list = Array.isArray(keys) ? keys : [keys];
+        list.forEach((entry: any) => {
+          if (typeof entry === 'string') {
+            handlers[`list-key:${entry}`] = h;
+          }
+        });
+      }),
       getScroll: vi.fn(() => 0),
       getContent: vi.fn(() => state.items.join('\n')),
       get selected() { return state.selected; },
@@ -483,5 +490,100 @@ describe('TUI integration: style preservation', () => {
 
     expect(detail?.style?.border?.fg).toBe('green');
     expect(listWidgetAfter?.style?.border?.fg).toBe('white');
+  });
+
+  it('advances to the next recommendation in the Next Item dialog', async () => {
+    vi.resetModules();
+    let savedAction: Function | null = null;
+    const program: any = {
+      opts: () => ({ verbose: false }),
+      command() { return this; },
+      description() { return this; },
+      option() { return this; },
+      action(fn: Function) { savedAction = fn; return this; },
+    };
+
+    const utils = {
+      requireInitialized: () => {},
+      getDatabase: () => ({
+        list: () => [{ id: 'WL-TEST-1', title: 'Item', status: 'open' }],
+        getPrefix: () => 'default',
+        getCommentsForWorkItem: (_id: string) => [],
+        get: () => ({ id: 'WL-TEST-1', title: 'Item', status: 'open' }),
+      }),
+    };
+
+    const spawnMock = vi.fn(() => {
+      const handlersByEvent: Record<string, Function> = {};
+      const stdoutHandlers: Function[] = [];
+      const stderrHandlers: Function[] = [];
+      const child: any = {
+        stdout: { on: vi.fn((_ev: string, h: Function) => stdoutHandlers.push(h)) },
+        stderr: { on: vi.fn((_ev: string, h: Function) => stderrHandlers.push(h)) },
+        on: vi.fn((ev: string, h: Function) => { handlersByEvent[ev] = h; }),
+        _emit: (ev: string, arg?: any) => { handlersByEvent[ev]?.(arg); },
+        _emitStdout: (data: string) => { stdoutHandlers.forEach(h => h(Buffer.from(data))); },
+        _emitStderr: (data: string) => { stderrHandlers.forEach(h => h(Buffer.from(data))); },
+      };
+      return child;
+    });
+
+    vi.doMock('child_process', async () => {
+      const actual = await vi.importActual<any>('child_process');
+      return { ...actual, spawn: spawnMock };
+    });
+
+    const mod = await import('../src/commands/tui');
+    const register = mod.default || mod;
+    register({ program, utils, blessed: blessedMock } as any);
+
+    await (savedAction as any)({});
+
+    const screenKeyN = handlers['screen-key:n'] || handlers['screen-key:N'];
+    expect(typeof screenKeyN).toBe('function');
+
+    const payload = {
+      success: true,
+      count: 2,
+      results: [
+        { workItem: { id: 'WL-1', title: 'First', status: 'open', stage: '', priority: 'high' }, reason: 'First choice' },
+        { workItem: { id: 'WL-2', title: 'Second', status: 'open', stage: '', priority: 'high' }, reason: 'Second choice' },
+      ],
+    };
+
+    screenKeyN(null, { name: 'n' });
+    expect(spawnMock).toHaveBeenCalled();
+
+    const firstCall = spawnMock.mock.results[0]?.value;
+    firstCall._emitStdout(JSON.stringify(payload));
+    firstCall._emit('close', 0);
+
+    const listMock = (blessedMock as any).list?.mock;
+    const listCalls = listMock?.calls || [];
+    const optionsIndex = listCalls.findIndex((call: any[]) => Array.isArray(call?.[0]?.items) && call[0].items.includes('Next recommendation'));
+    expect(optionsIndex).toBeGreaterThanOrEqual(0);
+
+    const boxMock = (blessedMock as any).box?.mock;
+    const contentCalls = boxMock?.results
+      ?.map((res: any) => res?.value?.setContent?.mock?.calls || [])
+      .flat();
+    const renderedFirst = contentCalls?.some((call: any[]) => String(call?.[0] || '').includes('First'));
+    expect(renderedFirst).toBe(true);
+
+    const dialogKeyHandler = handlers['list-key:n'] || handlers['list-key:N'];
+    expect(typeof dialogKeyHandler).toBe('function');
+
+    dialogKeyHandler(null, { name: 'n' });
+
+    const secondCall = spawnMock.mock.results[1]?.value;
+    expect(secondCall).toBeTruthy();
+    secondCall._emitStdout(JSON.stringify(payload));
+    secondCall._emit('close', 0);
+
+    const updatedCalls = boxMock?.results
+      ?.map((res: any) => res?.value?.setContent?.mock?.calls || [])
+      .flat();
+    const renderedSecond = updatedCalls?.some((call: any[]) => String(call?.[0] || '').includes('Second'));
+    expect(renderedSecond).toBe(true);
   });
 });
