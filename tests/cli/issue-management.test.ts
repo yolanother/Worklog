@@ -120,7 +120,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should create a comment', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Test comment"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "John" --body "Test comment"`
       );
 
       const result = JSON.parse(stdout);
@@ -132,7 +132,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should update a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Original"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" --body "Original"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
@@ -148,7 +148,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should delete a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "To delete"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" --body "To delete"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
