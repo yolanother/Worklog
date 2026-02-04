@@ -217,16 +217,21 @@ export class DialogsComponent {
     // handled by focus management logic elsewhere.
     this.updateDialogComment = this.blessedImpl.textarea({
       parent: this.updateDialog,
+      // initial placement; updateLayout will adjust for actual sizes
       top: updateDialogListTop + updateDialogListHeight + 1,
       left: 2,
-      width: '100%-4',
-      height: 4,
+      // leave space for a border so content doesn't overflow
+      width: '100%-6',
+      height: 3,
       inputOnFocus: true,
       keys: true,
       mouse: true,
       scrollable: true,
       alwaysScroll: true,
-      style: { fg: 'white', bg: 'black' },
+      // Provide a visible, grey border and a title label
+      border: { type: 'line' },
+      label: ' Comment ',
+      style: { fg: 'white', bg: 'black', border: { fg: 'gray' } },
     }) as BlessedTextarea;
 
     const updateLayout = () => {
@@ -251,10 +256,15 @@ export class DialogsComponent {
       // Position the comment textarea directly below the lists and give it
       // the remaining space. This keeps layout responsive when heights
       // change.
-      const textareaTop = updateDialogListTop + (stageList.height as number) + 1;
-      const textareaHeight = Math.max(3, (this.updateDialog.height as number) - (textareaTop + 2));
+      // Compute list height as a number (may be set to numeric or string by blessed)
+      const listHeight = Number((stageList.height as any)) || updateDialogListHeight;
+      const textareaTop = updateDialogListTop + listHeight + 1;
+      // Ensure textarea fits inside the dialog; on very small windows reduce to single line
+      const available = (this.updateDialog.height as number) - (textareaTop + 3);
+      const textareaHeight = Math.max(1, Math.min(Math.max(3, available), (this.updateDialog.height as number) - 6));
       (this.updateDialogComment.top as any) = textareaTop;
       (this.updateDialogComment.height as any) = textareaHeight;
+      (this.updateDialogComment.width as any) = '100%-6';
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };
