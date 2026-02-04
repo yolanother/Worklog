@@ -253,6 +253,44 @@ describe('CLI Issue Management Tests', () => {
       expect(result.inbound[0].direction).toBe('depended-on-by');
     });
 
+    it('should list outbound-only dependency edges', async () => {
+      const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
+      const { stdout: toStdout } = await execAsync(`tsx ${cliPath} --json create -t "To"`);
+      const { stdout: otherStdout } = await execAsync(`tsx ${cliPath} --json create -t "Other"`);
+      const fromId = JSON.parse(fromStdout).workItem.id;
+      const toId = JSON.parse(toStdout).workItem.id;
+      const otherId = JSON.parse(otherStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${fromId} ${toId}`);
+      await execAsync(`tsx ${cliPath} --json dep add ${otherId} ${fromId}`);
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json dep list ${fromId} --outgoing`);
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.outbound).toHaveLength(1);
+      expect(result.outbound[0].id).toBe(toId);
+      expect(result.inbound).toHaveLength(0);
+    });
+
+    it('should list inbound-only dependency edges', async () => {
+      const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
+      const { stdout: toStdout } = await execAsync(`tsx ${cliPath} --json create -t "To"`);
+      const { stdout: otherStdout } = await execAsync(`tsx ${cliPath} --json create -t "Other"`);
+      const fromId = JSON.parse(fromStdout).workItem.id;
+      const toId = JSON.parse(toStdout).workItem.id;
+      const otherId = JSON.parse(otherStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${fromId} ${toId}`);
+      await execAsync(`tsx ${cliPath} --json dep add ${otherId} ${fromId}`);
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json dep list ${fromId} --incoming`);
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.inbound).toHaveLength(1);
+      expect(result.inbound[0].id).toBe(otherId);
+      expect(result.outbound).toHaveLength(0);
+    });
+
     it('should warn for missing ids and exit 0 for list', async () => {
       const { stdout } = await execAsync(`tsx ${cliPath} --json dep list TEST-NOTFOUND`);
       const result = JSON.parse(stdout);
@@ -261,6 +299,20 @@ describe('CLI Issue Management Tests', () => {
       expect(result.warnings.length).toBeGreaterThan(0);
       expect(result.inbound).toHaveLength(0);
       expect(result.outbound).toHaveLength(0);
+    });
+
+    it('should error when using incoming and outgoing together', async () => {
+      const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
+      const fromId = JSON.parse(fromStdout).workItem.id;
+
+      try {
+        await execAsync(`tsx ${cliPath} --json dep list ${fromId} --incoming --outgoing`);
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || '{}');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Cannot use --incoming and --outgoing together.');
+      }
     });
   });
 });
