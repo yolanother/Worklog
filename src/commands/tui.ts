@@ -3,7 +3,7 @@
  */
 
 import type { PluginContext } from '../plugin-types.js';
-import type { WorkItemStatus } from '../types.js';
+import type { WorkItem, WorkItemStatus } from '../types.js';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly, formatTitleOnlyTUI } from './helpers.js';
 import chalk from 'chalk';
@@ -36,7 +36,7 @@ import {
 } from '../tui/status-stage-rules.js';
 import { isStatusStageCompatible } from '../tui/status-stage-validation.js';
 
-type Item = any;
+type Item = WorkItem;
 
 export default function register(ctx: PluginContext): void {
   const { program, utils } = ctx;
