@@ -570,16 +570,21 @@ describe('TUI Update Dialog', () => {
         },
       };
 
-      const submitUpdateDialog = () => {
-        const { updates, hasChanges } = buildUpdateDialogUpdates(item, selections, values, {
+      // Extend submission to include a comment via the new multiline textbox
+      const submitUpdateDialogWithComment = (comment?: string) => {
+        const { updates, hasChanges, comment: newComment } = buildUpdateDialogUpdates(item, selections, values, {
           statusStage: STATUS_STAGE_COMPATIBILITY,
           stageStatus: STAGE_STATUS_COMPATIBILITY,
-        });
-        if (!hasChanges) return;
-        db.update(item.id, updates);
+        }, comment);
+        if (!hasChanges && !newComment) return;
+        if (Object.keys(updates).length > 0) db.update(item.id, updates);
+        // Simulate creating a comment when provided
+        if (newComment) {
+          updateCalls.push({ comment: newComment });
+        }
       };
 
-      submitUpdateDialog();
+      submitUpdateDialogWithComment();
       expect(updateCalls).toHaveLength(1);
       expect(updateCalls[0]).toEqual({
         status: 'blocked',
@@ -587,7 +592,7 @@ describe('TUI Update Dialog', () => {
       });
 
       updateCalls.length = 0;
-      submitUpdateDialog();
+      submitUpdateDialogWithComment();
       expect(updateCalls).toHaveLength(1);
     });
 
