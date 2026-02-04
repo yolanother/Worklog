@@ -120,7 +120,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should create a comment', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Test comment"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "John" --body "Test comment"`
       );
 
       const result = JSON.parse(stdout);
@@ -130,9 +130,20 @@ describe('CLI Issue Management Tests', () => {
       expect(result.comment.comment).toBe('Test comment');
     });
 
+    it('should error when both --comment and --body are provided', async () => {
+      try {
+        await execAsync(`tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Legacy" --body "New"`);
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || error.stdout || '{}');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Cannot use both --comment and --body together.');
+      }
+    });
+
     it('should update a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "Original"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" --body "Original"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
@@ -148,7 +159,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should delete a comment', async () => {
       const createResult = await execAsync(
-        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" -c "To delete"`
+        `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" --body "To delete"`
       );
       const created = JSON.parse(createResult.stdout);
       const commentId = created.comment.id;
