@@ -119,7 +119,7 @@ describe('TUI Update Dialog', () => {
       // Create blessed screen and dialog components
       const screen = blessed.screen({ mouse: true, smartCSR: true });
 
-      const updateDialog = blessed.box({
+       const updateDialog = blessed.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -134,7 +134,7 @@ describe('TUI Update Dialog', () => {
         style: { border: { fg: 'magenta' } }
       });
 
-      const updateDialogText = blessed.box({
+       const updateDialogText = blessed.box({
         parent: updateDialog,
         top: 1,
         left: 2,
@@ -142,6 +142,16 @@ describe('TUI Update Dialog', () => {
         width: '100%-4',
         content: 'Update selected item fields:',
         tags: false
+      });
+
+      // Create a dummy textarea to reflect the new UI element
+      const updateDialogComment = blessed.textarea({
+        parent: updateDialog,
+        top: 22,
+        left: 2,
+        width: '100%-4',
+        height: 2,
+        inputOnFocus: true,
       });
 
       blessed.box({

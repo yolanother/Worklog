@@ -1,5 +1,5 @@
 import blessed from 'blessed';
-import type { BlessedBox, BlessedFactory, BlessedList, BlessedScreen } from '../types.js';
+import type { BlessedBox, BlessedFactory, BlessedList, BlessedScreen, BlessedTextarea } from '../types.js';
 import type { OverlaysComponent } from './overlays.js';
 
 export interface DialogsComponentOptions {
@@ -26,6 +26,7 @@ export class DialogsComponent {
   readonly updateDialogStageOptions: BlessedList;
   readonly updateDialogStatusOptions: BlessedList;
   readonly updateDialogPriorityOptions: BlessedList;
+  readonly updateDialogComment: BlessedTextarea;
 
   constructor(options: DialogsComponentOptions) {
     this.screen = options.parent;
@@ -211,11 +212,29 @@ export class DialogsComponent {
     this.updateDialogStatusOptions = statusList;
     this.updateDialogPriorityOptions = priorityList;
 
+    // Multiline comment textarea placed below the selection lists. It accepts
+    // inputOnFocus so Enter inserts newlines; Tab/Shift-Tab navigation is
+    // handled by focus management logic elsewhere.
+    this.updateDialogComment = this.blessedImpl.textarea({
+      parent: this.updateDialog,
+      top: updateDialogListTop + updateDialogListHeight + 1,
+      left: 2,
+      width: '100%-4',
+      height: 4,
+      inputOnFocus: true,
+      keys: true,
+      mouse: true,
+      scrollable: true,
+      alwaysScroll: true,
+      style: { fg: 'white', bg: 'black' },
+    }) as BlessedTextarea;
+
     const updateLayout = () => {
       const screenHeight = Math.max(0, this.screen.height as number);
       const screenWidth = Math.max(0, this.screen.width as number);
       if (!screenHeight || !screenWidth) return;
 
+      // Adjust overall dialog and list heights depending on screen size
       if (screenHeight < 28) {
         const height = Math.max(16, screenHeight - 4);
         this.updateDialog.height = height;
@@ -228,6 +247,14 @@ export class DialogsComponent {
         statusList.height = updateDialogListHeight;
         priorityList.height = updateDialogListHeight;
       }
+
+      // Position the comment textarea directly below the lists and give it
+      // the remaining space. This keeps layout responsive when heights
+      // change.
+      const textareaTop = updateDialogListTop + (stageList.height as number) + 1;
+      const textareaHeight = Math.max(3, (this.updateDialog.height as number) - (textareaTop + 2));
+      (this.updateDialogComment.top as any) = textareaTop;
+      (this.updateDialogComment.height as any) = textareaHeight;
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };
