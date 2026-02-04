@@ -42,7 +42,8 @@ export default function register(ctx: PluginContext): void {
         return t;
       }) : [];
 
-      // Support either --comment (legacy) or --body (new alias). Error if both provided.
+      // Support either --comment (legacy) or --body (new alias).
+      // Error if both provided.
       if (options.comment && options.body) {
         output.error('Cannot use both --comment and --body together.', { success: false, error: 'Cannot use both --comment and --body together.' });
         process.exit(1);

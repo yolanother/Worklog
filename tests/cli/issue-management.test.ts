@@ -130,6 +130,17 @@ describe('CLI Issue Management Tests', () => {
       expect(result.comment.comment).toBe('Test comment');
     });
 
+    it('should error when both --comment and --body are provided', async () => {
+      try {
+        await execAsync(`tsx ${cliPath} --json comment create ${workItemId} -a "John" -c "Legacy" --body "New"`);
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || error.stdout || '{}');
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Cannot use both --comment and --body together.');
+      }
+    });
+
     it('should update a comment', async () => {
       const createResult = await execAsync(
         `tsx ${cliPath} --json comment create ${workItemId} -a "Alice" --body "Original"`
