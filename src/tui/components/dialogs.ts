@@ -215,18 +215,20 @@ export class DialogsComponent {
     // Multiline comment textarea placed below the selection lists. It accepts
     // inputOnFocus so Enter inserts newlines; Tab/Shift-Tab navigation is
     // handled by focus management logic elsewhere.
+    // Create the textarea without a hard-coded height. We'll position it
+    // with `top` and `bottom` so it fills the available space inside the
+    // dialog. This prevents it from rendering below the dialog on small
+    // terminals and ensures it behaves as a multiline input.
     this.updateDialogComment = this.blessedImpl.textarea({
       parent: this.updateDialog,
-      // initial placement; updateLayout will adjust for actual sizes
+      // initial placement; updateLayout will adjust on show/resize
       top: updateDialogListTop + updateDialogListHeight + 1,
       left: 2,
-      // leave space for a border so content doesn't overflow
-      width: '100%-6',
-      height: 3,
+      right: 2,
+      // Do not set `height` here — use `bottom` in updateLayout so the
+      // textarea expands to available space inside the dialog.
       inputOnFocus: true,
-      // allow vim-like navigation and proper multi-line editing
       vi: true,
-      // ensure text wraps inside the textarea instead of overflowing
       wrap: true,
       keys: true,
       mouse: true,
@@ -236,6 +238,8 @@ export class DialogsComponent {
       border: { type: 'line' },
       label: ' Comment ',
       style: { fg: 'white', bg: 'black', border: { fg: 'gray' } },
+      // show a scrollbar when text exceeds the box
+      scrollbar: { ch: ' ', inverse: true },
     }) as BlessedTextarea;
 
     const updateLayout = () => {
@@ -264,10 +268,13 @@ export class DialogsComponent {
       // when the terminal is small.
       const listHeight = Number((stageList.height as any)) || updateDialogListHeight;
       const textareaTop = updateDialogListTop + listHeight + 1;
+      // Position textarea to start below the lists and extend to 1 row above
+      // the bottom border of the dialog. Using `bottom` ensures the control
+      // remains inside the dialog even when the dialog shrinks.
       (this.updateDialogComment.top as any) = textareaTop;
-      // leave a small bottom gap for the dialog border and padding
       (this.updateDialogComment.bottom as any) = 1;
-      (this.updateDialogComment.width as any) = '100%-6';
+      (this.updateDialogComment.left as any) = 2;
+      (this.updateDialogComment.right as any) = 2;
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };
