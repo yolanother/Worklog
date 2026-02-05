@@ -497,6 +497,7 @@ export default function register(ctx: PluginContext): void {
         height: 5,
         content: 'Evaluating next work item...',
         tags: true,
+        wrap: true,
       });
 
       const nextDialogOptions = blessedImpl.list({
@@ -1234,6 +1235,24 @@ export default function register(ctx: PluginContext): void {
         return value.replace(/[{}]/g, (ch) => (ch === '{' ? '{open}' : '{close}'));
       }
 
+      // Insert zero-width spaces into long uninterrupted tokens so blessed can
+      // wrap extremely long words (e.g. long URLs or single-word reasons).
+      // Using a zero-width space (U+200B) is intentional: it does not render
+      // visually but allows terminals to break the word for wrapping.
+      function softBreakLongWords(value: string, maxLen = 40): string {
+        // Quick path
+        if (!value || value.length <= maxLen) return value;
+        // Match runs of non-whitespace characters at least maxLen long
+        const re = new RegExp(`([^\\s]{${maxLen},})`, 'g');
+        return value.replace(re, (match) => {
+          const parts: string[] = [];
+          for (let i = 0; i < match.length; i += maxLen) {
+            parts.push(match.slice(i, i + maxLen));
+          }
+          return parts.join('\u200B');
+        });
+      }
+
       function updateDetailForIndex(idx: number, visible?: VisibleNode[]) {
         const v = visible || buildVisible();
         if (v.length === 0) {
@@ -1591,7 +1610,13 @@ export default function register(ctx: PluginContext): void {
       }
 
       function setNextDialogContent(content: string) {
-        nextDialogText.setContent(content);
+        // Insert soft-breaks into very long tokens so blessed can wrap them
+        try {
+          const safe = softBreakLongWords(content, 40);
+          nextDialogText.setContent(safe);
+        } catch (_) {
+          nextDialogText.setContent(content);
+        }
         screen.render();
       }
 
