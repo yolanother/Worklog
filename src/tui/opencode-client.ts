@@ -462,17 +462,21 @@ export class OpencodeClient {
     this.options.log(`sse connect session=${sessionId}`);
 
     const parser = new SseParser();
+    let resRef: any = null;
+
     const handlePayload = (payload: string) => {
       if (sseClosed) return;
       if (!payload) return;
-      if (payload === '[DONE]') {
-        this.options.log('sse done received');
-        sseClosed = true;
-        req.abort();
-        if (onComplete) onComplete();
-        resolve();
-        return;
-      }
+        if (payload === '[DONE]') {
+          this.options.log('sse done received');
+          sseClosed = true;
+          try { req.abort(); } catch (_) {}
+          try { resRef?.removeAllListeners?.(); } catch (_) {}
+          try { req.removeAllListeners?.(); } catch (_) {}
+          if (onComplete) onComplete();
+          resolve();
+          return;
+        }
 
       try {
         const payloadPreview = payload.length > 200 ? `${payload.slice(0, 200)}...` : payload;
@@ -557,20 +561,24 @@ export class OpencodeClient {
           }
         } else if (data.type === 'message.finish' && data.properties) {
           const finishSessionId = getSessionId(data.properties) || getSessionId(data);
-          if (finishSessionId === sessionId) {
-            this.options.log('sse message finish');
-            sseClosed = true;
-            req.abort();
-            if (onComplete) onComplete();
-            resolve();
-          }
+            if (finishSessionId === sessionId) {
+              this.options.log('sse message finish');
+              sseClosed = true;
+              try { req.abort(); } catch (_) {}
+              try { resRef?.removeAllListeners?.(); } catch (_) {}
+              try { req.removeAllListeners?.(); } catch (_) {}
+              if (onComplete) onComplete();
+              resolve();
+            }
         } else if (data.type === 'session.status' && data.properties) {
           const statusSessionId = getSessionId(data.properties) || getSessionId(data);
           const statusType = data.properties.status?.type;
           if (statusSessionId === sessionId && statusType === 'idle') {
             this.options.log('sse session idle');
             sseClosed = true;
-            req.abort();
+            try { req.abort(); } catch (_) {}
+            try { resRef?.removeAllListeners?.(); } catch (_) {}
+            try { req.removeAllListeners?.(); } catch (_) {}
             if (onComplete) onComplete();
             resolve();
           }
@@ -670,6 +678,7 @@ export class OpencodeClient {
     };
 
     const req = this.httpImpl.request(options, (res) => {
+      resRef = res;
       this.options.log(`sse status=${res.statusCode ?? 'unknown'}`);
 
       res.on('data', (chunk) => {
@@ -707,6 +716,9 @@ export class OpencodeClient {
         this.options.log(`sse response error: ${errMessage}`);
         appendLine(`{red-fg}SSE error: ${err}{/}`);
         updatePane();
+        // ensure listeners are removed to avoid leaking across retries
+        try { resRef?.removeAllListeners?.(); } catch (_) {}
+        try { req.removeAllListeners?.(); } catch (_) {}
         reject(err);
       });
     });
@@ -724,6 +736,8 @@ export class OpencodeClient {
         pane.pushLine(`{red-fg}Connection error: ${errMessage}{/}`);
       }
       this.options.render();
+      try { resRef?.removeAllListeners?.(); } catch (_) {}
+      try { req.removeAllListeners?.(); } catch (_) {}
       reject(err);
     });
 

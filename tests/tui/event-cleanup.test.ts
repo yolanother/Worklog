@@ -28,6 +28,7 @@ describe('OpencodeClient SSE cleanup', () => {
       on: (_ev: string, _cb: Function) => {},
       end: () => {},
       abort: () => {},
+      removeAllListeners: () => {},
     } as any;
 
     const httpImpl = {
