@@ -1,5 +1,5 @@
 import blessed from 'blessed';
-import type { BlessedBox, BlessedFactory, BlessedList, BlessedScreen } from '../types.js';
+import type { BlessedBox, BlessedFactory, BlessedList, BlessedScreen, BlessedTextarea } from '../types.js';
 import type { OverlaysComponent } from './overlays.js';
 
 export interface DialogsComponentOptions {
@@ -26,6 +26,7 @@ export class DialogsComponent {
   readonly updateDialogStageOptions: BlessedList;
   readonly updateDialogStatusOptions: BlessedList;
   readonly updateDialogPriorityOptions: BlessedList;
+  readonly updateDialogComment: BlessedTextarea;
 
   constructor(options: DialogsComponentOptions) {
     this.screen = options.parent;
@@ -211,11 +212,42 @@ export class DialogsComponent {
     this.updateDialogStatusOptions = statusList;
     this.updateDialogPriorityOptions = priorityList;
 
+    // Multiline comment textarea placed below the selection lists. It accepts
+    // inputOnFocus so Enter inserts newlines; Tab/Shift-Tab navigation is
+    // handled by focus management logic elsewhere.
+    // Create the textarea without a hard-coded height. We'll position it
+    // with `top` and `bottom` so it fills the available space inside the
+    // dialog. This prevents it from rendering below the dialog on small
+    // terminals and ensures it behaves as a multiline input.
+    this.updateDialogComment = this.blessedImpl.textarea({
+      parent: this.updateDialog,
+      // initial placement; updateLayout will adjust on show/resize
+      top: updateDialogListTop + updateDialogListHeight + 1,
+      left: 2,
+      right: 2,
+      // Do not set `height` here — use `bottom` in updateLayout so the
+      // textarea expands to available space inside the dialog.
+      inputOnFocus: true,
+      vi: true,
+      wrap: true,
+      keys: true,
+      mouse: true,
+      scrollable: true,
+      alwaysScroll: true,
+      // Provide a visible, grey border and a title label
+      border: { type: 'line' },
+      label: ' Comment ',
+      style: { fg: 'white', bg: 'black', border: { fg: 'gray' } },
+      // show a scrollbar when text exceeds the box
+      scrollbar: { ch: ' ', inverse: true },
+    }) as BlessedTextarea;
+
     const updateLayout = () => {
       const screenHeight = Math.max(0, this.screen.height as number);
       const screenWidth = Math.max(0, this.screen.width as number);
       if (!screenHeight || !screenWidth) return;
 
+      // Adjust overall dialog and list heights depending on screen size
       if (screenHeight < 28) {
         const height = Math.max(16, screenHeight - 4);
         this.updateDialog.height = height;
@@ -228,6 +260,21 @@ export class DialogsComponent {
         statusList.height = updateDialogListHeight;
         priorityList.height = updateDialogListHeight;
       }
+
+      // Position the comment textarea directly below the lists and let it
+      // fill the remaining vertical space inside the dialog. Using a
+      // `bottom` value (instead of explicit numeric `height`) keeps the
+      // textarea responsive and prevents it from overflowing the dialog
+      // when the terminal is small.
+      const listHeight = Number((stageList.height as any)) || updateDialogListHeight;
+      const textareaTop = updateDialogListTop + listHeight + 1;
+      // Position textarea to start below the lists and extend to 1 row above
+      // the bottom border of the dialog. Using `bottom` ensures the control
+      // remains inside the dialog even when the dialog shrinks.
+      (this.updateDialogComment.top as any) = textareaTop;
+      (this.updateDialogComment.bottom as any) = 1;
+      (this.updateDialogComment.left as any) = 2;
+      (this.updateDialogComment.right as any) = 2;
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };

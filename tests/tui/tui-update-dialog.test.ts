@@ -119,7 +119,7 @@ describe('TUI Update Dialog', () => {
       // Create blessed screen and dialog components
       const screen = blessed.screen({ mouse: true, smartCSR: true });
 
-      const updateDialog = blessed.box({
+       const updateDialog = blessed.box({
         parent: screen,
         top: 'center',
         left: 'center',
@@ -134,7 +134,7 @@ describe('TUI Update Dialog', () => {
         style: { border: { fg: 'magenta' } }
       });
 
-      const updateDialogText = blessed.box({
+       const updateDialogText = blessed.box({
         parent: updateDialog,
         top: 1,
         left: 2,
@@ -142,6 +142,16 @@ describe('TUI Update Dialog', () => {
         width: '100%-4',
         content: 'Update selected item fields:',
         tags: false
+      });
+
+      // Create a dummy textarea to reflect the new UI element
+      const updateDialogComment = blessed.textarea({
+        parent: updateDialog,
+        top: 22,
+        left: 2,
+        width: '100%-4',
+        height: 2,
+        inputOnFocus: true,
       });
 
       blessed.box({
@@ -354,8 +364,9 @@ describe('TUI Update Dialog', () => {
       const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
       const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
       const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+      const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true });
 
-      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList]);
+      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList, commentBox]);
 
       focusManager.focusIndex(0);
       expect(focusManager.getIndex()).toBe(0);
@@ -367,7 +378,7 @@ describe('TUI Update Dialog', () => {
       expect(focusManager.getIndex()).toBe(2);
 
       focusManager.cycle(1);
-      expect(focusManager.getIndex()).toBe(0);
+      expect(focusManager.getIndex()).toBe(3);
 
       focusManager.cycle(-1);
       expect(focusManager.getIndex()).toBe(2);
@@ -570,16 +581,21 @@ describe('TUI Update Dialog', () => {
         },
       };
 
-      const submitUpdateDialog = () => {
-        const { updates, hasChanges } = buildUpdateDialogUpdates(item, selections, values, {
+      // Extend submission to include a comment via the new multiline textbox
+      const submitUpdateDialogWithComment = (comment?: string) => {
+        const { updates, hasChanges, comment: newComment } = buildUpdateDialogUpdates(item, selections, values, {
           statusStage: STATUS_STAGE_COMPATIBILITY,
           stageStatus: STAGE_STATUS_COMPATIBILITY,
-        });
-        if (!hasChanges) return;
-        db.update(item.id, updates);
+        }, comment);
+        if (!hasChanges && !newComment) return;
+        if (Object.keys(updates).length > 0) db.update(item.id, updates);
+        // Simulate creating a comment when provided
+        if (newComment) {
+          updateCalls.push({ comment: newComment });
+        }
       };
 
-      submitUpdateDialog();
+      submitUpdateDialogWithComment();
       expect(updateCalls).toHaveLength(1);
       expect(updateCalls[0]).toEqual({
         status: 'blocked',
@@ -587,7 +603,7 @@ describe('TUI Update Dialog', () => {
       });
 
       updateCalls.length = 0;
-      submitUpdateDialog();
+      submitUpdateDialogWithComment();
       expect(updateCalls).toHaveLength(1);
     });
 
@@ -631,6 +647,38 @@ describe('TUI Update Dialog', () => {
       expect(updateCalls).toHaveLength(0);
       expect(closeCalls).toBe(1);
       void db;
+    });
+
+    it('should move focus forward and back when textarea handles Tab/Shift-Tab', () => {
+      const screen = blessed.screen({ mouse: true, smartCSR: true });
+      const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
+      const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
+      const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+      const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true, keys: true });
+
+      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList, commentBox]);
+
+      const wireNavigation = (field: any) => {
+        field.on('keypress', (_ch: string, key: { name?: string }) => {
+          if (key?.name === 'tab') {
+            focusManager.cycle(1);
+          }
+          if (key?.name === 'S-tab') {
+            focusManager.cycle(-1);
+          }
+        });
+      };
+
+      [stageList, statusList, priorityList, commentBox].forEach(wireNavigation);
+
+      focusManager.focusIndex(3);
+      commentBox.emit('keypress', '', { name: 'tab', full: 'tab' });
+      expect(focusManager.getIndex()).toBe(0);
+
+      commentBox.emit('keypress', '', { name: 'S-tab', shift: true, full: 'S-tab' });
+      expect(focusManager.getIndex()).toBe(3);
+
+      screen.destroy();
     });
   });
 
@@ -766,4 +814,5 @@ describe('TUI Update Dialog', () => {
       screen.destroy();
     });
   });
+
 });

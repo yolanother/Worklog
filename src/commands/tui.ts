@@ -213,21 +213,20 @@ export default function register(ctx: PluginContext): void {
       const updateDialogStageOptions = dialogsComponent.updateDialogStageOptions;
       const updateDialogStatusOptions = dialogsComponent.updateDialogStatusOptions;
       const updateDialogPriorityOptions = dialogsComponent.updateDialogPriorityOptions;
+      const updateDialogComment = dialogsComponent.updateDialogComment;
       const updateDialogFieldOrder = [
         updateDialogStageOptions,
         updateDialogStatusOptions,
         updateDialogPriorityOptions,
+        updateDialogComment,
       ];
       const updateDialogFieldLayout = [
         updateDialogStatusOptions,
         updateDialogStageOptions,
         updateDialogPriorityOptions,
+        updateDialogComment,
       ];
-      const updateDialogFocusManager = createUpdateDialogFocusManager([
-        updateDialogStageOptions,
-        updateDialogStatusOptions,
-        updateDialogPriorityOptions,
-      ]);
+      const updateDialogFocusManager = createUpdateDialogFocusManager(updateDialogFieldOrder);
       const updateDialogStatusValues = [...WORK_ITEM_STATUSES];
       const updateDialogStageValues = WORK_ITEM_STAGES.filter(stage => stage !== '');
       const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
@@ -354,18 +353,21 @@ export default function register(ctx: PluginContext): void {
           list.style.selected.bg = list === focused ? 'cyan' : 'blue';
           list.style.selected.fg = list === focused ? 'black' : 'white';
         });
+        if (updateDialogComment?.style?.border) {
+          updateDialogComment.style.border.fg = focused === updateDialogComment ? 'cyan' : 'gray';
+        }
         if (!updateDialog.hidden) screen.render();
       };
 
-      updateDialogFieldOrder.forEach((list) => {
-        list.on('focus', () => {
-          applyUpdateDialogFocusStyles(list);
+      updateDialogFieldOrder.forEach((field) => {
+        field.on('focus', () => {
+          applyUpdateDialogFocusStyles(field);
           if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
         });
       });
 
-      updateDialogFieldOrder.forEach((list) => {
-        list.on('blur', () => {
+      updateDialogFieldOrder.forEach((field) => {
+        field.on('blur', () => {
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
         });
@@ -409,7 +411,7 @@ export default function register(ctx: PluginContext): void {
         });
       };
 
-      [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions]
+      [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment]
         .forEach(wireUpdateDialogFieldNavigation);
 
       const handleUpdateDialogSelectionChange = (source?: 'status' | 'stage' | 'priority') => {
@@ -1403,6 +1405,9 @@ export default function register(ctx: PluginContext): void {
         updateDialog.hide();
         updateOverlay.hide();
         updateDialogItem = null;
+        if (updateDialogComment?.setValue) {
+          updateDialogComment.setValue('');
+        }
         list.focus();
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
@@ -2196,6 +2201,10 @@ export default function register(ctx: PluginContext): void {
         closeUpdateDialog();
       });
 
+      updateDialogComment.key(['escape'], () => {
+        closeUpdateDialog();
+      });
+
       const submitUpdateDialog = () => {
         const item = getSelectedItem();
         if (!item) {
@@ -2217,7 +2226,8 @@ export default function register(ctx: PluginContext): void {
         const stageValues = listItemsToValues(updateDialogStageOptions, (value) => (value === 'Undefined' ? '' : value));
         const priorityValues = listItemsToValues(updateDialogPriorityOptions);
 
-        const { updates, hasChanges } = buildUpdateDialogUpdates(
+        const commentValue = updateDialogComment?.getValue ? updateDialogComment.getValue() : '';
+        const { updates, hasChanges, comment } = buildUpdateDialogUpdates(
           item,
           { statusIndex, stageIndex, priorityIndex },
           {
@@ -2228,16 +2238,22 @@ export default function register(ctx: PluginContext): void {
           {
             statusStage: STATUS_STAGE_COMPATIBILITY,
             stageStatus: STAGE_STATUS_COMPATIBILITY,
-          }
+          },
+          commentValue
         );
 
         try {
-          if (!hasChanges) {
+          if (!hasChanges && !comment) {
             showToast('No changes');
             closeUpdateDialog();
             return;
           }
-          db.update(item.id, updates);
+          if (Object.keys(updates).length > 0) {
+            db.update(item.id, updates);
+          }
+          if (comment) {
+            db.createComment({ workItemId: item.id, comment, author: '@tui' });
+          }
           showToast('Updated');
           refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
         } catch (err) {
