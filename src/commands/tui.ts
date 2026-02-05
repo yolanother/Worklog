@@ -1249,7 +1249,11 @@ export default function register(ctx: PluginContext): void {
           for (let i = 0; i < match.length; i += maxLen) {
             parts.push(match.slice(i, i + maxLen));
           }
-          return parts.join('\u200B');
+          // Use a zero-width space followed by a normal space as a fallback
+          // so terminals that don't break on U+200B still have a visible
+          // break opportunity. This keeps the visual impact minimal while
+          // ensuring wrapping works across environments.
+          return parts.join('\u200B ');
         });
       }
 
