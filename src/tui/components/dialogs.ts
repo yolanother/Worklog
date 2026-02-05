@@ -272,9 +272,18 @@ export class DialogsComponent {
       // the bottom border of the dialog. Using `bottom` ensures the control
       // remains inside the dialog even when the dialog shrinks.
       (this.updateDialogComment.top as any) = textareaTop;
-      (this.updateDialogComment.bottom as any) = 1;
+      // Some terminals/versions of blessed behave better when we set an
+      // explicit height rather than relying on `bottom`. Compute the height
+      // available inside the dialog and clamp it to a reasonable minimum so
+      // the textarea is always visible.
+      const dialogHeight = Number(this.updateDialog.height as any) || 24;
+      // Leave 2 rows for dialog borders/spacing
+      const available = dialogHeight - textareaTop - 2;
+      const textareaHeight = Math.max(1, available);
+      (this.updateDialogComment.height as any) = textareaHeight;
       (this.updateDialogComment.left as any) = 2;
       (this.updateDialogComment.right as any) = 2;
+      try { if (typeof this.updateDialogComment.show === 'function') this.updateDialogComment.show(); } catch (_) {}
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };
