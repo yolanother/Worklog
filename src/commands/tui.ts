@@ -429,7 +429,8 @@ export default function register(ctx: PluginContext): void {
           return false;
         });
         if (field === updateDialogComment && typeof field.on === 'function') {
-          (field as any).on('keypress', (_ch: unknown, key: unknown) => {
+          // Use a named handler so it can be removed if the field is destroyed
+          const commentKeyHandler = (_ch: unknown, key: unknown) => {
             if (updateDialog.hidden) return;
             const k = key as KeyInfo | undefined;
             if (k?.name === 'tab') {
@@ -442,8 +443,9 @@ export default function register(ctx: PluginContext): void {
               applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
               return;
             }
-          });
-         }
+          };
+          try { (field as any).__opencode_comment_key = commentKeyHandler; (field as any).on('keypress', commentKeyHandler); } catch (_) {}
+          }
         field.key(['left'], () => {
           if (updateDialog.hidden) return;
           const layoutIndex = updateDialogFieldLayout.indexOf(field as any);
@@ -466,6 +468,8 @@ export default function register(ctx: PluginContext): void {
 
       [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment]
         .forEach(wireUpdateDialogFieldNavigation);
+
+      // (attachment of per-widget ctrl-w handlers moved to after opencodeText is defined)
 
       const handleUpdateDialogSelectionChange = (source?: 'status' | 'stage' | 'priority') => {
         updateDialogLastChanged = source ?? updateDialogLastChanged;
@@ -568,6 +572,12 @@ export default function register(ctx: PluginContext): void {
       const suggestionHint = opencodeUi.suggestionHint;
       const opencodeSend = opencodeUi.sendButton;
       const opencodeCancel = opencodeUi.cancelButton;
+
+      // Attach widget-level ctrl-w pending handlers now that opencodeText exists.
+      try {
+        [list, detail, updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment, opencodeText]
+          .forEach((w) => attachCtrlWPendingHandler(w as any));
+      } catch (_) {}
 
       const setBorderFocusStyle = (element: Pane | undefined | null, focused: boolean) => {
         if (!element || !element.style) return;
@@ -740,16 +750,21 @@ export default function register(ctx: PluginContext): void {
           return handleCtrlWCommand(name);
         };
 
-        const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
+      const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
           if (!widget || typeof widget.on !== 'function') return;
-          widget.on('keypress', (...args: unknown[]) => {
+          // Attach a named handler so we can remove it later if the widget is destroyed
+          const handler = (...args: unknown[]) => {
             const key = args[1] as KeyInfo | undefined;
             debugLog(`Widget keypress handler fired: key.name="${(key as any)?.name}", key.ctrl=${(key as any)?.ctrl}`);
             if (handleCtrlWPendingKey((key as any)?.name)) {
               debugLog(`Widget handler: handleCtrlWPendingKey returned true, consuming event`);
               return false;
             }
-          });
+          };
+          try {
+            (widget as any).__opencode_ctrlw = handler;
+            widget.on('keypress', handler);
+          } catch (_) {}
         };
 
 

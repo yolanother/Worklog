@@ -186,9 +186,15 @@ export class OpencodePaneComponent {
     try { this.serverStatusBox.destroy(); } catch (_) {}
     if (this.responsePane) {
       try {
+        // Remove all listeners as a safety net
         try { this.responsePane.removeAllListeners?.(); } catch (_) {}
-        // remove escape handler if we set one
-        try { this.responsePane.key?.(['escape'], () => {}); } catch (_) {}
+        // If we installed a named escape handler, remove that exact listener
+        try {
+          const esc = (this.responsePane as any).__opencode_esc;
+          if (esc && typeof (this.responsePane as any).removeListener === 'function') {
+            try { (this.responsePane as any).removeListener('key', esc); } catch (_) {}
+          }
+        } catch (_) {}
       } catch (_) {}
       try { this.responsePane.destroy(); } catch (_) {}
       this.responsePane = null;

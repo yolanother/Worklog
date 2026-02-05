@@ -86,6 +86,13 @@ export class ListComponent {
   }
 
   destroy(): void {
+    // Remove listeners from transient widgets before destroying to avoid retaining callbacks
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore - blessed widget types may not list removeAllListeners
+    if (typeof this.footer.removeAllListeners === 'function') this.footer.removeAllListeners();
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    if (typeof this.list.removeAllListeners === 'function') this.list.removeAllListeners();
     this.footer.destroy();
     this.list.destroy();
   }
