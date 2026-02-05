@@ -148,7 +148,10 @@ export class OpencodePaneComponent {
     });
 
     if (options.onEscape) {
-      this.responsePane.key(['escape'], options.onEscape);
+      // Attach escape handler but tag it so we can remove it on destroy
+      const escHandler = options.onEscape;
+      (this.responsePane as any).__opencode_esc = escHandler;
+      this.responsePane.key(['escape'], escHandler);
     }
 
     this.responsePane.show();
@@ -182,6 +185,11 @@ export class OpencodePaneComponent {
     try { this.dialog.destroy(); } catch (_) {}
     try { this.serverStatusBox.destroy(); } catch (_) {}
     if (this.responsePane) {
+      try {
+        try { this.responsePane.removeAllListeners?.(); } catch (_) {}
+        // remove escape handler if we set one
+        try { this.responsePane.key?.(['escape'], () => {}); } catch (_) {}
+      } catch (_) {}
       try { this.responsePane.destroy(); } catch (_) {}
       this.responsePane = null;
     }
