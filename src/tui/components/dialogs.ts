@@ -225,8 +225,10 @@ export class DialogsComponent {
       top: updateDialogListTop + updateDialogListHeight + 1,
       left: 2,
       right: 2,
+      width: '100%-4',
       // Do not set `height` here — use `bottom` in updateLayout so the
       // textarea expands to available space inside the dialog.
+      input: true,
       inputOnFocus: true,
       vi: true,
       wrap: true,
@@ -247,34 +249,47 @@ export class DialogsComponent {
       const screenWidth = Math.max(0, this.screen.width as number);
       if (!screenHeight || !screenWidth) return;
 
+      const extraCommentLines = screenHeight >= 28 ? 5 : 0;
+      const textareaMinHeight = 4 + extraCommentLines;
+
       // Adjust overall dialog and list heights depending on screen size
       if (screenHeight < 28) {
         const height = Math.max(16, screenHeight - 4);
         this.updateDialog.height = height;
-        stageList.height = Math.max(6, height - 9);
-        statusList.height = stageList.height;
-        priorityList.height = stageList.height;
       } else {
         this.updateDialog.height = 24;
-        stageList.height = updateDialogListHeight;
-        statusList.height = updateDialogListHeight;
-        priorityList.height = updateDialogListHeight;
       }
+
+      // Size lists to leave room for the comment box inside the dialog.
+      const dialogHeight = Number(this.updateDialog.height as any) || 24;
+      const listMaxHeight = Math.max(6, updateDialogListHeight - extraCommentLines);
+      const listAvailable = dialogHeight - updateDialogListTop - textareaMinHeight - 3;
+      const listHeight = Math.max(6, Math.min(listMaxHeight, listAvailable));
+      stageList.height = listHeight;
+      statusList.height = listHeight;
+      priorityList.height = listHeight;
 
       // Position the comment textarea directly below the lists and let it
       // fill the remaining vertical space inside the dialog. Using a
       // `bottom` value (instead of explicit numeric `height`) keeps the
       // textarea responsive and prevents it from overflowing the dialog
       // when the terminal is small.
-      const listHeight = Number((stageList.height as any)) || updateDialogListHeight;
       const textareaTop = updateDialogListTop + listHeight + 1;
       // Position textarea to start below the lists and extend to 1 row above
       // the bottom border of the dialog. Using `bottom` ensures the control
       // remains inside the dialog even when the dialog shrinks.
       (this.updateDialogComment.top as any) = textareaTop;
-      (this.updateDialogComment.bottom as any) = 1;
+      // Some terminals/versions of blessed behave better when we set an
+      // explicit height rather than relying on `bottom`. Compute the height
+      // available inside the dialog and clamp it to a reasonable minimum so
+      // the textarea is always visible.
+      // Leave 2 rows for dialog borders/spacing
+      const available = dialogHeight - textareaTop - 2;
+      const textareaHeight = Math.max(textareaMinHeight, available);
+      (this.updateDialogComment.height as any) = textareaHeight;
       (this.updateDialogComment.left as any) = 2;
       (this.updateDialogComment.right as any) = 2;
+      try { if (typeof this.updateDialogComment.show === 'function') this.updateDialogComment.show(); } catch (_) {}
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
     };
