@@ -391,6 +391,21 @@ export default function register(ctx: PluginContext): void {
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           return false;
         });
+        if (field === updateDialogComment) {
+          field.on('keypress', (_ch: string, key: { name?: string }) => {
+            if (updateDialog.hidden) return;
+            if (key?.name === 'tab') {
+              updateDialogFocusManager.cycle(1);
+              applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+              return false;
+            }
+            if (key?.name === 'S-tab') {
+              updateDialogFocusManager.cycle(-1);
+              applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+              return false;
+            }
+          });
+        }
         field.key(['left'], () => {
           if (updateDialog.hidden) return;
           const layoutIndex = updateDialogFieldLayout.indexOf(field);
