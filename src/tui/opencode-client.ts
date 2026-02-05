@@ -113,19 +113,25 @@ export class OpencodeClient {
         detached: false,
       });
 
-      if (this.opencodeServerProc.stdout) {
-        this.opencodeServerProc.stdout.on('data', (chunk) => {
-          this.options.log(`server stdout: ${chunk.toString().trim()}`);
-        });
+      // Attach listeners but avoid re-attaching if they already exist (in
+      // case startServer is retried). Use named functions so we can remove
+      // them reliably in stopServer.
+      const handleStdout = (chunk: any) => { this.options.log(`server stdout: ${chunk.toString().trim()}`); };
+      const handleStderr = (chunk: any) => { this.options.log(`server stderr: ${chunk.toString().trim()}`); };
+      const handleExit = (code: any, signal: any) => { this.options.log(`server exit code=${code ?? 'null'} signal=${signal ?? 'null'}`); };
+
+      if (this.opencodeServerProc.stdout && !(this.opencodeServerProc.stdout as any).__opencode_listeners_installed) {
+        this.opencodeServerProc.stdout.on('data', handleStdout);
+        (this.opencodeServerProc.stdout as any).__opencode_listeners_installed = true;
       }
-      if (this.opencodeServerProc.stderr) {
-        this.opencodeServerProc.stderr.on('data', (chunk) => {
-          this.options.log(`server stderr: ${chunk.toString().trim()}`);
-        });
+      if (this.opencodeServerProc.stderr && !(this.opencodeServerProc.stderr as any).__opencode_listeners_installed) {
+        this.opencodeServerProc.stderr.on('data', handleStderr);
+        (this.opencodeServerProc.stderr as any).__opencode_listeners_installed = true;
       }
-      this.opencodeServerProc.on('exit', (code, signal) => {
-        this.options.log(`server exit code=${code ?? 'null'} signal=${signal ?? 'null'}`);
-      });
+      if (!(this.opencodeServerProc as any).__opencode_exit_listener_installed) {
+        this.opencodeServerProc.on('exit', handleExit);
+        (this.opencodeServerProc as any).__opencode_exit_listener_installed = true;
+      }
 
       this.opencodeServerPort = this.options.port;
 
@@ -144,6 +150,12 @@ export class OpencodeClient {
       this.setStatus('error', this.options.port);
       this.options.showToast('OpenCode server failed to start');
       if (this.opencodeServerProc) {
+        // Ensure we remove any listeners before killing the child process so
+        // we don't leak handlers if the start attempt fails and we later
+        // spawn again.
+        try { this.opencodeServerProc.stdout?.removeAllListeners?.(); } catch (_) {}
+        try { this.opencodeServerProc.stderr?.removeAllListeners?.(); } catch (_) {}
+        try { this.opencodeServerProc.removeAllListeners?.(); } catch (_) {}
         this.opencodeServerProc.kill();
         this.opencodeServerProc = null;
       }
@@ -158,6 +170,26 @@ export class OpencodeClient {
   stopServer(): void {
     if (!this.opencodeServerProc) return;
     try {
+      // Remove listeners on stdout/stderr and the process itself to avoid
+      // keeping references that may prevent GC or leak handlers across
+      // restarts.
+      try {
+        if (this.opencodeServerProc.stdout) {
+          try { this.opencodeServerProc.stdout.removeAllListeners(); } catch (_) {}
+          try { delete (this.opencodeServerProc.stdout as any).__opencode_listeners_installed; } catch (_) {}
+        }
+      } catch (_) {}
+      try {
+        if (this.opencodeServerProc.stderr) {
+          try { this.opencodeServerProc.stderr.removeAllListeners(); } catch (_) {}
+          try { delete (this.opencodeServerProc.stderr as any).__opencode_listeners_installed; } catch (_) {}
+        }
+      } catch (_) {}
+      try {
+        try { this.opencodeServerProc.removeAllListeners(); } catch (_) {}
+        try { delete (this.opencodeServerProc as any).__opencode_exit_listener_installed; } catch (_) {}
+      } catch (_) {}
+
       this.opencodeServerProc.kill();
       this.opencodeServerProc = null;
       this.setStatus('stopped', this.opencodeServerPort);
