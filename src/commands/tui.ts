@@ -38,6 +38,43 @@ import { isStatusStageCompatible } from '../tui/status-stage-validation.js';
 
 type Item = WorkItem;
 
+// Lightweight, explicit interfaces to avoid wide `any` usage in the TUI code.
+// These intentionally model the small surface area of blessed widgets used
+// by this file rather than pulling in the entire blessed typeset so the
+// runtime code and tests remain easy to mock.
+type Pane = {
+  focus?: () => void;
+  hidden?: boolean;
+  setFront?: () => void;
+  hide?: () => void;
+  show?: () => void;
+  setItems?: (items: string[]) => void;
+  select?: (idx: number) => void;
+  getItem?: (idx: number) => { getContent?: () => string } | undefined;
+  setContent?: (s: string) => void;
+  setLabel?: (s: string) => void;
+  width?: number | string;
+  height?: number | string;
+  style?: any;
+  top?: number | string;
+  left?: number | string;
+  bottom?: number | string;
+  on?: (event: string, cb: (...args: unknown[]) => void) => void;
+  key?: (keys: string[] | string, cb: (...args: unknown[]) => void) => void;
+  getValue?: () => string;
+  clearValue?: () => void;
+  setValue?: (v: string) => void;
+  moveCursor?: (n: number) => void;
+  pushLine?: (s: string) => void;
+  setScroll?: (n: number) => void;
+  setScrollPerc?: (n: number) => void;
+  items?: any[];
+};
+
+type VisibleNode = { item: Item; depth: number; hasChildren: boolean };
+
+type KeyInfo = { name?: string; ctrl?: boolean; meta?: boolean; shift?: boolean };
+
 export default function register(ctx: PluginContext): void {
   const { program, utils } = ctx;
   // Allow tests to inject a mocked blessed implementation via the ctx object.
@@ -59,12 +96,12 @@ export default function register(ctx: PluginContext): void {
         console.error(`[tui:opencode] ${message}`);
       };
 
-      const query: any = {};
+      const query: Partial<Record<string, unknown>> = {};
       if (options.inProgress) query.status = 'in-progress';
 
       let items: Item[] = db.list(query);
       // By default hide closed items (completed or deleted) unless --all is set
-      const visibleItems = options.all ? items : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+      const visibleItems = options.all ? items : items.filter((item: Item) => item.status !== 'completed' && item.status !== 'deleted');
       if (visibleItems.length === 0) {
         console.log('No work items found');
         return;
@@ -79,7 +116,7 @@ export default function register(ctx: PluginContext): void {
       function rebuildTree() {
         currentVisibleItems = showClosed
           ? items.slice()
-          : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+          : items.filter((item: Item) => item.status !== 'completed' && item.status !== 'deleted');
 
         itemsById = new Map<string, Item>();
         for (const it of currentVisibleItems) itemsById.set(it.id, it);
@@ -157,8 +194,7 @@ export default function register(ctx: PluginContext): void {
         for (const r of roots) expanded.add(r.id);
       }
 
-      // Flatten visible nodes for rendering
-      type VisibleNode = { item: Item; depth: number; hasChildren: boolean };
+       // Flatten visible nodes for rendering (uses module-level VisibleNode type)
 
       function buildVisible(): VisibleNode[] {
         const out: VisibleNode[] = [];
@@ -241,11 +277,11 @@ export default function register(ctx: PluginContext): void {
         return value === 'Undefined' ? '' : value;
       };
 
-      const getListItemValue = (list: any, fallback: string) => {
-        const selectedIndex = (list as any).selected;
+      const getListItemValue = (list: Pane | undefined | null, fallback: string) => {
+        const selectedIndex = (list as any)?.selected;
         if (selectedIndex === undefined) return fallback;
-        const item = list.getItem(selectedIndex);
-        const content = item?.getContent?.();
+        const item = list?.getItem ? list.getItem(selectedIndex) : undefined;
+        const content = item?.getContent ? item.getContent() : undefined;
         return content ?? fallback;
       };
 
@@ -257,10 +293,11 @@ export default function register(ctx: PluginContext): void {
         return ['Undefined'];
       };
 
-      const setListItems = (list: any, items: string[], preferred?: string) => {
+      const setListItems = (list: Pane | undefined | null, items: string[], preferred?: string) => {
+        if (!list || typeof list.setItems !== 'function') return;
         list.setItems(items);
         const target = preferred && items.includes(preferred) ? preferred : items[0];
-        if (target !== undefined) {
+        if (target !== undefined && typeof list.select === 'function') {
           list.select(items.indexOf(target));
         }
       };
@@ -346,31 +383,30 @@ export default function register(ctx: PluginContext): void {
         }
       };
 
-      const applyUpdateDialogFocusStyles = (focused: any) => {
+      const applyUpdateDialogFocusStyles = (focused: Pane | undefined | null) => {
         updateDialogFieldOrder.forEach((list) => {
           if (!list || !list.style) return;
           if (!list.style.selected) list.style.selected = {};
           list.style.selected.bg = list === focused ? 'cyan' : 'blue';
           list.style.selected.fg = list === focused ? 'black' : 'white';
         });
-        if (updateDialogComment?.style?.border) {
+        if (updateDialogComment && updateDialogComment.style && updateDialogComment.style.border) {
           updateDialogComment.style.border.fg = focused === updateDialogComment ? 'cyan' : 'gray';
         }
         if (!updateDialog.hidden) screen.render();
       };
 
       updateDialogFieldOrder.forEach((field) => {
-        field.on('focus', () => {
-          applyUpdateDialogFocusStyles(field);
-          if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
-        });
-      });
-
-      updateDialogFieldOrder.forEach((field) => {
-        field.on('blur', () => {
-          applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
-          if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
-        });
+        if (field && typeof field.on === 'function') {
+          field.on('focus', () => {
+            applyUpdateDialogFocusStyles(field);
+            if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
+          });
+          field.on('blur', () => {
+            applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
+            if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
+          });
+        }
       });
 
       const findListIndex = (values: string[], value: string | undefined, fallback: number) => {
@@ -378,7 +414,8 @@ export default function register(ctx: PluginContext): void {
         const idx = values.indexOf(value);
         return idx >= 0 ? idx : fallback;
       };
-      const wireUpdateDialogFieldNavigation = (field: any) => {
+      const wireUpdateDialogFieldNavigation = (field: Pane | undefined | null) => {
+        if (!field || typeof field.key !== 'function') return;
         field.key(['tab', 'C-i'], () => {
           if (updateDialog.hidden) return;
           updateDialogFocusManager.cycle(1);
@@ -391,24 +428,25 @@ export default function register(ctx: PluginContext): void {
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           return false;
         });
-        if (field === updateDialogComment) {
-          field.on('keypress', (_ch: string, key: { name?: string }) => {
+        if (field === updateDialogComment && typeof field.on === 'function') {
+          (field as any).on('keypress', (_ch: unknown, key: unknown) => {
             if (updateDialog.hidden) return;
-            if (key?.name === 'tab') {
+            const k = key as KeyInfo | undefined;
+            if (k?.name === 'tab') {
               updateDialogFocusManager.cycle(1);
               applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
-              return false;
+              return;
             }
-            if (key?.name === 'S-tab') {
+            if (k?.name === 'S-tab') {
               updateDialogFocusManager.cycle(-1);
               applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
-              return false;
+              return;
             }
           });
-        }
+         }
         field.key(['left'], () => {
           if (updateDialog.hidden) return;
-          const layoutIndex = updateDialogFieldLayout.indexOf(field);
+          const layoutIndex = updateDialogFieldLayout.indexOf(field as any);
           const nextIndex = layoutIndex <= 0 ? updateDialogFieldLayout.length - 1 : layoutIndex - 1;
           const target = updateDialogFieldLayout[nextIndex];
           updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
@@ -417,7 +455,7 @@ export default function register(ctx: PluginContext): void {
         });
         field.key(['right'], () => {
           if (updateDialog.hidden) return;
-          const layoutIndex = updateDialogFieldLayout.indexOf(field);
+          const layoutIndex = updateDialogFieldLayout.indexOf(field as any);
           const nextIndex = layoutIndex >= updateDialogFieldLayout.length - 1 ? 0 : layoutIndex + 1;
           const target = updateDialogFieldLayout[nextIndex];
           updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
@@ -434,11 +472,13 @@ export default function register(ctx: PluginContext): void {
         if (!updateDialog.hidden) applyStatusStageCompatibility(updateDialogItem);
       };
 
-      const wireUpdateDialogSelectionListeners = (list: any, source: 'status' | 'stage' | 'priority') => {
+      const wireUpdateDialogSelectionListeners = (list: Pane | undefined | null, source: 'status' | 'stage' | 'priority') => {
+        if (!list || typeof list.on !== 'function') return;
         list.on('select', () => handleUpdateDialogSelectionChange(source));
         list.on('select item', () => handleUpdateDialogSelectionChange(source));
         list.on('click', () => handleUpdateDialogSelectionChange(source));
-        list.on('keypress', (_ch: string, key: { name?: string }) => {
+        list.on('keypress', (...args: unknown[]) => {
+          const key = args[1] as KeyInfo | undefined;
           if (!key?.name) return;
           if (['up', 'down', 'home', 'end', 'pageup', 'pagedown'].includes(key.name)) {
             handleUpdateDialogSelectionChange(source);
@@ -529,8 +569,8 @@ export default function register(ctx: PluginContext): void {
       const opencodeSend = opencodeUi.sendButton;
       const opencodeCancel = opencodeUi.cancelButton;
 
-      const setBorderFocusStyle = (element: any, focused: boolean) => {
-        if (!element?.style) return;
+      const setBorderFocusStyle = (element: Pane | undefined | null, focused: boolean) => {
+        if (!element || !element.style) return;
         const border = element.style.border || (element.style.border = {});
         border.fg = focused ? 'green' : 'white';
         const labelStyle = element.style.label || (element.style.label = {});
@@ -549,20 +589,20 @@ export default function register(ctx: PluginContext): void {
         setBorderFocusStyle(opencodeDialog, focused);
       };
 
-      const paneForNode = (node: any): any => {
+      const paneForNode = (node: unknown): Pane | null => {
         if (!node) return null;
-        if (node === list) return list;
-        if (node === detail) return detail;
-        if (node === opencodeDialog || node === opencodeText) return opencodeDialog;
-        if (node === opencodePane) return opencodeDialog;
+        if (node === list) return list as unknown as Pane;
+        if (node === detail) return detail as unknown as Pane;
+        if (node === opencodeDialog || node === opencodeText) return opencodeDialog as unknown as Pane;
+        if (node === opencodePane) return opencodeDialog as unknown as Pane;
         return null;
       };
       let paneFocusIndex = 0;
       let lastPaneFocusIndex = 0;
 
-      const getFocusPanes = (): any[] => {
-        const panes = [list, detail];
-        if (!opencodeDialog.hidden) panes.push(opencodeDialog);
+      const getFocusPanes = (): Pane[] => {
+        const panes: Pane[] = [list as unknown as Pane, detail as unknown as Pane];
+        if (!opencodeDialog.hidden) panes.push(opencodeDialog as unknown as Pane);
         return panes;
       };
 
@@ -594,9 +634,9 @@ export default function register(ctx: PluginContext): void {
         paneFocusIndex = clamped;
         const target = panes[clamped];
         if (target === opencodeDialog) {
-          opencodeText.focus();
+          (opencodeText as Pane).focus?.();
         } else {
-          target.focus();
+          (target as Pane).focus?.();
         }
         applyFocusStyles();
       };
@@ -670,22 +710,22 @@ export default function register(ctx: PluginContext): void {
            }
            if (name === 'k') {
              debugLog(`Handling Ctrl-W k (focus up/opencodePane)`);
-             if (opencodeDialog.hidden) return false;
-             if (!opencodePane || opencodePane.hidden) return false;
-             opencodePane.focus();
-             syncFocusFromScreen();
-             screen.render();
-             return true;
+              if (opencodeDialog.hidden) return false;
+              if (!opencodePane || opencodePane.hidden) return false;
+              (opencodePane as Pane).focus?.();
+              syncFocusFromScreen();
+              screen.render();
+              return true;
            }
-           if (name === 'j') {
-             debugLog(`Handling Ctrl-W j (focus down/opencodeText)`);
-             if (opencodeDialog.hidden) return false;
-             if (!opencodePane || opencodePane.hidden) return false;
-             opencodeText.focus();
-             syncFocusFromScreen();
-             screen.render();
-             return true;
-           }
+            if (name === 'j') {
+              debugLog(`Handling Ctrl-W j (focus down/opencodeText)`);
+               if (opencodeDialog.hidden) return false;
+               if (!opencodePane || opencodePane.hidden) return false;
+               (opencodeText as Pane).focus?.();
+               syncFocusFromScreen();
+               screen.render();
+               return true;
+            }
           debugLog(`handleCtrlWCommand: unrecognized key "${name}"`);
           return false;
         };
@@ -700,10 +740,12 @@ export default function register(ctx: PluginContext): void {
           return handleCtrlWCommand(name);
         };
 
-        const attachCtrlWPendingHandler = (widget: any) => {
-          widget.on('keypress', (_ch: any, key: any) => {
-            debugLog(`Widget keypress handler fired: key.name="${key?.name}", key.ctrl=${key?.ctrl}`);
-            if (handleCtrlWPendingKey(key?.name)) {
+        const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
+          if (!widget || typeof widget.on !== 'function') return;
+          widget.on('keypress', (...args: unknown[]) => {
+            const key = args[1] as KeyInfo | undefined;
+            debugLog(`Widget keypress handler fired: key.name="${(key as any)?.name}", key.ctrl=${(key as any)?.ctrl}`);
+            if (handleCtrlWPendingKey((key as any)?.name)) {
               debugLog(`Widget handler: handleCtrlWPendingKey returned true, consuming event`);
               return false;
             }
