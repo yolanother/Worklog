@@ -466,7 +466,7 @@ export default function register(ctx: PluginContext): void {
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '60%',
+        width: '80%',
         height: 12,
         label: ' Next Work Item ',
         border: { type: 'line' },
@@ -498,6 +498,9 @@ export default function register(ctx: PluginContext): void {
         content: 'Evaluating next work item...',
         tags: true,
         wrap: true,
+        wordWrap: true,
+        scrollable: true,
+        alwaysScroll: true,
       });
 
       const nextDialogOptions = blessedImpl.list({
@@ -1614,76 +1617,57 @@ export default function register(ctx: PluginContext): void {
       }
 
       function setNextDialogContent(content: string) {
-        // Insert soft-breaks into very long tokens so blessed can wrap them
-        const safe = (() => {
-          try { return softBreakLongWords(content, 40); } catch (_) { return content; }
-        })();
+        const safe = content;
+        const baseWidth = 45;
+        const firstLineWidth = Math.max(10, baseWidth - 4);
 
-        // Update content and adjust dialog/text heights so long content is
-        // visible rather than truncated. We allow the text area to grow up to
-        // a sensible fraction of the screen, and keep the options area visible.
-        // If wrapping still appears broken, insert explicit line breaks at
-        // word boundaries based on the dialog width while preserving blessed
-        // tags. This ensures content never gets truncated horizontally.
-        function insertBreaksPreserveTags(orig: string, maxWidth: number) {
-          const plain = stripTags(orig);
-          if (plain.length <= maxWidth) return orig;
-          // Build break positions on plain text
-          const breaks: number[] = [];
-          let pos = 0;
-          while (pos < plain.length) {
-            if (pos + maxWidth >= plain.length) break;
-            // find last space before limit
-            let end = pos + maxWidth;
-            let slice = plain.slice(pos, end + 1);
-            let lastSpace = slice.lastIndexOf(' ');
-            if (lastSpace <= 0) lastSpace = maxWidth; // hard break
-            else lastSpace = lastSpace;
-            breaks.push(pos + lastSpace);
-            pos = pos + lastSpace + 1; // skip the space
-          }
-
-          if (breaks.length === 0) return orig;
-
-          // Walk original string, copying tags verbatim and counting visible chars
-          let out = '';
-          let visible = 0;
-          let nextBreakIndex = 0;
-          let i = 0;
-          while (i < orig.length) {
-            const ch = orig[i];
-            if (ch === '{') {
-              // copy tag until closing '}' (inclusive)
-              const end = orig.indexOf('}', i);
-              if (end === -1) {
-                out += ch;
-                i += 1;
+        const wrapPlainLine = (line: string, width: number): string[] => {
+          const words = line.split(/\s+/).filter(Boolean);
+          if (words.length === 0) return [''];
+          const out: string[] = [];
+          let current = '';
+          for (const word of words) {
+            if (current.length === 0) {
+              if (word.length <= width) {
+                current = word;
               } else {
-                out += orig.slice(i, end + 1);
-                i = end + 1;
+                for (let i = 0; i < word.length; i += width) {
+                  out.push(word.slice(i, i + width));
+                }
+                current = '';
               }
               continue;
             }
-            // append visible char
-            out += ch;
-            visible += 1;
-            if (nextBreakIndex < breaks.length && visible > breaks[nextBreakIndex]) {
-              out += '\n';
-              nextBreakIndex += 1;
+            if ((current.length + 1 + word.length) <= width) {
+              current = `${current} ${word}`;
+            } else {
+              out.push(current);
+              if (word.length <= width) {
+                current = word;
+              } else {
+                for (let i = 0; i < word.length; i += width) {
+                  out.push(word.slice(i, i + width));
+                }
+                current = '';
+              }
             }
-            i += 1;
           }
+          if (current.length > 0) out.push(current);
           return out;
-        }
+        };
 
-        // determine an approximate available width for the dialog text
-        const screenW = typeof screen.width === 'number' ? screen.width : 80;
-        const approxDialogW = Math.max(20, Math.floor(screenW * 0.6) - 6);
-        const processed = insertBreaksPreserveTags(safe, approxDialogW);
-        nextDialogText.setContent(processed);
+        const hasBlessedTags = (line: string) => /{[^}]+}/.test(line);
+
+        const wrappedLines = safe.split('\n').flatMap((line, idx) => {
+          const width = idx === 0 ? firstLineWidth : baseWidth;
+          if (hasBlessedTags(line)) return [line];
+          return wrapPlainLine(line, width);
+        });
+
+        nextDialogText.setContent(wrappedLines.join('\n'));
         try {
           // Count lines after wrapping (approximate by splitting on \n)
-          const lines = String(safe).split('\n').length;
+          const lines = wrappedLines.length;
           const screenH = typeof screen.height === 'number' ? screen.height : 24;
           const maxTextH = Math.max(3, Math.min(12, Math.floor(screenH * 0.4)));
           const textH = Math.min(Math.max(3, lines), maxTextH);
@@ -1696,7 +1680,9 @@ export default function register(ctx: PluginContext): void {
           // ensure the options list remains positioned below the text area
           try { nextDialogOptions.top = (nextDialogText.top as number) + (nextDialogText.height as number) + 1; } catch (_) {}
           // make text scrollable if content still exceeds the allocated height
+          // Ensure scroll position reset so top of content is visible
           if (typeof (nextDialogText as any).setScroll === 'function') (nextDialogText as any).setScroll(0);
+          if (typeof (nextDialogText as any).setScrollPerc === 'function') (nextDialogText as any).setScrollPerc(0);
         } catch (_) {
           // ignore layout errors and render content as-is
         }
@@ -1724,7 +1710,10 @@ export default function register(ctx: PluginContext): void {
           `Status: ${item.status}${stageLabel ? ` · Stage: ${stageLabel}` : ''}`,
           `Priority: ${item.priority || 'none'}`,
         ];
-        if (reason) lines.push(`Reason: ${reason}`);
+        if (reason) {
+          lines.push('');
+          lines.push(`Reason: ${reason}`);
+        }
         if (notice) lines.push(`Note: ${notice}`);
         setNextDialogContent(lines.join('\n'));
       }
