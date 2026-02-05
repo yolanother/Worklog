@@ -364,8 +364,9 @@ describe('TUI Update Dialog', () => {
       const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
       const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
       const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+      const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true });
 
-      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList]);
+      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList, commentBox]);
 
       focusManager.focusIndex(0);
       expect(focusManager.getIndex()).toBe(0);
@@ -377,7 +378,7 @@ describe('TUI Update Dialog', () => {
       expect(focusManager.getIndex()).toBe(2);
 
       focusManager.cycle(1);
-      expect(focusManager.getIndex()).toBe(0);
+      expect(focusManager.getIndex()).toBe(3);
 
       focusManager.cycle(-1);
       expect(focusManager.getIndex()).toBe(2);
@@ -647,6 +648,38 @@ describe('TUI Update Dialog', () => {
       expect(closeCalls).toBe(1);
       void db;
     });
+
+    it('should move focus forward and back when textarea handles Tab/Shift-Tab', () => {
+      const screen = blessed.screen({ mouse: true, smartCSR: true });
+      const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
+      const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
+      const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+      const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true, keys: true });
+
+      const focusManager = createUpdateDialogFocusManager([stageList, statusList, priorityList, commentBox]);
+
+      const wireNavigation = (field: any) => {
+        field.on('keypress', (_ch: string, key: { name?: string }) => {
+          if (key?.name === 'tab') {
+            focusManager.cycle(1);
+          }
+          if (key?.name === 'S-tab') {
+            focusManager.cycle(-1);
+          }
+        });
+      };
+
+      [stageList, statusList, priorityList, commentBox].forEach(wireNavigation);
+
+      focusManager.focusIndex(3);
+      commentBox.emit('keypress', '', { name: 'tab', full: 'tab' });
+      expect(focusManager.getIndex()).toBe(0);
+
+      commentBox.emit('keypress', '', { name: 'S-tab', shift: true, full: 'S-tab' });
+      expect(focusManager.getIndex()).toBe(3);
+
+      screen.destroy();
+    });
   });
 
   describe('Update Dialog Error Handling', () => {
@@ -781,4 +814,5 @@ describe('TUI Update Dialog', () => {
       screen.destroy();
     });
   });
+
 });
