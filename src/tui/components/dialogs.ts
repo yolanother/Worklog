@@ -224,6 +224,10 @@ export class DialogsComponent {
       width: '100%-6',
       height: 3,
       inputOnFocus: true,
+      // allow vim-like navigation and proper multi-line editing
+      vi: true,
+      // ensure text wraps inside the textarea instead of overflowing
+      wrap: true,
       keys: true,
       mouse: true,
       scrollable: true,
@@ -253,17 +257,16 @@ export class DialogsComponent {
         priorityList.height = updateDialogListHeight;
       }
 
-      // Position the comment textarea directly below the lists and give it
-      // the remaining space. This keeps layout responsive when heights
-      // change.
-      // Compute list height as a number (may be set to numeric or string by blessed)
+      // Position the comment textarea directly below the lists and let it
+      // fill the remaining vertical space inside the dialog. Using a
+      // `bottom` value (instead of explicit numeric `height`) keeps the
+      // textarea responsive and prevents it from overflowing the dialog
+      // when the terminal is small.
       const listHeight = Number((stageList.height as any)) || updateDialogListHeight;
       const textareaTop = updateDialogListTop + listHeight + 1;
-      // Ensure textarea fits inside the dialog; on very small windows reduce to single line
-      const available = (this.updateDialog.height as number) - (textareaTop + 3);
-      const textareaHeight = Math.max(1, Math.min(Math.max(3, available), (this.updateDialog.height as number) - 6));
       (this.updateDialogComment.top as any) = textareaTop;
-      (this.updateDialogComment.height as any) = textareaHeight;
+      // leave a small bottom gap for the dialog border and padding
+      (this.updateDialogComment.bottom as any) = 1;
       (this.updateDialogComment.width as any) = '100%-6';
 
       this.updateDialog.width = screenWidth < 100 ? '90%' : '70%';
