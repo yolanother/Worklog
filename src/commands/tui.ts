@@ -2220,6 +2220,24 @@ export default function register(ctx: PluginContext): void {
         closeUpdateDialog();
       });
 
+      updateDialogComment.key(['enter'], () => {
+        if (updateDialog.hidden) return;
+        submitUpdateDialog();
+        return false;
+      });
+
+      updateDialogComment.key(['linefeed', 'C-j'], () => {
+        if (updateDialog.hidden) return;
+        const currentValue = updateDialogComment.getValue ? updateDialogComment.getValue() : '';
+        const nextValue = `${currentValue}\n`;
+        updateDialogComment.setValue?.(nextValue);
+        if (typeof updateDialogComment.moveCursor === 'function') {
+          updateDialogComment.moveCursor(nextValue.length);
+        }
+        screen.render();
+        return false;
+      });
+
       const submitUpdateDialog = () => {
         const item = getSelectedItem();
         if (!item) {
