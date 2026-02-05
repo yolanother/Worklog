@@ -466,7 +466,7 @@ export default function register(ctx: PluginContext): void {
         parent: screen,
         top: 'center',
         left: 'center',
-        width: '60%',
+        width: '80%',
         height: 12,
         label: ' Next Work Item ',
         border: { type: 'line' },
@@ -497,6 +497,10 @@ export default function register(ctx: PluginContext): void {
         height: 5,
         content: 'Evaluating next work item...',
         tags: true,
+        wrap: true,
+        wordWrap: true,
+        scrollable: true,
+        alwaysScroll: true,
       });
 
       const nextDialogOptions = blessedImpl.list({
@@ -1234,6 +1238,28 @@ export default function register(ctx: PluginContext): void {
         return value.replace(/[{}]/g, (ch) => (ch === '{' ? '{open}' : '{close}'));
       }
 
+      // Insert zero-width spaces into long uninterrupted tokens so blessed can
+      // wrap extremely long words (e.g. long URLs or single-word reasons).
+      // Using a zero-width space (U+200B) is intentional: it does not render
+      // visually but allows terminals to break the word for wrapping.
+      function softBreakLongWords(value: string, maxLen = 40): string {
+        // Quick path
+        if (!value || value.length <= maxLen) return value;
+        // Match runs of non-whitespace characters at least maxLen long
+        const re = new RegExp(`([^\\s]{${maxLen},})`, 'g');
+        return value.replace(re, (match) => {
+          const parts: string[] = [];
+          for (let i = 0; i < match.length; i += maxLen) {
+            parts.push(match.slice(i, i + maxLen));
+          }
+          // Use a zero-width space followed by a normal space as a fallback
+          // so terminals that don't break on U+200B still have a visible
+          // break opportunity. This keeps the visual impact minimal while
+          // ensuring wrapping works across environments.
+          return parts.join('\u200B ');
+        });
+      }
+
       function updateDetailForIndex(idx: number, visible?: VisibleNode[]) {
         const v = visible || buildVisible();
         if (v.length === 0) {
@@ -1591,7 +1617,75 @@ export default function register(ctx: PluginContext): void {
       }
 
       function setNextDialogContent(content: string) {
-        nextDialogText.setContent(content);
+        const safe = content;
+        const baseWidth = 45;
+        const firstLineWidth = Math.max(10, baseWidth - 4);
+
+        const wrapPlainLine = (line: string, width: number): string[] => {
+          const words = line.split(/\s+/).filter(Boolean);
+          if (words.length === 0) return [''];
+          const out: string[] = [];
+          let current = '';
+          for (const word of words) {
+            if (current.length === 0) {
+              if (word.length <= width) {
+                current = word;
+              } else {
+                for (let i = 0; i < word.length; i += width) {
+                  out.push(word.slice(i, i + width));
+                }
+                current = '';
+              }
+              continue;
+            }
+            if ((current.length + 1 + word.length) <= width) {
+              current = `${current} ${word}`;
+            } else {
+              out.push(current);
+              if (word.length <= width) {
+                current = word;
+              } else {
+                for (let i = 0; i < word.length; i += width) {
+                  out.push(word.slice(i, i + width));
+                }
+                current = '';
+              }
+            }
+          }
+          if (current.length > 0) out.push(current);
+          return out;
+        };
+
+        const hasBlessedTags = (line: string) => /{[^}]+}/.test(line);
+
+        const wrappedLines = safe.split('\n').flatMap((line, idx) => {
+          const width = idx === 0 ? firstLineWidth : baseWidth;
+          if (hasBlessedTags(line)) return [line];
+          return wrapPlainLine(line, width);
+        });
+
+        nextDialogText.setContent(wrappedLines.join('\n'));
+        try {
+          // Count lines after wrapping (approximate by splitting on \n)
+          const lines = wrappedLines.length;
+          const screenH = typeof screen.height === 'number' ? screen.height : 24;
+          const maxTextH = Math.max(3, Math.min(12, Math.floor(screenH * 0.4)));
+          const textH = Math.min(Math.max(3, lines), maxTextH);
+          // Keep options area (top 7 + height 3) visible — compute dialog height
+          const optionsTop = 7;
+          const optionsHeight = 3;
+          const desiredDialogH = Math.min(screenH - 2, textH + optionsTop + optionsHeight - 1);
+          nextDialogText.height = textH;
+          nextDialog.height = desiredDialogH;
+          // ensure the options list remains positioned below the text area
+          try { nextDialogOptions.top = (nextDialogText.top as number) + (nextDialogText.height as number) + 1; } catch (_) {}
+          // make text scrollable if content still exceeds the allocated height
+          // Ensure scroll position reset so top of content is visible
+          if (typeof (nextDialogText as any).setScroll === 'function') (nextDialogText as any).setScroll(0);
+          if (typeof (nextDialogText as any).setScrollPerc === 'function') (nextDialogText as any).setScrollPerc(0);
+        } catch (_) {
+          // ignore layout errors and render content as-is
+        }
         screen.render();
       }
 
@@ -1616,7 +1710,10 @@ export default function register(ctx: PluginContext): void {
           `Status: ${item.status}${stageLabel ? ` · Stage: ${stageLabel}` : ''}`,
           `Priority: ${item.priority || 'none'}`,
         ];
-        if (reason) lines.push(`Reason: ${reason}`);
+        if (reason) {
+          lines.push('');
+          lines.push(`Reason: ${reason}`);
+        }
         if (notice) lines.push(`Note: ${notice}`);
         setNextDialogContent(lines.join('\n'));
       }
