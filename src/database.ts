@@ -1122,6 +1122,7 @@ export class WorklogDatabase {
      }
 
      this.store.saveComment(comment);
+     this.touchWorkItemUpdatedAt(input.workItemId);
      this.exportToJsonl();
      this.triggerAutoSync();
      return comment;
@@ -1151,22 +1152,28 @@ export class WorklogDatabase {
       createdAt: comment.createdAt, // Prevent createdAt changes
     };
 
-    this.store.saveComment(updated);
-    this.exportToJsonl();
-    this.triggerAutoSync();
-    return updated;
+     this.store.saveComment(updated);
+     this.touchWorkItemUpdatedAt(comment.workItemId);
+     this.exportToJsonl();
+     this.triggerAutoSync();
+     return updated;
   }
 
   /**
    * Delete a comment
    */
   deleteComment(id: string): boolean {
-    const result = this.store.deleteComment(id);
-    if (result) {
-      this.exportToJsonl();
-      this.triggerAutoSync();
-    }
-    return result;
+     const comment = this.store.getComment(id);
+     if (!comment) {
+       return false;
+     }
+     const result = this.store.deleteComment(id);
+     if (result) {
+       this.touchWorkItemUpdatedAt(comment.workItemId);
+       this.exportToJsonl();
+       this.triggerAutoSync();
+     }
+     return result;
   }
 
   /**
@@ -1198,5 +1205,16 @@ export class WorklogDatabase {
     }
     this.exportToJsonl();
     this.triggerAutoSync();
+  }
+
+  private touchWorkItemUpdatedAt(workItemId: string): void {
+    const item = this.store.getWorkItem(workItemId);
+    if (!item) {
+      return;
+    }
+    this.store.saveWorkItem({
+      ...item,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }
