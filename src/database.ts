@@ -685,6 +685,8 @@ export class WorklogDatabase {
 
     // Filter out deleted items first
     filteredItems = filteredItems.filter(item => item.status !== 'deleted');
+    // Exclude epics from being recommended by `wl next` by default
+    filteredItems = filteredItems.filter(item => item.issueType !== 'epic');
     if (!includeInReview) {
       filteredItems = filteredItems.filter(item => item.stage !== 'in_review');
     }
