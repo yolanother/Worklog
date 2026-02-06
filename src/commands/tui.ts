@@ -483,7 +483,6 @@ export default function register(ctx: PluginContext): void {
       const wireUpdateDialogSelectionListeners = (list: Pane | undefined | null, source: 'status' | 'stage' | 'priority') => {
         if (!list || typeof list.on !== 'function') return;
         const selectHandler = () => handleUpdateDialogSelectionChange(source);
-        const selectItemHandler = () => handleUpdateDialogSelectionChange(source);
         const clickHandler = () => handleUpdateDialogSelectionChange(source);
         const keypressHandler = (...args: unknown[]) => {
           const key = args[1] as KeyInfo | undefined;
@@ -494,11 +493,9 @@ export default function register(ctx: PluginContext): void {
         };
         try {
           (list as any)[`__opencode_select_${source}`] = selectHandler;
-          (list as any)[`__opencode_select_item_${source}`] = selectItemHandler;
           (list as any)[`__opencode_click_${source}`] = clickHandler;
           (list as any)[`__opencode_keypress_${source}`] = keypressHandler;
           list.on('select', selectHandler);
-          list.on('select item', selectItemHandler);
           list.on('click', clickHandler);
           list.on('keypress', keypressHandler);
         } catch (_) {}
@@ -1976,19 +1973,18 @@ export default function register(ctx: PluginContext): void {
       renderListAndDetail(0);
 
       // Event handlers (named so they can be removed during cleanup)
-      const listSelectHandler = (_el: any, idx: number) => {
+      // Centralized list selection handler to keep detail updates/rendering
+      // consistent across mouse and keyboard interactions.
+      const updateListSelection = (idx: number, source?: string) => {
         const visible = buildVisible();
         updateDetailForIndex(idx, visible);
         screen.render();
+      };
+
+      const listSelectHandler = (_el: any, idx: number) => {
+        updateListSelection(idx, 'select');
       };
       try { (list as any).__opencode_select = listSelectHandler; list.on('select', listSelectHandler); } catch (_) {}
-
-      const listSelectItemHandler = (_el: any, idx: number) => {
-        const visible = buildVisible();
-        updateDetailForIndex(idx, visible);
-        screen.render();
-      };
-      try { (list as any).__opencode_select_item = listSelectItemHandler; list.on('select item', listSelectItemHandler); } catch (_) {}
 
       // Update details immediately when navigating with keys or mouse
       const listKeypressHandler = (_ch: any, key: any) => {
@@ -1996,9 +1992,7 @@ export default function register(ctx: PluginContext): void {
           const nav = key && key.name && ['up', 'down', 'k', 'j', 'pageup', 'pagedown', 'home', 'end'].includes(key.name);
           if (nav) {
             const idx = list.selected as number;
-            const visible = buildVisible();
-            updateDetailForIndex(idx, visible);
-            screen.render();
+            updateListSelection(idx, 'keypress');
           }
         } catch (err) {
           // ignore render errors
@@ -2019,15 +2013,11 @@ export default function register(ctx: PluginContext): void {
       try { (opencodeText as any).__opencode_focus = opencodeTextFocusHandler; opencodeText.on('focus', opencodeTextFocusHandler); } catch (_) {}
 
       const listClickHandler = () => {
-        setTimeout(() => {
-          const idx = list.selected as number;
-          const visible = buildVisible();
-          updateDetailForIndex(idx, visible);
-          list.focus();
-          paneFocusIndex = getFocusPanes().indexOf(list);
-          applyFocusStylesForPane(list);
-          screen.render();
-        }, 0);
+        const idx = list.selected as number;
+        updateListSelection(idx, 'click');
+        list.focus();
+        paneFocusIndex = getFocusPanes().indexOf(list);
+        applyFocusStylesForPane(list);
       };
       try { (list as any).__opencode_click = listClickHandler; list.on('click', listClickHandler); } catch (_) {}
 
