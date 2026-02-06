@@ -36,6 +36,71 @@ import {
 } from '../tui/status-stage-rules.js';
 import { isStatusStageCompatible } from '../tui/status-stage-validation.js';
 
+export const isClosedStatus = (status: WorkItemStatus): boolean =>
+  status === 'completed' || status === 'deleted';
+
+export const filterVisibleItems = (items: Item[], showClosed: boolean): Item[] =>
+  showClosed ? items.slice() : items.filter((item: Item) => !isClosedStatus(item.status));
+
+export const rebuildTreeState = (state: TuiState): void => {
+  state.currentVisibleItems = filterVisibleItems(state.items, state.showClosed);
+  state.itemsById = new Map<string, Item>();
+  for (const it of state.currentVisibleItems) state.itemsById.set(it.id, it);
+
+  state.childrenMap = new Map<string, Item[]>();
+  for (const it of state.currentVisibleItems) {
+    const pid = it.parentId;
+    if (pid && state.itemsById.has(pid)) {
+      const arr = state.childrenMap.get(pid) || [];
+      arr.push(it);
+      state.childrenMap.set(pid, arr);
+    }
+  }
+
+  state.roots = state.currentVisibleItems.filter(it => !it.parentId || !state.itemsById.has(it.parentId)).slice();
+  state.roots.sort(sortByPriorityAndDate);
+
+  // prune expanded nodes that are no longer present
+  for (const id of Array.from(state.expanded)) {
+    if (!state.itemsById.has(id)) state.expanded.delete(id);
+  }
+};
+
+export const createTuiState = (items: Item[], showClosed: boolean, persistedExpanded?: string[] | null): TuiState => {
+  const state: TuiState = {
+    items: items.slice(),
+    showClosed,
+    currentVisibleItems: [],
+    itemsById: new Map<string, Item>(),
+    childrenMap: new Map<string, Item[]>(),
+    roots: [],
+    expanded: new Set<string>(),
+    listLines: [],
+  };
+
+  if (persistedExpanded && Array.isArray(persistedExpanded)) {
+    for (const id of persistedExpanded) state.expanded.add(id);
+  }
+
+  rebuildTreeState(state);
+  return state;
+};
+
+export const buildVisibleNodes = (state: TuiState): VisibleNode[] => {
+  const out: VisibleNode[] = [];
+
+  function visit(it: Item, depth: number) {
+    const children = (state.childrenMap.get(it.id) || []).slice().sort(sortByPriorityAndDate);
+    out.push({ item: it, depth, hasChildren: children.length > 0 });
+    if (children.length > 0 && state.expanded.has(it.id)) {
+      for (const c of children) visit(c, depth + 1);
+    }
+  }
+
+  for (const r of state.roots) visit(r, 0);
+  return out;
+};
+
 type Item = WorkItem;
 
 // Lightweight, explicit interfaces to avoid wide `any` usage in the TUI code.
@@ -73,6 +138,17 @@ type Pane = {
 
 type VisibleNode = { item: Item; depth: number; hasChildren: boolean };
 
+export type TuiState = {
+  items: Item[];
+  showClosed: boolean;
+  currentVisibleItems: Item[];
+  itemsById: Map<string, Item>;
+  childrenMap: Map<string, Item[]>;
+  roots: Item[];
+  expanded: Set<string>;
+  listLines: string[];
+};
+
 type KeyInfo = { name?: string; ctrl?: boolean; meta?: boolean; shift?: boolean };
 
 export default function register(ctx: PluginContext): void {
@@ -99,49 +175,19 @@ export default function register(ctx: PluginContext): void {
       const query: Partial<Record<string, unknown>> = {};
       if (options.inProgress) query.status = 'in-progress';
 
-      let items: Item[] = db.list(query);
+      const items: Item[] = db.list(query);
+      const showClosed = Boolean(options.all);
+
+      const persisted = loadPersistedState(db.getPrefix?.() || undefined);
+      const persistedExpanded = persisted && Array.isArray(persisted.expanded) ? persisted.expanded : undefined;
+      const state = createTuiState(items, showClosed, persistedExpanded);
+
       // By default hide closed items (completed or deleted) unless --all is set
-      const visibleItems = options.all ? items : items.filter((item: Item) => item.status !== 'completed' && item.status !== 'deleted');
-      if (visibleItems.length === 0) {
+      if (state.currentVisibleItems.length === 0) {
         console.log('No work items found');
         return;
       }
-
-      let showClosed = Boolean(options.all);
-      let currentVisibleItems: Item[] = visibleItems.slice();
-      let itemsById = new Map<string, Item>();
-      let childrenMap = new Map<string, Item[]>();
-      let roots: Item[] = [];
-
-      function rebuildTree() {
-        currentVisibleItems = showClosed
-          ? items.slice()
-          : items.filter((item: Item) => item.status !== 'completed' && item.status !== 'deleted');
-
-        itemsById = new Map<string, Item>();
-        for (const it of currentVisibleItems) itemsById.set(it.id, it);
-
-        childrenMap = new Map<string, Item[]>();
-        for (const it of currentVisibleItems) {
-          const pid = it.parentId;
-          if (pid && itemsById.has(pid)) {
-            const arr = childrenMap.get(pid) || [];
-            arr.push(it);
-            childrenMap.set(pid, arr);
-          }
-        }
-
-        roots = currentVisibleItems.filter(it => !it.parentId || !itemsById.has(it.parentId)).slice();
-        roots.sort(sortByPriorityAndDate);
-
-        // prune expanded nodes that are no longer present
-        for (const id of Array.from(expanded)) {
-          if (!itemsById.has(id)) expanded.delete(id);
-        }
-      }
-
-      // Track expanded state by id
-      const expanded = new Set<string>();
+      const rebuildTree = () => rebuildTreeState(state);
 
       // Persisted state file per-worklog directory
       const worklogDir = resolveWorklogDir();
@@ -182,34 +228,13 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Default expand roots unless persisted state exists
-      const persisted = loadPersistedState(db.getPrefix?.() || undefined);
-      if (persisted && Array.isArray(persisted.expanded)) {
-        for (const id of persisted.expanded) expanded.add(id);
-      } else {
-        // temp expand roots; actual roots set after rebuildTree
-      }
-
       rebuildTree();
-      if (!persisted || !Array.isArray(persisted.expanded)) {
-        for (const r of roots) expanded.add(r.id);
+      if (!persistedExpanded) {
+        for (const r of state.roots) state.expanded.add(r.id);
       }
 
        // Flatten visible nodes for rendering (uses module-level VisibleNode type)
-
-      function buildVisible(): VisibleNode[] {
-        const out: VisibleNode[] = [];
-
-        function visit(it: Item, depth: number) {
-          const children = (childrenMap.get(it.id) || []).slice().sort(sortByPriorityAndDate);
-          out.push({ item: it, depth, hasChildren: children.length > 0 });
-          if (children.length > 0 && expanded.has(it.id)) {
-            for (const c of children) visit(c, depth + 1);
-          }
-        }
-
-        for (const r of roots) visit(r, 0);
-        return out;
-      }
+      const buildVisible = () => buildVisibleNodes(state);
 
       // Setup blessed screen and layout
       const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
@@ -1275,16 +1300,16 @@ export default function register(ctx: PluginContext): void {
       try { (opencodeDialog as any).__opencode_key_escape = opencodeDialogEscapeHandler; opencodeDialog.key(['escape'], opencodeDialogEscapeHandler); } catch (_) {}
 
 
-      let listLines: string[] = [];
+      state.listLines = [];
       function renderListAndDetail(selectIndex = 0) {
         const visible = buildVisible();
         const lines = visible.map(n => {
           const indent = '  '.repeat(n.depth);
-          const marker = n.hasChildren ? (expanded.has(n.item.id) ? '▾' : '▸') : ' ';
+          const marker = n.hasChildren ? (state.expanded.has(n.item.id) ? '▾' : '▸') : ' ';
           const title = formatTitleOnlyTUI(n.item);
           return `${indent}${marker} ${title} {gray-fg}({underline}${n.item.id}{/underline}){/gray-fg}`;
         });
-        listLines = lines;
+        state.listLines = lines;
         list.setItems(lines);
         // Keep selection in bounds
         const idx = Math.max(0, Math.min(selectIndex, lines.length - 1));
@@ -1292,9 +1317,9 @@ export default function register(ctx: PluginContext): void {
         updateDetailForIndex(idx, visible);
         // Update footer/help with right-aligned closed toggle
         try {
-          const closedCount = items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
+          const closedCount = state.items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
           const leftText = 'Press ? for help';
-          const rightText = `Closed (${closedCount}): ${showClosed ? 'Shown' : 'Hidden'}`;
+          const rightText = `Closed (${closedCount}): ${state.showClosed ? 'Shown' : 'Hidden'}`;
           const cols = screen.width as number;
           if (cols && cols > leftText.length + rightText.length + 2) {
             const gap = cols - leftText.length - rightText.length;
@@ -1653,10 +1678,10 @@ export default function register(ctx: PluginContext): void {
         const selectedId = selected?.id;
         const query: any = {};
         if (options.inProgress) query.status = 'in-progress';
-        items = db.list(query);
+        state.items = db.list(query);
         const nextVisible = options.all
-          ? items.slice()
-          : items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+          ? state.items.slice()
+          : state.items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
         if (nextVisible.length === 0) {
           list.setItems([]);
           detail.setContent('');
@@ -1678,14 +1703,14 @@ export default function register(ctx: PluginContext): void {
       function setFilterNext(filter: 'in-progress' | 'open' | 'blocked') {
         options.inProgress = false;
         options.all = false;
-        showClosed = false;
+        state.showClosed = false;
         const selected = getSelectedItem();
         const selectedId = selected?.id;
         const query: any = {};
         if (filter === 'in-progress') query.status = 'in-progress';
         if (filter === 'blocked') query.status = 'blocked';
-        items = db.list(query);
-        const nextVisible = items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+        state.items = db.list(query);
+        const nextVisible = state.items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
         if (nextVisible.length === 0) {
           list.setItems([]);
           detail.setContent('');
@@ -1935,11 +1960,11 @@ export default function register(ctx: PluginContext): void {
           return true;
         }
 
-        if (itemsById.has(id)) {
-          let cursor = itemsById.get(id) as Item | undefined;
-          while (cursor?.parentId && itemsById.has(cursor.parentId)) {
-            expanded.add(cursor.parentId);
-            cursor = itemsById.get(cursor.parentId);
+        if (state.itemsById.has(id)) {
+          let cursor = state.itemsById.get(id) as Item | undefined;
+          while (cursor?.parentId && state.itemsById.has(cursor.parentId)) {
+            state.expanded.add(cursor.parentId);
+            cursor = state.itemsById.get(cursor.parentId);
           }
           const expandedVisible = buildVisible();
           found = expandedVisible.findIndex(node => node.item.id === id);
@@ -1967,18 +1992,18 @@ export default function register(ctx: PluginContext): void {
           return false;
         }
 
-        showClosed = true;
+        state.showClosed = true;
         options.inProgress = false;
         options.all = true;
-        items = db.list({}).filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
+        state.items = db.list({}).filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
         rebuildTree();
         let refreshed = buildVisible();
         let refreshedIndex = refreshed.findIndex(node => node.item.id === id);
-        if (refreshedIndex < 0 && itemsById.has(id)) {
-          let cursor = itemsById.get(id) as Item | undefined;
-          while (cursor?.parentId && itemsById.has(cursor.parentId)) {
-            expanded.add(cursor.parentId);
-            cursor = itemsById.get(cursor.parentId);
+        if (refreshedIndex < 0 && state.itemsById.has(id)) {
+          let cursor = state.itemsById.get(id) as Item | undefined;
+          while (cursor?.parentId && state.itemsById.has(cursor.parentId)) {
+            state.expanded.add(cursor.parentId);
+            cursor = state.itemsById.get(cursor.parentId);
           }
           refreshed = buildVisible();
           refreshedIndex = refreshed.findIndex(node => node.item.id === id);
@@ -2127,7 +2152,7 @@ export default function register(ctx: PluginContext): void {
         if (!coords) return;
         const scroll = list.getScroll() as number;
         const lineIndex = coords.row + (scroll || 0);
-        const line = listLines[lineIndex];
+        const line = state.listLines[lineIndex];
         if (!line) return;
         const id = extractIdAtColumn(line, coords.col);
         if (id) openDetailsForId(id);
@@ -2195,7 +2220,7 @@ export default function register(ctx: PluginContext): void {
         const visible = buildVisible();
         const node = visible[idx];
         if (node && node.hasChildren) {
-          expanded.add(node.item.id);
+          state.expanded.add(node.item.id);
           renderListAndDetail(idx);
         }
       });
@@ -2206,8 +2231,8 @@ export default function register(ctx: PluginContext): void {
         const visible = buildVisible();
         const node = visible[idx];
         if (!node) return;
-        if (node.hasChildren && expanded.has(node.item.id)) {
-          expanded.delete(node.item.id);
+        if (node.hasChildren && state.expanded.has(node.item.id)) {
+          state.expanded.delete(node.item.id);
           renderListAndDetail(idx);
           return;
         }
@@ -2215,7 +2240,7 @@ export default function register(ctx: PluginContext): void {
         const parentIdx = findParentIndex(idx, visible);
         if (parentIdx >= 0) {
           const parent = visible[parentIdx];
-          expanded.delete(parent.item.id);
+          state.expanded.delete(parent.item.id);
           renderListAndDetail(parentIdx);
         }
       });
@@ -2235,16 +2260,16 @@ export default function register(ctx: PluginContext): void {
         const visible = buildVisible();
         const node = visible[idx];
         if (!node || !node.hasChildren) return;
-        if (expanded.has(node.item.id)) expanded.delete(node.item.id);
-        else expanded.add(node.item.id);
+        if (state.expanded.has(node.item.id)) state.expanded.delete(node.item.id);
+        else state.expanded.add(node.item.id);
         renderListAndDetail(idx);
         // persist state
-        savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
+        savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) });
       });
 
       const shutdown = () => {
         // Persist state before exiting
-        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
+        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
         // Stop the OpenCode server if we started it
         opencodeClient.stopServer();
         // Clear pending timers to avoid keeping the process alive
@@ -2454,13 +2479,13 @@ export default function register(ctx: PluginContext): void {
       // Click footer to open help
       const helpClickHandler = (data: any) => {
         try {
-          const closedCount = items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
-          const rightText = `Closed (${closedCount}): ${showClosed ? 'Shown' : 'Hidden'}`;
+          const closedCount = state.items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
+          const rightText = `Closed (${closedCount}): ${state.showClosed ? 'Shown' : 'Hidden'}`;
           const cols = screen.width as number;
           const rightStart = cols - rightText.length;
           const clickX = data?.x ?? 0;
           if (cols && clickX >= rightStart) {
-            showClosed = !showClosed;
+            state.showClosed = !state.showClosed;
             rebuildTree();
             renderListAndDetail(list.selected as number);
             return;
