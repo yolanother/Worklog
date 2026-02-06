@@ -14,16 +14,7 @@ import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { OpencodeClient, type OpencodeServerStatus } from '../tui/opencode-client.js';
-import {
-  DetailComponent,
-  DialogsComponent,
-  HelpMenuComponent,
-  ListComponent,
-  ModalDialogsComponent,
-  OpencodePaneComponent,
-  OverlaysComponent,
-  ToastComponent,
-} from '../tui/components/index.js';
+import { createLayout } from '../tui/layout.js';
 import { createUpdateDialogFocusManager } from '../tui/update-dialog-navigation.js';
 import { buildUpdateDialogUpdates } from '../tui/update-dialog-submit.js';
 import {
@@ -160,27 +151,23 @@ export default function register(ctx: PluginContext): void {
        // Flatten visible nodes for rendering (uses module-level VisibleNode type)
       const buildVisible = () => buildVisibleNodes(state);
 
-      // Setup blessed screen and layout
-      const screen = blessedImpl.screen({ smartCSR: true, title: 'Worklog TUI', mouse: true });
-
-      const listComponent = new ListComponent({ parent: screen, blessed: blessedImpl }).create();
+      // Setup blessed screen and layout via factory (extracted to src/tui/layout.ts)
+      const layout = createLayout({ blessed: blessedImpl });
+      const {
+        screen,
+        listComponent,
+        detailComponent,
+        toastComponent,
+        overlaysComponent,
+        dialogsComponent,
+        helpMenu,
+        modalDialogs,
+        opencodeUi,
+      } = layout;
       const list = listComponent.getList();
       const help = listComponent.getFooter();
-
-      const detailComponent = new DetailComponent({ parent: screen, blessed: blessedImpl }).create();
       const detail = detailComponent.getDetail();
       const copyIdButton = detailComponent.getCopyIdButton();
-
-      const toastComponent = new ToastComponent({
-        parent: screen,
-        blessed: blessedImpl,
-        position: { bottom: 1, right: 1 },
-        style: { fg: 'black', bg: 'green' },
-        duration: 1200,
-      }).create();
-
-      const overlaysComponent = new OverlaysComponent({ parent: screen, blessed: blessedImpl }).create();
-      const dialogsComponent = new DialogsComponent({ parent: screen, blessed: blessedImpl, overlays: overlaysComponent }).create();
 
       const detailOverlay = overlaysComponent.detailOverlay;
       const detailModal = dialogsComponent.detailModal;
@@ -454,78 +441,13 @@ export default function register(ctx: PluginContext): void {
       wireUpdateDialogSelectionListeners(updateDialogStageOptions, 'stage');
       wireUpdateDialogSelectionListeners(updateDialogPriorityOptions, 'priority');
 
-      const nextOverlay = blessedImpl.box({
-        parent: screen,
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100% - 1',
-        hidden: true,
-        mouse: true,
-        clickable: true,
-        style: { bg: 'black' },
-      });
+      // Next-dialog, help, modals, opencode — created by layout factory
+      const nextOverlay = layout.nextDialog.overlay;
+      const nextDialog = layout.nextDialog.dialog;
+      const nextDialogClose = layout.nextDialog.close;
+      const nextDialogText = layout.nextDialog.text;
+      const nextDialogOptions = layout.nextDialog.options;
 
-      const nextDialog = blessedImpl.box({
-        parent: screen,
-        top: 'center',
-        left: 'center',
-        width: '80%',
-        height: 12,
-        label: ' Next Work Item ',
-        border: { type: 'line' },
-        hidden: true,
-        tags: true,
-        mouse: true,
-        clickable: true,
-        style: { border: { fg: 'cyan' } },
-      });
-
-      const nextDialogClose = blessedImpl.box({
-        parent: nextDialog,
-        top: 0,
-        right: 1,
-        height: 1,
-        width: 3,
-        content: '[x]',
-        style: { fg: 'red' },
-        mouse: true,
-        clickable: true,
-      });
-
-      const nextDialogText = blessedImpl.box({
-        parent: nextDialog,
-        top: 1,
-        left: 2,
-        width: '100%-4',
-        height: 5,
-        content: 'Evaluating next work item...',
-        tags: true,
-        wrap: true,
-        wordWrap: true,
-        scrollable: true,
-        alwaysScroll: true,
-      });
-
-      const nextDialogOptions = blessedImpl.list({
-        parent: nextDialog,
-        top: 7,
-        left: 2,
-        width: '100%-4',
-        height: 3,
-        keys: true,
-        mouse: true,
-        style: {
-          selected: { bg: 'blue' },
-        },
-        items: ['View', 'Next recommendation', 'Close'],
-      });
-
-      const helpMenu = new HelpMenuComponent({ parent: screen, blessed: blessedImpl }).create();
-
-      const modalDialogs = new ModalDialogsComponent({ parent: screen, blessed: blessedImpl }).create();
-
-      const opencodeUi = new OpencodePaneComponent({ parent: screen, blessed: blessedImpl }).create();
       const serverStatusBox = opencodeUi.serverStatusBox;
       const opencodeDialog = opencodeUi.dialog;
       const opencodeText = opencodeUi.textarea;
