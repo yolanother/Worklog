@@ -684,7 +684,9 @@ export default function register(ctx: PluginContext): void {
        let ctrlWTimeout: ReturnType<typeof setTimeout> | null = null;
        let lastCtrlWTime = 0;
        let suppressNextP = false;  // Flag to suppress 'p' handler after Ctrl-W p
+       let suppressNextPTimeout: ReturnType<typeof setTimeout> | null = null;
        let lastCtrlWKeyHandled = false;  // Flag to suppress widget key handling after Ctrl-W command
+       let lastCtrlWKeyHandledTimeout: ReturnType<typeof setTimeout> | null = null;
        
         const setCtrlWPending = () => {
           debugLog(`Setting ctrlWPending = true (timestamp: ${Date.now()})`);
@@ -2240,15 +2242,31 @@ export default function register(ctx: PluginContext): void {
         savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) });
       });
 
-      // Quit keys: q and Ctrl-C always quit; Escape should close the help overlay
-      // when it's open instead of exiting the whole TUI.
-      screen.key(['q', 'C-c'], () => {
+      const shutdown = () => {
         // Persist state before exiting
         try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
         // Stop the OpenCode server if we started it
         opencodeClient.stopServer();
+        // Clear pending timers to avoid keeping the process alive
+        if (ctrlWTimeout) {
+          try { clearTimeout(ctrlWTimeout); } catch (_) {}
+          ctrlWTimeout = null;
+        }
+        if (lastCtrlWKeyHandledTimeout) {
+          try { clearTimeout(lastCtrlWKeyHandledTimeout); } catch (_) {}
+          lastCtrlWKeyHandledTimeout = null;
+        }
+        if (suppressNextPTimeout) {
+          try { clearTimeout(suppressNextPTimeout); } catch (_) {}
+          suppressNextPTimeout = null;
+        }
         screen.destroy();
-        process.exit(0);
+      };
+
+      // Quit keys: q and Ctrl-C always quit; Escape should close the help overlay
+      // when it's open instead of exiting the whole TUI.
+      screen.key(['q', 'C-c'], () => {
+        shutdown();
       });
 
       screen.key(['escape'], () => {
@@ -2287,11 +2305,7 @@ export default function register(ctx: PluginContext): void {
           closeHelp();
           return;
         }
-        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(expanded) }); } catch (_) {}
-        // Stop the OpenCode server if we started it
-        opencodeClient.stopServer();
-        screen.destroy();
-        process.exit(0);
+        shutdown();
       });
 
       // Focus list to receive keys
@@ -2336,12 +2350,14 @@ export default function register(ctx: PluginContext): void {
               }
               // Set flag to suppress widget-level key handling
               lastCtrlWKeyHandled = true;
-              setTimeout(() => { lastCtrlWKeyHandled = false; }, 100);
+              if (lastCtrlWKeyHandledTimeout) clearTimeout(lastCtrlWKeyHandledTimeout);
+              lastCtrlWKeyHandledTimeout = setTimeout(() => { lastCtrlWKeyHandled = false; }, 100);
               
               // Set suppressNextP if we just handled Ctrl-W p
               if (key?.name === 'p') {
                 suppressNextP = true;
-                setTimeout(() => { suppressNextP = false; }, 100);
+                if (suppressNextPTimeout) clearTimeout(suppressNextPTimeout);
+                suppressNextPTimeout = setTimeout(() => { suppressNextP = false; }, 100);
               }
               return false;  // Consume the event
             }
