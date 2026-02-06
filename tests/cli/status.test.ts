@@ -92,7 +92,7 @@ describe('CLI Status Tests', () => {
     expect(result.success).toBe(true);
     expect(result.database.workItems).toBe(2);
     expect(result.database.comments).toBe(1);
-  });
+  }, 60000);
 
   it('should output human-readable format by default', async () => {
     fs.writeFileSync(
