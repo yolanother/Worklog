@@ -46,11 +46,7 @@ export class ModalDialogsComponent {
   forceCleanup(): void {
     try { this.activeCleanup?.(); } catch (_) {}
     this.activeCleanup = null;
-    // Safety net: always ensure grabKeys is released after any modal cleanup.
-    // A textarea with inputOnFocus sets screen.grabKeys = true and may not
-    // properly release it if destroyed without ending its readInput cycle.
-    try { this.screen.grabKeys = false; } catch (_) {}
-    try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+    this.releaseGrabKeys();
   }
 
   async selectList(options: {
@@ -105,12 +101,7 @@ export class ModalDialogsComponent {
       list.select(defaultIndex);
 
       const cleanup = () => {
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { list.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.destroyWidgets([list, dialog, overlay]);
       };
 
       list.on('select', (_el: any, idx: number) => {
@@ -174,9 +165,8 @@ export class ModalDialogsComponent {
         clickable: true,
       }) as BlessedBox;
 
-      // Use a single-line textbox for the search term.  A textarea would
-      // swallow Enter to insert a newline; a textbox emits 'submit' on Enter,
-      // which is exactly what we want for a search/filter dialog.
+      // Single-line textbox: emits 'submit' on Enter (textarea would
+      // swallow Enter to insert a newline).
       const textbox = this.blessedImpl.textbox({
         parent: dialog,
         top: 1,
@@ -192,10 +182,6 @@ export class ModalDialogsComponent {
         if (typeof textbox.setValue === 'function') textbox.setValue(options.initial);
       } catch (_) {}
 
-      // Use individual blessed.box widgets for Apply/Cancel instead of a
-      // blessed.list.  blessed.list does not reliably emit 'select' for mouse
-      // clicks, which caused the Promise to never resolve and left the TUI in
-      // a permanently broken input state.
       const confirmBtn = this.blessedImpl.box({
         parent: dialog,
         bottom: 0,
@@ -221,37 +207,8 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
-        // The textbox with inputOnFocus calls readInput() when focused,
-        // which sets screen.grabKeys = true and monopolises all keyboard
-        // input.  We MUST end input reading before destroying, otherwise
-        // grabKeys stays true and the entire TUI keyboard is dead.
-        try {
-          const tb = textbox as any;
-          if (tb._reading) {
-            if (typeof tb.cancel === 'function' && tb.__listener) {
-              tb.cancel();
-            } else {
-              tb._reading = false;
-              this.screen.grabKeys = false;
-              try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
-            }
-          }
-        } catch (_) {}
-        // Safety net: always ensure grabKeys is released
-        try { this.screen.grabKeys = false; } catch (_) {}
-        try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
-
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { confirmBtn.removeAllListeners?.(); } catch (_) {}
-        try { cancelBtn.removeAllListeners?.(); } catch (_) {}
-        try { textbox.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { confirmBtn.destroy(); } catch (_) {}
-        try { cancelBtn.destroy(); } catch (_) {}
-        try { textbox.destroy(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.endTextboxReading(textbox);
+        this.destroyWidgets([confirmBtn, cancelBtn, textbox, dialog, overlay]);
         if (this.activeCleanup === cleanup) this.activeCleanup = null;
       };
       this.activeCleanup = cleanup;
@@ -263,39 +220,18 @@ export class ModalDialogsComponent {
         resolve(value);
       };
 
-      // Enter submits via blessed textbox's built-in 'submit' event
-      textbox.on('submit', (val: string) => {
-        safeResolve(val ?? options.initial);
-      });
+      const getValue = () => textbox.getValue ? textbox.getValue() : options.initial;
 
-      // Ctrl-S also submits
-      textbox.key(['C-s'], () => {
-        const value = textbox.getValue ? textbox.getValue() : options.initial;
-        safeResolve(value);
-      });
+      // Submit: Enter, Ctrl-S, or click [Apply]
+      textbox.on('submit', (val: string) => { safeResolve(val ?? options.initial); });
+      textbox.key(['C-s'], () => { safeResolve(getValue()); });
+      confirmBtn.on('click', () => { safeResolve(getValue()); });
 
-      confirmBtn.on('click', () => {
-        const value = textbox.getValue ? textbox.getValue() : options.initial;
-        safeResolve(value);
-      });
-
-      cancelBtn.on('click', () => {
-        safeResolve('');
-      });
-
-      // Escape cancels (blessed textbox emits 'cancel' on Escape, but we
-      // also bind it explicitly on the dialog for safety)
-      textbox.on('cancel', () => {
-        safeResolve('');
-      });
-
-      dialog.key(['escape'], () => {
-        safeResolve('');
-      });
-
-      overlay.on('click', () => {
-        safeResolve('');
-      });
+      // Cancel: Escape or click [Cancel] or click overlay
+      textbox.on('cancel', () => { safeResolve(''); });
+      cancelBtn.on('click', () => { safeResolve(''); });
+      dialog.key(['escape'], () => { safeResolve(''); });
+      overlay.on('click', () => { safeResolve(''); });
 
       overlay.setFront();
       dialog.setFront();
@@ -360,54 +296,16 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
-        // End the textbox's readInput before destroying (same grabKeys issue
-        // as editTextarea – see comment there for details).
-        try {
-          const inp = input as any;
-          if (inp._reading) {
-            if (typeof inp.cancel === 'function' && inp.__listener) {
-              inp.cancel();
-            } else {
-              inp._reading = false;
-              this.screen.grabKeys = false;
-              try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
-            }
-          }
-        } catch (_) {}
-        try { this.screen.grabKeys = false; } catch (_) {}
-        try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
-
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { input.removeAllListeners?.(); } catch (_) {}
-        try { cancelBtn.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { input.destroy(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.endTextboxReading(input);
+        this.destroyWidgets([input, cancelBtn, dialog, overlay]);
         if (this.activeCleanup === cleanup) this.activeCleanup = null;
       };
       this.activeCleanup = cleanup;
 
-      cancelBtn.on('click', () => {
-        cleanup();
-        resolve(false);
-      });
-
-      input.on('submit', (val: string) => {
-        cleanup();
-        resolve((val || '').trim() === options.confirmText);
-      });
-
-      dialog.key(['escape'], () => {
-        cleanup();
-        resolve(false);
-      });
-
-      overlay.on('click', () => {
-        cleanup();
-        resolve(false);
-      });
+      cancelBtn.on('click', () => { cleanup(); resolve(false); });
+      input.on('submit', (val: string) => { cleanup(); resolve((val || '').trim() === options.confirmText); });
+      dialog.key(['escape'], () => { cleanup(); resolve(false); });
+      overlay.on('click', () => { cleanup(); resolve(false); });
 
       overlay.setFront();
       dialog.setFront();
@@ -415,6 +313,8 @@ export class ModalDialogsComponent {
       this.screen.render();
     });
   }
+
+  // -- Private helpers -------------------------------------------------------
 
   private createOverlay(): BlessedBox {
     return this.blessedImpl.box({
@@ -427,5 +327,45 @@ export class ModalDialogsComponent {
       clickable: true,
       style: { bg: 'black' },
     }) as BlessedBox;
+  }
+
+  /**
+   * End a textbox/textarea's readInput() cycle and release screen.grabKeys.
+   *
+   * Blessed textbox/textarea with inputOnFocus sets screen.grabKeys = true
+   * when focused, which blocks all screen-level key handlers.  We must end
+   * the readInput cycle before destroying the widget, otherwise grabKeys
+   * stays true permanently.
+   */
+  private endTextboxReading(widget: any): void {
+    try {
+      if (widget._reading) {
+        if (typeof widget.cancel === 'function' && widget.__listener) {
+          widget.cancel();
+        } else {
+          widget._reading = false;
+        }
+      }
+    } catch (_) {}
+    this.releaseGrabKeys();
+  }
+
+  /** Reset screen.grabKeys and hide the terminal cursor. */
+  private releaseGrabKeys(): void {
+    try { this.screen.grabKeys = false; } catch (_) {}
+    try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+  }
+
+  /** Remove listeners and destroy a list of widgets. */
+  private destroyWidgets(widgets: any[]): void {
+    for (const w of widgets) {
+      try { w.hide(); } catch (_) {}
+    }
+    for (const w of widgets) {
+      try { w.removeAllListeners?.(); } catch (_) {}
+    }
+    for (const w of widgets) {
+      try { w.destroy(); } catch (_) {}
+    }
   }
 }

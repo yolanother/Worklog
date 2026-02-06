@@ -2395,29 +2395,25 @@ export default function register(ctx: PluginContext): void {
           });
 
           const trimmed = (term || '').trim();
-          // Force-close any lingering modal widgets and restore focus
-          resetInputState();
           if (!trimmed) {
-            // Clear filter
+            // Clear filter — restore original items
             activeFilterTerm = '';
             if (preFilterItems) {
               state.items = preFilterItems.slice();
               preFilterItems = null;
             } else {
-              // reload full DB
               const query: any = {};
               if (options.inProgress) query.status = 'in-progress';
               state.items = db.list(query);
             }
             rebuildTree();
             renderListAndDetail(0);
-            resetInputState();
+            restoreListFocus();
             return;
           }
 
           // Apply filter by running `wl list <term> --json`
           activeFilterTerm = trimmed;
-          // Preserve existing items so we can restore on clear
           if (!preFilterItems) preFilterItems = state.items.slice();
 
           const args = ['list', trimmed, '--json'];
@@ -2429,39 +2425,33 @@ export default function register(ctx: PluginContext): void {
           let stderr = '';
           child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
           child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
-              child.on('close', (code) => {
-                if (code !== 0) {
-                  showToast('Filter failed');
-                  resetInputState();
-                  return;
-                }
-                try {
-                  const payload = JSON.parse(stdout.trim());
-                  let results: any[] = [];
-                  if (Array.isArray(payload)) results = payload;
-                  else if (Array.isArray(payload.results)) results = payload.results;
-                  else if (Array.isArray(payload.workItems)) results = payload.workItems;
-                  else if (payload.workItem) results = [payload.workItem];
+          child.on('close', (code) => {
+            if (code !== 0) {
+              showToast('Filter failed');
+              restoreListFocus();
+              return;
+            }
+            try {
+              const payload = JSON.parse(stdout.trim());
+              let results: any[] = [];
+              if (Array.isArray(payload)) results = payload;
+              else if (Array.isArray(payload.results)) results = payload.results;
+              else if (Array.isArray(payload.workItems)) results = payload.workItems;
+              else if (payload.workItem) results = [payload.workItem];
 
-                  if (results.length === 0) {
-                    state.items = [];
-                  } else {
-                    // map results to items (assume they are full work item objects)
-                    state.items = results.map((r: any) => r.workItem ? r.workItem : r);
-                  }
-                  state.showClosed = false; // when filtering, hide closed by default
-                  rebuildTree();
-                  renderListAndDetail(0);
-                  // After applying a filter, return focus to the list so
-                  // global key handlers remain active (help, shortcuts, etc.)
-                  resetInputState();
-                } catch (err) {
-                  showToast('Filter parse error');
-                  resetInputState();
-                }
-              });
+              state.items = results.length === 0
+                ? []
+                : results.map((r: any) => r.workItem ? r.workItem : r);
+              state.showClosed = false;
+              rebuildTree();
+              renderListAndDetail(0);
+            } catch (err) {
+              showToast('Filter parse error');
+            }
+            restoreListFocus();
+          });
         } catch (err) {
-          // canceled or error - ensure focus returns to main list
+          // Modal was cancelled or errored — ensure focus returns to main list
           resetInputState();
         }
       });
