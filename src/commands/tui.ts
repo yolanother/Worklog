@@ -398,14 +398,16 @@ export default function register(ctx: PluginContext): void {
 
       updateDialogFieldOrder.forEach((field) => {
         if (field && typeof field.on === 'function') {
-          field.on('focus', () => {
+          // Named focus/blur handlers so they can be removed if the field is destroyed
+          const fieldFocusHandler = () => {
             applyUpdateDialogFocusStyles(field);
             if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
-          });
-          field.on('blur', () => {
+          };
+          const fieldBlurHandler = () => {
             applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
             if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
-          });
+          };
+          try { (field as any).__opencode_focus = fieldFocusHandler; (field as any).__opencode_blur = fieldBlurHandler; field.on('focus', fieldFocusHandler); field.on('blur', fieldBlurHandler); } catch (_) {}
         }
       });
 
@@ -416,20 +418,22 @@ export default function register(ctx: PluginContext): void {
       };
       const wireUpdateDialogFieldNavigation = (field: Pane | undefined | null) => {
         if (!field || typeof field.key !== 'function') return;
-        field.key(['tab', 'C-i'], () => {
+        const fieldTabHandler = () => {
           if (updateDialog.hidden) return;
           updateDialogFocusManager.cycle(1);
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           return false;
-        });
-        field.key(['S-tab', 'C-S-i'], () => {
+        };
+        const fieldShiftTabHandler = () => {
           if (updateDialog.hidden) return;
           updateDialogFocusManager.cycle(-1);
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           return false;
-        });
+        };
+        try { (field as any).__opencode_key_tab = fieldTabHandler; (field as any).__opencode_key_stab = fieldShiftTabHandler; field.key(['tab', 'C-i'], fieldTabHandler); field.key(['S-tab', 'C-S-i'], fieldShiftTabHandler); } catch (_) {}
         if (field === updateDialogComment && typeof field.on === 'function') {
-          (field as any).on('keypress', (_ch: unknown, key: unknown) => {
+          // Use a named handler so it can be removed if the field is destroyed
+          const commentKeyHandler = (_ch: unknown, key: unknown) => {
             if (updateDialog.hidden) return;
             const k = key as KeyInfo | undefined;
             if (k?.name === 'tab') {
@@ -442,9 +446,10 @@ export default function register(ctx: PluginContext): void {
               applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
               return;
             }
-          });
-         }
-        field.key(['left'], () => {
+          };
+          try { (field as any).__opencode_comment_key = commentKeyHandler; (field as any).on('keypress', commentKeyHandler); } catch (_) {}
+          }
+        const fieldLeftHandler = () => {
           if (updateDialog.hidden) return;
           const layoutIndex = updateDialogFieldLayout.indexOf(field as any);
           const nextIndex = layoutIndex <= 0 ? updateDialogFieldLayout.length - 1 : layoutIndex - 1;
@@ -452,8 +457,8 @@ export default function register(ctx: PluginContext): void {
           updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
           applyUpdateDialogFocusStyles(target);
           return false;
-        });
-        field.key(['right'], () => {
+        };
+        const fieldRightHandler = () => {
           if (updateDialog.hidden) return;
           const layoutIndex = updateDialogFieldLayout.indexOf(field as any);
           const nextIndex = layoutIndex >= updateDialogFieldLayout.length - 1 ? 0 : layoutIndex + 1;
@@ -461,11 +466,14 @@ export default function register(ctx: PluginContext): void {
           updateDialogFocusManager.focusIndex(updateDialogFieldOrder.indexOf(target));
           applyUpdateDialogFocusStyles(target);
           return false;
-        });
+        };
+        try { (field as any).__opencode_key_left = fieldLeftHandler; (field as any).__opencode_key_right = fieldRightHandler; field.key(['left'], fieldLeftHandler); field.key(['right'], fieldRightHandler); } catch (_) {}
       };
 
       [updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment]
         .forEach(wireUpdateDialogFieldNavigation);
+
+      // (attachment of per-widget ctrl-w handlers moved to after opencodeText is defined)
 
       const handleUpdateDialogSelectionChange = (source?: 'status' | 'stage' | 'priority') => {
         updateDialogLastChanged = source ?? updateDialogLastChanged;
@@ -474,16 +482,26 @@ export default function register(ctx: PluginContext): void {
 
       const wireUpdateDialogSelectionListeners = (list: Pane | undefined | null, source: 'status' | 'stage' | 'priority') => {
         if (!list || typeof list.on !== 'function') return;
-        list.on('select', () => handleUpdateDialogSelectionChange(source));
-        list.on('select item', () => handleUpdateDialogSelectionChange(source));
-        list.on('click', () => handleUpdateDialogSelectionChange(source));
-        list.on('keypress', (...args: unknown[]) => {
+        const selectHandler = () => handleUpdateDialogSelectionChange(source);
+        const selectItemHandler = () => handleUpdateDialogSelectionChange(source);
+        const clickHandler = () => handleUpdateDialogSelectionChange(source);
+        const keypressHandler = (...args: unknown[]) => {
           const key = args[1] as KeyInfo | undefined;
           if (!key?.name) return;
           if (['up', 'down', 'home', 'end', 'pageup', 'pagedown'].includes(key.name)) {
             handleUpdateDialogSelectionChange(source);
           }
-        });
+        };
+        try {
+          (list as any)[`__opencode_select_${source}`] = selectHandler;
+          (list as any)[`__opencode_select_item_${source}`] = selectItemHandler;
+          (list as any)[`__opencode_click_${source}`] = clickHandler;
+          (list as any)[`__opencode_keypress_${source}`] = keypressHandler;
+          list.on('select', selectHandler);
+          list.on('select item', selectItemHandler);
+          list.on('click', clickHandler);
+          list.on('keypress', keypressHandler);
+        } catch (_) {}
       };
 
       wireUpdateDialogSelectionListeners(updateDialogStatusOptions, 'status');
@@ -568,6 +586,12 @@ export default function register(ctx: PluginContext): void {
       const suggestionHint = opencodeUi.suggestionHint;
       const opencodeSend = opencodeUi.sendButton;
       const opencodeCancel = opencodeUi.cancelButton;
+
+      // Attach widget-level ctrl-w pending handlers now that opencodeText exists.
+      try {
+        [list, detail, updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment, opencodeText]
+          .forEach((w) => attachCtrlWPendingHandler(w as any));
+      } catch (_) {}
 
       const setBorderFocusStyle = (element: Pane | undefined | null, focused: boolean) => {
         if (!element || !element.style) return;
@@ -740,16 +764,21 @@ export default function register(ctx: PluginContext): void {
           return handleCtrlWCommand(name);
         };
 
-        const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
+      const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
           if (!widget || typeof widget.on !== 'function') return;
-          widget.on('keypress', (...args: unknown[]) => {
+          // Attach a named handler so we can remove it later if the widget is destroyed
+          const handler = (...args: unknown[]) => {
             const key = args[1] as KeyInfo | undefined;
             debugLog(`Widget keypress handler fired: key.name="${(key as any)?.name}", key.ctrl=${(key as any)?.ctrl}`);
             if (handleCtrlWPendingKey((key as any)?.name)) {
               debugLog(`Widget handler: handleCtrlWPendingKey returned true, consuming event`);
               return false;
             }
-          });
+          };
+          try {
+            (widget as any).__opencode_ctrlw = handler;
+            widget.on('keypress', handler);
+          } catch (_) {}
         };
 
 
@@ -841,63 +870,64 @@ export default function register(ctx: PluginContext): void {
       }
 
         // Hook into textarea input to update autocomplete
-        opencodeText.on('keypress', function(this: any, _ch: any, _key: any) {
+        const opencodeTextKeypressHandler = function(this: any, _ch: any, _key: any) {
           debugLog(`opencodeText keypress: _ch="${_ch}", key.name="${_key?.name}", key.ctrl=${_key?.ctrl}, lastCtrlWKeyHandled=${lastCtrlWKeyHandled}`);
-          
+
           // Suppress j/k when they were just handled as Ctrl-W commands
           if (lastCtrlWKeyHandled && ['j', 'k'].includes(_key?.name)) {
             debugLog(`opencodeText: Suppressing '${_key?.name}' key (Ctrl-W command) - returning false`);
             return false;  // Consume the event
           }
-          
+
           // ALSO check if we're in the middle of a Ctrl-W sequence
           if (ctrlWPending && ['j', 'k'].includes(_key?.name)) {
             debugLog(`opencodeText: ctrlWPending is true and key is j/k - consuming event to prevent typing`);
             return false;
           }
-         
-         // Handle Ctrl+Enter for newline insertion  
-         if (_key && _key.name === 'linefeed') {
-          // Get CURRENT value BEFORE the textarea adds the newline
-          const currentValue = this.getValue ? this.getValue() : '';
-          const currentLines = currentValue.split('\n').length;
-          
-          // Calculate what the height WILL BE after the newline
-          const futureLines = currentLines + 1;
-          const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, futureLines + 2), inputMaxHeight());
-          
-          // Resize the dialog FIRST
-          opencodeDialog.height = desiredHeight;
-          opencodeText.height = desiredHeight - 2;
-          
-          if (opencodePane) {
-            opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
-            opencodePane.height = paneHeight();
-          }
-          
-          // Render with new size
-          screen.render();
-          
-          // After the event loop completes and blessed inserts the newline, scroll to bottom
-          setImmediate(() => {
-            // Scroll to bottom to keep cursor visible
-            if (this.setScrollPerc) {
-              this.setScrollPerc(100);
+
+          // Handle Ctrl+Enter for newline insertion
+          if (_key && _key.name === 'linefeed') {
+            // Get CURRENT value BEFORE the textarea adds the newline
+            const currentValue = this.getValue ? this.getValue() : '';
+            const currentLines = currentValue.split('\n').length;
+
+            // Calculate what the height WILL BE after the newline
+            const futureLines = currentLines + 1;
+            const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, futureLines + 2), inputMaxHeight());
+
+            // Resize the dialog FIRST
+            opencodeDialog.height = desiredHeight;
+            opencodeText.height = desiredHeight - 2;
+
+            if (opencodePane) {
+              opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
+              opencodePane.height = paneHeight();
             }
-            
+
+            // Render with new size
             screen.render();
+
+            // After the event loop completes and blessed inserts the newline, scroll to bottom
+            setImmediate(() => {
+              // Scroll to bottom to keep cursor visible
+              if (this.setScrollPerc) {
+                this.setScrollPerc(100);
+              }
+
+              screen.render();
+            });
+
+            // Don't call updateOpencodeInputLayout as we've handled the resize
+            return;
+          }
+
+          // Update immediately on keypress for better responsiveness
+          process.nextTick(() => {
+            updateAutocomplete();
+            updateOpencodeInputLayout();
           });
-          
-          // Don't call updateOpencodeInputLayout as we've handled the resize
-          return;
-        }
-        
-        // Update immediately on keypress for better responsiveness
-        process.nextTick(() => {
-          updateAutocomplete();
-          updateOpencodeInputLayout();
-        });
-      });
+        };
+        try { (opencodeText as any).__opencode_keypress = opencodeTextKeypressHandler; (opencodeText as any).on('keypress', opencodeTextKeypressHandler); } catch (_) {}
 
 
 
@@ -1164,14 +1194,15 @@ export default function register(ctx: PluginContext): void {
       }
 
       // Opencode dialog controls
-      opencodeSend.on('click', () => {
+      const opencodeSendClickHandler = () => {
         const prompt = opencodeText.getValue ? opencodeText.getValue() : '';
         closeOpencodeDialog();
         runOpencode(prompt);
-      });
+      };
+      try { (opencodeSend as any).__opencode_click = opencodeSendClickHandler; opencodeSend.on('click', opencodeSendClickHandler); } catch (_) {}
 
       // Add Escape key handler to close the opencode dialog
-      opencodeText.key(['escape'], function(this: any) {
+      const opencodeTextEscapeHandler = function(this: any) {
         opencodeDialog.hide();
         if (opencodePane) {
           opencodePane.hide();
@@ -1180,51 +1211,56 @@ export default function register(ctx: PluginContext): void {
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
         screen.render();
-      });
+      };
+      try { (opencodeText as any).__opencode_key_escape = opencodeTextEscapeHandler; opencodeText.key(['escape'], opencodeTextEscapeHandler); } catch (_) {}
 
       // Accept Ctrl+S to send (keep for backward compatibility)
-      opencodeText.key(['C-s'], function(this: any) {
+      const opencodeTextCSHandler = function(this: any) {
         if (applyCommandSuggestion(this)) {
           return;
         }
         const prompt = this.getValue ? this.getValue() : '';
         closeOpencodeDialog();
         runOpencode(prompt);
-      });
+      };
+      try { (opencodeText as any).__opencode_key_cs = opencodeTextCSHandler; opencodeText.key(['C-s'], opencodeTextCSHandler); } catch (_) {}
 
        // Accept Enter to send, Ctrl+Enter for newline
-       opencodeText.key(['enter'], function(this: any) {
-         if (applyCommandSuggestion(this)) {
-           return;
-         }
-         const prompt = this.getValue ? this.getValue() : '';
-         closeOpencodeDialog();
-         runOpencode(prompt);
-       });
+        const opencodeTextEnterHandler = function(this: any) {
+          if (applyCommandSuggestion(this)) {
+            return;
+          }
+          const prompt = this.getValue ? this.getValue() : '';
+          closeOpencodeDialog();
+          runOpencode(prompt);
+        };
+        try { (opencodeText as any).__opencode_key_enter = opencodeTextEnterHandler; opencodeText.key(['enter'], opencodeTextEnterHandler); } catch (_) {}
 
         // Suppress j/k keys when they're part of Ctrl-W commands
-        opencodeText.key(['j'], function(this: any) {
-          debugLog(`opencodeText.key(['j']): lastCtrlWKeyHandled=${lastCtrlWKeyHandled}`);
-          if (lastCtrlWKeyHandled) {
-            debugLog(`opencodeText.key: Suppressing 'j' key (Ctrl-W command) - returning false`);
-            return false;
-          }
-        });
+         const opencodeTextJHandler = function(this: any) {
+           debugLog(`opencodeText.key(['j']): lastCtrlWKeyHandled=${lastCtrlWKeyHandled}`);
+           if (lastCtrlWKeyHandled) {
+             debugLog(`opencodeText.key: Suppressing 'j' key (Ctrl-W command) - returning false`);
+             return false;
+           }
+         };
+         try { (opencodeText as any).__opencode_key_j = opencodeTextJHandler; opencodeText.key(['j'], opencodeTextJHandler); } catch (_) {}
 
-        opencodeText.key(['k'], function(this: any) {
+        const opencodeTextKHandler = function(this: any) {
           debugLog(`opencodeText.key(['k']): lastCtrlWKeyHandled=${lastCtrlWKeyHandled}`);
           if (lastCtrlWKeyHandled) {
             debugLog(`opencodeText.key: Suppressing 'k' key (Ctrl-W command) - returning false`);
             return false;
           }
-        });
+        };
+        try { (opencodeText as any).__opencode_key_k = opencodeTextKHandler; opencodeText.key(['k'], opencodeTextKHandler); } catch (_) {}
 
 
       // Pressing Escape while the dialog (or any child) is focused should
       // close both the input dialog and the response pane so the user returns
-      // to the main list. This mirrors the behaviour when Escape is pressed
-      // inside the textarea itself.
-      opencodeDialog.key(['escape'], () => {
+      // to the main list. Use a named handler so it can be removed during
+      // cleanup in tests that repeatedly create/destroy dialogs.
+      const opencodeDialogEscapeHandler = () => {
         opencodeDialog.hide();
         if (opencodePane) {
           opencodePane.hide();
@@ -1236,7 +1272,8 @@ export default function register(ctx: PluginContext): void {
         paneFocusIndex = getFocusPanes().indexOf(list);
         applyFocusStyles();
         screen.render();
-      });
+      };
+      try { (opencodeDialog as any).__opencode_key_escape = opencodeDialogEscapeHandler; opencodeDialog.key(['escape'], opencodeDialogEscapeHandler); } catch (_) {}
 
 
       let listLines: string[] = [];
@@ -1938,21 +1975,23 @@ export default function register(ctx: PluginContext): void {
       // Initial render
       renderListAndDetail(0);
 
-      // Event handlers
-      list.on('select', (_el: any, idx: number) => {
+      // Event handlers (named so they can be removed during cleanup)
+      const listSelectHandler = (_el: any, idx: number) => {
         const visible = buildVisible();
         updateDetailForIndex(idx, visible);
         screen.render();
-      });
+      };
+      try { (list as any).__opencode_select = listSelectHandler; list.on('select', listSelectHandler); } catch (_) {}
 
-      list.on('select item', (_el: any, idx: number) => {
+      const listSelectItemHandler = (_el: any, idx: number) => {
         const visible = buildVisible();
         updateDetailForIndex(idx, visible);
         screen.render();
-      });
+      };
+      try { (list as any).__opencode_select_item = listSelectItemHandler; list.on('select item', listSelectItemHandler); } catch (_) {}
 
       // Update details immediately when navigating with keys or mouse
-      list.on('keypress', (_ch: any, key: any) => {
+      const listKeypressHandler = (_ch: any, key: any) => {
         try {
           const nav = key && key.name && ['up', 'down', 'k', 'j', 'pageup', 'pagedown', 'home', 'end'].includes(key.name);
           if (nav) {
@@ -1964,29 +2003,22 @@ export default function register(ctx: PluginContext): void {
         } catch (err) {
           // ignore render errors
         }
-      });
+      };
+      try { (list as any).__opencode_keypress = listKeypressHandler; list.on('keypress', listKeypressHandler); } catch (_) {}
 
-       list.on('focus', () => {
-         paneFocusIndex = getFocusPanes().indexOf(list);
-         applyFocusStylesForPane(list);
-       });
+      const listFocusHandler = () => { paneFocusIndex = getFocusPanes().indexOf(list); applyFocusStylesForPane(list); };
+      try { (list as any).__opencode_focus = listFocusHandler; list.on('focus', listFocusHandler); } catch (_) {}
 
-       detail.on('focus', () => {
-         paneFocusIndex = getFocusPanes().indexOf(detail);
-         applyFocusStylesForPane(detail);
-       });
+      const detailFocusHandler = () => { paneFocusIndex = getFocusPanes().indexOf(detail); applyFocusStylesForPane(detail); };
+      try { (detail as any).__opencode_focus = detailFocusHandler; detail.on('focus', detailFocusHandler); } catch (_) {}
 
-       opencodeDialog.on('focus', () => {
-         paneFocusIndex = getFocusPanes().indexOf(opencodeDialog);
-         applyFocusStylesForPane(opencodeDialog);
-       });
+      const opencodeDialogFocusHandler = () => { paneFocusIndex = getFocusPanes().indexOf(opencodeDialog); applyFocusStylesForPane(opencodeDialog); };
+      try { (opencodeDialog as any).__opencode_focus = opencodeDialogFocusHandler; opencodeDialog.on('focus', opencodeDialogFocusHandler); } catch (_) {}
 
-       opencodeText.on('focus', () => {
-         paneFocusIndex = getFocusPanes().indexOf(opencodeDialog);
-         applyFocusStylesForPane(opencodeDialog);
-       });
+      const opencodeTextFocusHandler = () => { paneFocusIndex = getFocusPanes().indexOf(opencodeDialog); applyFocusStylesForPane(opencodeDialog); };
+      try { (opencodeText as any).__opencode_focus = opencodeTextFocusHandler; opencodeText.on('focus', opencodeTextFocusHandler); } catch (_) {}
 
-      list.on('click', () => {
+      const listClickHandler = () => {
         setTimeout(() => {
           const idx = list.selected as number;
           const visible = buildVisible();
@@ -1996,9 +2028,10 @@ export default function register(ctx: PluginContext): void {
           applyFocusStylesForPane(list);
           screen.render();
         }, 0);
-      });
+      };
+      try { (list as any).__opencode_click = listClickHandler; list.on('click', listClickHandler); } catch (_) {}
 
-      list.on('click', (data: any) => {
+      const listClickCoordsHandler = (data: any) => {
         const coords = getClickRow(list as any, data);
         if (!coords) return;
         const scroll = list.getScroll() as number;
@@ -2007,57 +2040,63 @@ export default function register(ctx: PluginContext): void {
         if (!line) return;
         const id = extractIdAtColumn(line, coords.col);
         if (id) openDetailsForId(id);
-      });
+      };
+      try { (list as any).__opencode_click_coords = listClickCoordsHandler; list.on('click', listClickCoordsHandler); } catch (_) {}
 
-      detail.on('click', (data: any) => {
+      const detailClickHandler = (data: any) => {
         detail.focus();
         paneFocusIndex = getFocusPanes().indexOf(detail);
         applyFocusStylesForPane(detail);
         openDetailsFromClick(getRenderedLineAtClick(detail as any, data));
-      });
+      };
+      try { (detail as any).__opencode_click = detailClickHandler; detail.on('click', detailClickHandler); } catch (_) {}
 
-      detailModal.on('click', (data: any) => {
+      const detailModalClickHandler = (data: any) => {
         detailModal.focus();
         paneFocusIndex = getFocusPanes().indexOf(detail);
         applyFocusStylesForPane(detail);
         openDetailsFromClick(getRenderedLineAtClick(detailModal as any, data));
-      });
+      };
+      try { (detailModal as any).__opencode_click = detailModalClickHandler; detailModal.on('click', detailModalClickHandler); } catch (_) {}
 
-      detail.on('mouse', (data: any) => {
+      const detailMouseHandler = (data: any) => {
         if (data?.action === 'click') {
           detail.focus();
           paneFocusIndex = getFocusPanes().indexOf(detail);
           applyFocusStylesForPane(detail);
           openDetailsFromClick(getRenderedLineAtClick(detail as any, data));
         }
-      });
+      };
+      try { (detail as any).__opencode_mouse = detailMouseHandler; detail.on('mouse', detailMouseHandler); } catch (_) {}
 
-      detail.on('mousedown', (data: any) => {
+      const detailMouseDownHandler = (data: any) => {
         detail.focus();
         paneFocusIndex = getFocusPanes().indexOf(detail);
         applyFocusStylesForPane(detail);
         openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
-      });
+      };
+      try { (detail as any).__opencode_mousedown = detailMouseDownHandler; detail.on('mousedown', detailMouseDownHandler); } catch (_) {}
 
-      detail.on('mouseup', (data: any) => {
+      const detailMouseUpHandler = (data: any) => {
         detail.focus();
         paneFocusIndex = getFocusPanes().indexOf(detail);
         applyFocusStylesForPane(detail);
         openDetailsFromClick(getRenderedLineAtScreen(detail as any, data));
-      });
+      };
+      try { (detail as any).__opencode_mouseup = detailMouseUpHandler; detail.on('mouseup', detailMouseUpHandler); } catch (_) {}
 
-      detailModal.on('mouse', (data: any) => {
+      const detailModalMouseHandler = (data: any) => {
         if (data?.action === 'click') {
           detailModal.focus();
           paneFocusIndex = getFocusPanes().indexOf(detail);
           applyFocusStylesForPane(detail);
           openDetailsFromClick(getRenderedLineAtClick(detailModal as any, data));
         }
-      });
+      };
+      try { (detailModal as any).__opencode_mouse = detailModalMouseHandler; detailModal.on('mouse', detailModalMouseHandler); } catch (_) {}
 
-      detailClose.on('click', () => {
-        closeDetails();
-      });
+      const detailCloseClickHandler = () => { closeDetails(); };
+      try { (detailClose as any).__opencode_click = detailCloseClickHandler; detailClose.on('click', detailCloseClickHandler); } catch (_) {}
 
       screen.key(['right', 'enter'], () => {
         if (!updateDialog.hidden) return;
@@ -2308,7 +2347,7 @@ export default function register(ctx: PluginContext): void {
       });
 
       // Click footer to open help
-      help.on('click', (data: any) => {
+      const helpClickHandler = (data: any) => {
         try {
           const closedCount = items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
           const rightText = `Closed (${closedCount}): ${showClosed ? 'Shown' : 'Hidden'}`;
@@ -2325,15 +2364,14 @@ export default function register(ctx: PluginContext): void {
           // ignore
         }
         openHelp();
-      });
+      };
+      try { (help as any).__opencode_click = helpClickHandler; help.on('click', helpClickHandler); } catch (_) {}
 
-      copyIdButton.on('click', () => {
-        copySelectedId();
-      });
+      const copyIdButtonClickHandler = () => { copySelectedId(); };
+      try { (copyIdButton as any).__opencode_click = copyIdButtonClickHandler; copyIdButton.on('click', copyIdButtonClickHandler); } catch (_) {}
 
-      closeOverlay.on('click', () => {
-        closeCloseDialog();
-      });
+      const closeOverlayClickHandler = () => { closeCloseDialog(); };
+      try { (closeOverlay as any).__opencode_click = closeOverlayClickHandler; closeOverlay.on('click', closeOverlayClickHandler); } catch (_) {}
 
       closeDialogOptions.on('select', (_el: any, idx: number) => {
         if (idx === 0) closeSelectedItem('in_review');
@@ -2347,25 +2385,23 @@ export default function register(ctx: PluginContext): void {
         void idx;
       });
 
-      updateDialog.key(['escape'], () => {
-        closeUpdateDialog();
-      });
+      const updateDialogEscapeHandler = () => { closeUpdateDialog(); };
+      try { (updateDialog as any).__opencode_key_escape = updateDialogEscapeHandler; updateDialog.key(['escape'], updateDialogEscapeHandler); } catch (_) {}
 
-      updateDialogOptions.key(['escape'], () => {
-        closeUpdateDialog();
-      });
+      const updateDialogOptionsEscapeHandler = () => { closeUpdateDialog(); };
+      try { (updateDialogOptions as any).__opencode_key_escape = updateDialogOptionsEscapeHandler; updateDialogOptions.key(['escape'], updateDialogOptionsEscapeHandler); } catch (_) {}
 
-      updateDialogComment.key(['escape'], () => {
-        closeUpdateDialog();
-      });
+      const updateDialogCommentEscapeHandler = () => { closeUpdateDialog(); };
+      try { (updateDialogComment as any).__opencode_key_escape = updateDialogCommentEscapeHandler; updateDialogComment.key(['escape'], updateDialogCommentEscapeHandler); } catch (_) {}
 
-      updateDialogComment.key(['enter'], () => {
+      const updateDialogCommentEnterHandler = () => {
         if (updateDialog.hidden) return;
         submitUpdateDialog();
         return false;
-      });
+      };
+      try { (updateDialogComment as any).__opencode_key_enter = updateDialogCommentEnterHandler; updateDialogComment.key(['enter'], updateDialogCommentEnterHandler); } catch (_) {}
 
-      updateDialogComment.key(['linefeed', 'C-j'], () => {
+      const updateDialogCommentLinefeedHandler = () => {
         if (updateDialog.hidden) return;
         const currentValue = updateDialogComment.getValue ? updateDialogComment.getValue() : '';
         const nextValue = `${currentValue}\n`;
@@ -2375,7 +2411,8 @@ export default function register(ctx: PluginContext): void {
         }
         screen.render();
         return false;
-      });
+      };
+      try { (updateDialogComment as any).__opencode_key_linefeed = updateDialogCommentLinefeedHandler; updateDialogComment.key(['linefeed', 'C-j'], updateDialogCommentLinefeedHandler); } catch (_) {}
 
       const submitUpdateDialog = () => {
         const item = getSelectedItem();
@@ -2435,59 +2472,43 @@ export default function register(ctx: PluginContext): void {
         closeUpdateDialog();
       };
 
-      updateDialog.key(['enter'], () => {
-        if (updateDialog.hidden) return;
-        submitUpdateDialog();
-      });
+      const updateDialogEnterHandler = () => { if (updateDialog.hidden) return; submitUpdateDialog(); };
+      try { (updateDialog as any).__opencode_key_enter = updateDialogEnterHandler; updateDialog.key(['enter'], updateDialogEnterHandler); } catch (_) {}
 
-      updateDialog.key(['C-s'], () => {
-        if (updateDialog.hidden) return;
-        submitUpdateDialog();
-      });
+      const updateDialogCSHandler = () => { if (updateDialog.hidden) return; submitUpdateDialog(); };
+      try { (updateDialog as any).__opencode_key_cs = updateDialogCSHandler; updateDialog.key(['C-s'], updateDialogCSHandler); } catch (_) {}
 
-      updateDialogStatusOptions.key(['enter'], () => {
-        submitUpdateDialog();
-      });
+      const updateDialogStatusEnterHandler = () => { submitUpdateDialog(); };
+      try { (updateDialogStatusOptions as any).__opencode_key_enter = updateDialogStatusEnterHandler; updateDialogStatusOptions.key(['enter'], updateDialogStatusEnterHandler); } catch (_) {}
 
-      updateDialogStageOptions.key(['enter'], () => {
-        submitUpdateDialog();
-      });
+      const updateDialogStageEnterHandler = () => { submitUpdateDialog(); };
+      try { (updateDialogStageOptions as any).__opencode_key_enter = updateDialogStageEnterHandler; updateDialogStageOptions.key(['enter'], updateDialogStageEnterHandler); } catch (_) {}
 
-      updateDialogPriorityOptions.key(['enter'], () => {
-        submitUpdateDialog();
-      });
+      const updateDialogPriorityEnterHandler = () => { submitUpdateDialog(); };
+      try { (updateDialogPriorityOptions as any).__opencode_key_enter = updateDialogPriorityEnterHandler; updateDialogPriorityOptions.key(['enter'], updateDialogPriorityEnterHandler); } catch (_) {}
 
-      updateDialog.key(['tab'], () => {
-        if (updateDialog.hidden) return;
-        updateDialogFocusManager.cycle(1);
-      });
+      const updateDialogTabHandler = () => { if (updateDialog.hidden) return; updateDialogFocusManager.cycle(1); };
+      try { (updateDialog as any).__opencode_key_tab = updateDialogTabHandler; updateDialog.key(['tab'], updateDialogTabHandler); } catch (_) {}
 
-      updateDialog.key(['S-tab'], () => {
-        if (updateDialog.hidden) return;
-        updateDialogFocusManager.cycle(-1);
-      });
+      const updateDialogSTabHandler = () => { if (updateDialog.hidden) return; updateDialogFocusManager.cycle(-1); };
+      try { (updateDialog as any).__opencode_key_stab = updateDialogSTabHandler; updateDialog.key(['S-tab'], updateDialogSTabHandler); } catch (_) {}
 
-      closeDialog.key(['escape'], () => {
-        closeCloseDialog();
-      });
+      const closeDialogEscapeHandler = () => { closeCloseDialog(); };
+      try { (closeDialog as any).__opencode_key_escape = closeDialogEscapeHandler; closeDialog.key(['escape'], closeDialogEscapeHandler); } catch (_) {}
 
-      closeDialogOptions.key(['escape'], () => {
-        closeCloseDialog();
-      });
+      const closeDialogOptionsEscapeHandler = () => { closeCloseDialog(); };
+      try { (closeDialogOptions as any).__opencode_key_escape = closeDialogOptionsEscapeHandler; closeDialogOptions.key(['escape'], closeDialogOptionsEscapeHandler); } catch (_) {}
 
-      nextDialog.key(['escape'], () => {
-        closeNextDialog();
-      });
+      const nextDialogEscapeHandler = () => { closeNextDialog(); };
+      try { (nextDialog as any).__opencode_key_escape = nextDialogEscapeHandler; nextDialog.key(['escape'], nextDialogEscapeHandler); } catch (_) {}
 
-      nextOverlay.on('click', () => {
-        closeNextDialog();
-      });
+      const nextOverlayClickHandler = () => { closeNextDialog(); };
+      try { (nextOverlay as any).__opencode_click = nextOverlayClickHandler; nextOverlay.on('click', nextOverlayClickHandler); } catch (_) {}
 
-      nextDialogClose.on('click', () => {
-        closeNextDialog();
-      });
+      const nextDialogCloseClickHandler = () => { closeNextDialog(); };
+      try { (nextDialogClose as any).__opencode_click = nextDialogCloseClickHandler; nextDialogClose.on('click', nextDialogCloseClickHandler); } catch (_) {}
 
-      nextDialogOptions.on('select', async (_el: any, idx: number) => {
+      const nextDialogOptionsSelectHandler = async (_el: any, idx: number) => {
         if (idx === 0) {
           if (!nextWorkItem || !nextWorkItem.id) {
             showToast(nextWorkItemRunning ? 'Still evaluating...' : 'No work item to view');
@@ -2504,9 +2525,10 @@ export default function register(ctx: PluginContext): void {
         if (idx === 2) {
           closeNextDialog();
         }
-      });
+      };
+      try { (nextDialogOptions as any).__opencode_select = nextDialogOptionsSelectHandler; nextDialogOptions.on('select', nextDialogOptionsSelectHandler); } catch (_) {}
 
-      nextDialogOptions.on('click', async () => {
+      const nextDialogOptionsClickHandler = async () => {
         const idx = (nextDialogOptions as any).selected ?? 0;
         if (typeof (nextDialogOptions as any).emit === 'function') {
           (nextDialogOptions as any).emit('select item', null, idx);
@@ -2528,9 +2550,10 @@ export default function register(ctx: PluginContext): void {
         if (idx === 2) {
           closeNextDialog();
         }
-      });
+      };
+      try { (nextDialogOptions as any).__opencode_click = nextDialogOptionsClickHandler; nextDialogOptions.on('click', nextDialogOptionsClickHandler); } catch (_) {}
 
-      nextDialogOptions.on('select item', async (_el: any, idx: number) => {
+      const nextDialogOptionsSelectItemHandler = async (_el: any, idx: number) => {
         if (idx === 0) {
           if (!nextWorkItem || !nextWorkItem.id) {
             showToast(nextWorkItemRunning ? 'Still evaluating...' : 'No work item to view');
@@ -2547,20 +2570,17 @@ export default function register(ctx: PluginContext): void {
         if (idx === 2) {
           closeNextDialog();
         }
-      });
+      };
+      try { (nextDialogOptions as any).__opencode_select_item = nextDialogOptionsSelectItemHandler; nextDialogOptions.on('select item', nextDialogOptionsSelectItemHandler); } catch (_) {}
 
-      nextDialogOptions.key(['n', 'N'], () => {
-        if (nextDialog.hidden) return;
-        advanceNextRecommendation();
-      });
+      const nextDialogOptionsNHandler = () => { if (nextDialog.hidden) return; advanceNextRecommendation(); };
+      try { (nextDialogOptions as any).__opencode_key_n = nextDialogOptionsNHandler; nextDialogOptions.key(['n', 'N'], nextDialogOptionsNHandler); } catch (_) {}
 
-      nextDialogOptions.key(['escape'], () => {
-        closeNextDialog();
-      });
+      const nextDialogOptionsEscapeHandler = () => { closeNextDialog(); };
+      try { (nextDialogOptions as any).__opencode_key_escape = nextDialogOptionsEscapeHandler; nextDialogOptions.key(['escape'], nextDialogOptionsEscapeHandler); } catch (_) {}
 
-      detailOverlay.on('click', () => {
-        closeDetails();
-      });
+      const detailOverlayClickHandler = () => { closeDetails(); };
+      try { (detailOverlay as any).__opencode_click = detailOverlayClickHandler; detailOverlay.on('click', detailOverlayClickHandler); } catch (_) {}
 
       detailModal.key(['escape'], () => {
         closeDetails();

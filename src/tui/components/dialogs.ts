@@ -330,15 +330,23 @@ export class DialogsComponent {
   }
 
   destroy(): void {
-    this.detailClose.destroy();
-    this.detailModal.destroy();
+    try { this.detailClose.removeAllListeners?.(); } catch (_) {}
+    try { this.detailModal.removeAllListeners?.(); } catch (_) {}
+    try { this.detailClose.destroy(); } catch (_) {}
+    try { this.detailModal.destroy(); } catch (_) {}
 
-    this.closeDialogOptions.destroy();
-    this.closeDialogText.destroy();
-    this.closeDialog.destroy();
+    try { this.closeDialogOptions.removeAllListeners?.(); } catch (_) {}
+    try { this.closeDialogText.removeAllListeners?.(); } catch (_) {}
+    try { this.closeDialog.removeAllListeners?.(); } catch (_) {}
+    try { this.closeDialogOptions.destroy(); } catch (_) {}
+    try { this.closeDialogText.destroy(); } catch (_) {}
+    try { this.closeDialog.destroy(); } catch (_) {}
 
-    this.updateDialogOptions.destroy();
-    this.updateDialogText.destroy();
-    this.updateDialog.destroy();
+    try { this.updateDialogOptions.removeAllListeners?.(); } catch (_) {}
+    try { this.updateDialogText.removeAllListeners?.(); } catch (_) {}
+    try { this.updateDialog.removeAllListeners?.(); } catch (_) {}
+    try { this.updateDialogOptions.destroy(); } catch (_) {}
+    try { this.updateDialogText.destroy(); } catch (_) {}
+    try { this.updateDialog.destroy(); } catch (_) {}
   }
 }
