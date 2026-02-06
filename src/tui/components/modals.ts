@@ -4,7 +4,6 @@ import type {
   BlessedFactory,
   BlessedList,
   BlessedScreen,
-  BlessedTextarea,
   BlessedTextbox,
   BlessedText,
 } from '../types.js';
@@ -17,6 +16,7 @@ export interface ModalDialogsOptions {
 export class ModalDialogsComponent {
   private screen: BlessedScreen;
   private blessedImpl: BlessedFactory;
+  private activeCleanup: (() => void) | null = null;
 
   constructor(options: ModalDialogsOptions) {
     this.screen = options.parent;
@@ -41,6 +41,12 @@ export class ModalDialogsComponent {
 
   destroy(): void {
     // No persistent elements.
+  }
+
+  forceCleanup(): void {
+    try { this.activeCleanup?.(); } catch (_) {}
+    this.activeCleanup = null;
+    this.releaseGrabKeys();
   }
 
   async selectList(options: {
@@ -95,12 +101,7 @@ export class ModalDialogsComponent {
       list.select(defaultIndex);
 
       const cleanup = () => {
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { list.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.destroyWidgets([list, dialog, overlay]);
       };
 
       list.on('select', (_el: any, idx: number) => {
@@ -149,13 +150,14 @@ export class ModalDialogsComponent {
     height?: string | number;
   }): Promise<string> {
     return new Promise((resolve) => {
+      let resolved = false;
       const overlay = this.createOverlay();
       const dialog = this.blessedImpl.box({
         parent: this.screen,
         top: 'center',
         left: 'center',
-        width: options.width || '80%',
-        height: options.height || '60%',
+        width: options.width || '60%',
+        height: options.height || 5,
         label: ` ${options.title} `,
         border: { type: 'line' },
         tags: true,
@@ -163,66 +165,77 @@ export class ModalDialogsComponent {
         clickable: true,
       }) as BlessedBox;
 
-      const textarea = this.blessedImpl.textarea({
+      // Single-line textbox: emits 'submit' on Enter (textarea would
+      // swallow Enter to insert a newline).
+      const textbox = this.blessedImpl.textbox({
         parent: dialog,
         top: 1,
         left: 1,
         width: '100%-2',
-        height: '100%-4',
+        height: 1,
         inputOnFocus: true,
         keys: true,
         mouse: true,
-        scrollable: true,
-        alwaysScroll: true,
-      }) as BlessedTextarea;
+      }) as BlessedTextbox;
 
       try {
-        if (typeof textarea.setValue === 'function') textarea.setValue(options.initial);
+        if (typeof textbox.setValue === 'function') textbox.setValue(options.initial);
       } catch (_) {}
 
-      const buttons = this.blessedImpl.list({
+      const confirmBtn = this.blessedImpl.box({
         parent: dialog,
         bottom: 0,
         left: 1,
         height: 1,
-        width: '100%-2',
-        items: [options.confirmLabel, options.cancelLabel],
-        keys: true,
+        width: options.confirmLabel.length + 2,
+        content: `[${options.confirmLabel}]`,
         mouse: true,
-        style: { selected: { bg: 'blue' } },
-      }) as BlessedList;
+        clickable: true,
+        style: { fg: 'green' },
+      }) as BlessedBox;
 
-      buttons.select(0);
+      const cancelBtn = this.blessedImpl.box({
+        parent: dialog,
+        bottom: 0,
+        left: options.confirmLabel.length + 4,
+        height: 1,
+        width: options.cancelLabel.length + 2,
+        content: `[${options.cancelLabel}]`,
+        mouse: true,
+        clickable: true,
+        style: { fg: 'yellow' },
+      }) as BlessedBox;
 
       const cleanup = () => {
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { buttons.removeAllListeners?.(); } catch (_) {}
-        try { textarea.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.endTextboxReading(textbox);
+        this.destroyWidgets([confirmBtn, cancelBtn, textbox, dialog, overlay]);
+        if (this.activeCleanup === cleanup) this.activeCleanup = null;
+      };
+      this.activeCleanup = cleanup;
+
+      const safeResolve = (value: string) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(value);
       };
 
-      buttons.on('select', (_el: any, idx: number) => {
-        const value = textarea.getValue ? textarea.getValue() : options.initial;
-        cleanup();
-        resolve(idx === 0 ? value : '');
-      });
+      const getValue = () => textbox.getValue ? textbox.getValue() : options.initial;
 
-      dialog.key(['escape'], () => {
-        cleanup();
-        resolve('');
-      });
+      // Submit: Enter, Ctrl-S, or click [Apply]
+      textbox.on('submit', (val: string) => { safeResolve(val ?? options.initial); });
+      textbox.key(['C-s'], () => { safeResolve(getValue()); });
+      confirmBtn.on('click', () => { safeResolve(getValue()); });
 
-      overlay.on('click', () => {
-        cleanup();
-        resolve('');
-      });
+      // Cancel: Escape or click [Cancel] or click overlay
+      textbox.on('cancel', () => { safeResolve(''); });
+      cancelBtn.on('click', () => { safeResolve(''); });
+      dialog.key(['escape'], () => { safeResolve(''); });
+      overlay.on('click', () => { safeResolve(''); });
 
       overlay.setFront();
       dialog.setFront();
-      textarea.focus();
+      textbox.focus();
       this.screen.render();
     });
   }
@@ -283,34 +296,16 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
-        try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { input.removeAllListeners?.(); } catch (_) {}
-        try { cancelBtn.removeAllListeners?.(); } catch (_) {}
-        try { dialog.removeAllListeners?.(); } catch (_) {}
-        try { overlay.removeAllListeners?.(); } catch (_) {}
-        try { dialog.destroy(); } catch (_) {}
-        try { overlay.destroy(); } catch (_) {}
+        this.endTextboxReading(input);
+        this.destroyWidgets([input, cancelBtn, dialog, overlay]);
+        if (this.activeCleanup === cleanup) this.activeCleanup = null;
       };
+      this.activeCleanup = cleanup;
 
-      cancelBtn.on('click', () => {
-        cleanup();
-        resolve(false);
-      });
-
-      input.on('submit', (val: string) => {
-        cleanup();
-        resolve((val || '').trim() === options.confirmText);
-      });
-
-      dialog.key(['escape'], () => {
-        cleanup();
-        resolve(false);
-      });
-
-      overlay.on('click', () => {
-        cleanup();
-        resolve(false);
-      });
+      cancelBtn.on('click', () => { cleanup(); resolve(false); });
+      input.on('submit', (val: string) => { cleanup(); resolve((val || '').trim() === options.confirmText); });
+      dialog.key(['escape'], () => { cleanup(); resolve(false); });
+      overlay.on('click', () => { cleanup(); resolve(false); });
 
       overlay.setFront();
       dialog.setFront();
@@ -318,6 +313,8 @@ export class ModalDialogsComponent {
       this.screen.render();
     });
   }
+
+  // -- Private helpers -------------------------------------------------------
 
   private createOverlay(): BlessedBox {
     return this.blessedImpl.box({
@@ -330,5 +327,45 @@ export class ModalDialogsComponent {
       clickable: true,
       style: { bg: 'black' },
     }) as BlessedBox;
+  }
+
+  /**
+   * End a textbox/textarea's readInput() cycle and release screen.grabKeys.
+   *
+   * Blessed textbox/textarea with inputOnFocus sets screen.grabKeys = true
+   * when focused, which blocks all screen-level key handlers.  We must end
+   * the readInput cycle before destroying the widget, otherwise grabKeys
+   * stays true permanently.
+   */
+  private endTextboxReading(widget: any): void {
+    try {
+      if (widget._reading) {
+        if (typeof widget.cancel === 'function' && widget.__listener) {
+          widget.cancel();
+        } else {
+          widget._reading = false;
+        }
+      }
+    } catch (_) {}
+    this.releaseGrabKeys();
+  }
+
+  /** Reset screen.grabKeys and hide the terminal cursor. */
+  private releaseGrabKeys(): void {
+    try { this.screen.grabKeys = false; } catch (_) {}
+    try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+  }
+
+  /** Remove listeners and destroy a list of widgets. */
+  private destroyWidgets(widgets: any[]): void {
+    for (const w of widgets) {
+      try { w.hide(); } catch (_) {}
+    }
+    for (const w of widgets) {
+      try { w.removeAllListeners?.(); } catch (_) {}
+    }
+    for (const w of widgets) {
+      try { w.destroy(); } catch (_) {}
+    }
   }
 }

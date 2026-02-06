@@ -128,6 +128,7 @@ export class HelpMenuComponent {
       {
         category: 'Filters',
         items: [
+          { keys: '/', description: 'Search/Filter' },
           { keys: 'I', description: 'Show in-progress only' },
           { keys: 'A', description: 'Show open items' },
           { keys: 'B', description: 'Show blocked only' },
