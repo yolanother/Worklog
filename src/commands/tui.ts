@@ -7,6 +7,7 @@ import type { WorkItem, WorkItemStatus } from '../types.js';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly, formatTitleOnlyTUI } from './helpers.js';
 import { rebuildTreeState as state_rebuildTreeState, createTuiState as state_createTuiState, buildVisibleNodes as state_buildVisibleNodes } from '../tui/state.js';
+import { createPersistence } from '../tui/persistence.js';
 import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -125,7 +126,9 @@ export default function register(ctx: PluginContext): void {
       const items: Item[] = db.list(query);
       const showClosed = Boolean(options.all);
 
-      const persisted = loadPersistedState(db.getPrefix?.() || undefined);
+      // Persisted state handling extracted to src/tui/persistence.ts
+      const persistence = createPersistence(resolveWorklogDir(), { debugLog: debugLog, fs: fs });
+      const persisted = persistence.loadPersistedState(db.getPrefix?.() || undefined);
       const persistedExpanded = persisted && Array.isArray(persisted.expanded) ? persisted.expanded : undefined;
       const state = createTuiState(items, showClosed, persistedExpanded);
 
@@ -141,38 +144,7 @@ export default function register(ctx: PluginContext): void {
       const statePath = path.join(worklogDir, 'tui-state.json');
 
       // Load persisted state for this prefix if present
-      function loadPersistedState(prefix: string | undefined) {
-        try {
-          if (!fs.existsSync(statePath)) return null;
-          const raw = fs.readFileSync(statePath, 'utf8');
-          const j = JSON.parse(raw || '{}');
-          const val = j[prefix || 'default'] || null;
-          debugLog(`loadPersistedState prefix=${String(prefix || 'default')} path=${statePath} present=${val !== null}`);
-          return val;
-        } catch (err) {
-          debugLog(`loadPersistedState error: ${String(err)}`);
-          return null;
-        }
-      }
-
-      function savePersistedState(prefix: string | undefined, state: any) {
-        try {
-          if (!fs.existsSync(worklogDir)) fs.mkdirSync(worklogDir, { recursive: true });
-          let j: any = {};
-          if (fs.existsSync(statePath)) {
-            try { j = JSON.parse(fs.readFileSync(statePath, 'utf8') || '{}'); } catch { j = {}; }
-          }
-          j[prefix || 'default'] = state;
-          fs.writeFileSync(statePath, JSON.stringify(j, null, 2), 'utf8');
-          try {
-            const keys = Object.keys(state || {}).join(',');
-            debugLog(`savePersistedState prefix=${String(prefix || 'default')} path=${statePath} keys=[${keys}]`);
-          } catch (_) {}
-        } catch (err) {
-          debugLog(`savePersistedState error: ${String(err)}`);
-          // ignore persistence errors but log for debugging
-        }
-      }
+       // persistence.savePersistedState / loadPersistedState are provided by createPersistence
 
       // Default expand roots unless persisted state exists
       rebuildTree();
@@ -1078,8 +1050,8 @@ export default function register(ctx: PluginContext): void {
         modalDialogs,
         render: () => screen.render(),
         persistedState: {
-          load: loadPersistedState,
-          save: savePersistedState,
+          load: persistence.loadPersistedState,
+          save: persistence.savePersistedState,
           getPrefix: () => db.getPrefix?.(),
         },
         onStatusChange: updateServerStatus,
@@ -2211,12 +2183,12 @@ export default function register(ctx: PluginContext): void {
         else state.expanded.add(node.item.id);
         renderListAndDetail(idx);
         // persist state
-        savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) });
+        persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) });
       });
 
       const shutdown = () => {
         // Persist state before exiting
-        try { savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
+        try { persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
         // Stop the OpenCode server if we started it
         opencodeClient.stopServer();
         // Clear pending timers to avoid keeping the process alive
