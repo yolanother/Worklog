@@ -1390,27 +1390,126 @@ export default function register(ctx: PluginContext): void {
         return { row, col };
       }
 
+      function stripTagsAndAnsiWithMap(value: string): { plain: string; map: number[] } {
+        let plain = '';
+        const map: number[] = [];
+        for (let i = 0; i < value.length; i += 1) {
+          const ch = value[i];
+          if (ch === '\u001b') {
+            let j = i + 1;
+            if (value[j] === '[') {
+              j += 1;
+              while (j < value.length && !/[A-Za-z]/.test(value[j])) j += 1;
+              if (j < value.length) j += 1;
+            }
+            i = j - 1;
+            continue;
+          }
+          if (ch === '{') {
+            const closeIdx = value.indexOf('}', i + 1);
+            if (closeIdx !== -1) {
+              i = closeIdx;
+              continue;
+            }
+          }
+          plain += ch;
+          map.push(i);
+        }
+        return { plain, map };
+      }
+
+      function wrapPlainLineWithMap(plain: string, map: number[], width: number): Array<{ plain: string; map: number[] }> {
+        if (width <= 0) return [{ plain, map }];
+        const words = plain.split(/\s+/).filter(Boolean);
+        if (words.length === 0) return [{ plain: '', map: [] }];
+        const chunks: Array<{ plain: string; map: number[] }> = [];
+        let current = '';
+        let currentMap: number[] = [];
+        let cursor = 0;
+        for (const word of words) {
+          const startIdx = plain.indexOf(word, cursor);
+          if (startIdx === -1) continue;
+          const wordMap = map.slice(startIdx, startIdx + word.length);
+          cursor = startIdx + word.length;
+          if (current.length === 0) {
+            if (word.length <= width) {
+              current = word;
+              currentMap = wordMap.slice();
+            } else {
+              for (let i = 0; i < word.length; i += width) {
+                const part = word.slice(i, i + width);
+                const partMap = wordMap.slice(i, i + width);
+                chunks.push({ plain: part, map: partMap });
+              }
+            }
+            continue;
+          }
+          if ((current.length + 1 + word.length) <= width) {
+            current += ` ${word}`;
+            currentMap = currentMap.concat(-1, ...wordMap);
+          } else {
+            chunks.push({ plain: current, map: currentMap });
+            if (word.length <= width) {
+              current = word;
+              currentMap = wordMap.slice();
+            } else {
+              for (let i = 0; i < word.length; i += width) {
+                const part = word.slice(i, i + width);
+                const partMap = wordMap.slice(i, i + width);
+                chunks.push({ plain: part, map: partMap });
+              }
+              current = '';
+              currentMap = [];
+            }
+          }
+        }
+        if (current.length > 0) {
+          chunks.push({ plain: current, map: currentMap });
+        }
+        return chunks;
+      }
+
+      function getLineSegmentsForClick(box: any): Array<{ plain: string; map: number[] }> | null {
+        if (!box?.lpos) return null;
+        const raw = typeof box.getContent === 'function' ? String(box.getContent() ?? '') : '';
+        const width = Math.max(0, (box.lpos.xl ?? 0) - (box.lpos.xi ?? 0) + 1);
+        const segments: Array<{ plain: string; map: number[] }> = [];
+        for (const line of raw.split('\n')) {
+          const stripped = stripTagsAndAnsiWithMap(line);
+          if (width > 0 && stripped.plain.length > width) {
+            segments.push(...wrapPlainLineWithMap(stripped.plain, stripped.map, width));
+          } else {
+            segments.push({ plain: stripped.plain, map: stripped.map });
+          }
+        }
+        return segments;
+      }
+
       function getRenderedLineAtClick(box: any, data: any): string | null {
         const coords = getClickRow(box, data);
         if (!coords) return null;
         const scroll = typeof box.getScroll === 'function' ? (box.getScroll() as number) : 0;
-        const lines = (box as any)?._clines?.real || (box as any)?._clines?.fake || box.getContent().split('\n');
+        const segments = getLineSegmentsForClick(box);
+        if (!segments) return null;
         const lineIndex = coords.row + (scroll || 0);
-        return lines[lineIndex] ?? null;
+        const segment = segments[lineIndex];
+        if (!segment) return null;
+        return segment.plain ?? null;
       }
 
       function getRenderedLineAtScreen(box: any, data: any): string | null {
         const lpos = box?.lpos;
         if (!lpos) return null;
         const scroll = typeof box.getScroll === 'function' ? (box.getScroll() as number) : 0;
-        const lines = (box as any)?._clines?.real || (box as any)?._clines?.fake || box.getContent().split('\n');
+        const segments = getLineSegmentsForClick(box);
+        if (!segments) return null;
         const base = (lpos.yi ?? 0);
         const offsets = [0, 1, 2, 3, -1, -2];
         for (const off of offsets) {
           const row = (data?.y ?? 0) - base - off;
           if (row < 0) continue;
           const lineIndex = row + (scroll || 0);
-          if (lineIndex >= 0 && lineIndex < lines.length) return lines[lineIndex] ?? null;
+          if (lineIndex >= 0 && lineIndex < segments.length) return segments[lineIndex]?.plain ?? null;
         }
         return null;
       }
