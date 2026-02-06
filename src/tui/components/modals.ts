@@ -4,7 +4,6 @@ import type {
   BlessedFactory,
   BlessedList,
   BlessedScreen,
-  BlessedTextarea,
   BlessedTextbox,
   BlessedText,
 } from '../types.js';
@@ -166,8 +165,8 @@ export class ModalDialogsComponent {
         parent: this.screen,
         top: 'center',
         left: 'center',
-        width: options.width || '80%',
-        height: options.height || '60%',
+        width: options.width || '60%',
+        height: options.height || 5,
         label: ` ${options.title} `,
         border: { type: 'line' },
         tags: true,
@@ -175,21 +174,22 @@ export class ModalDialogsComponent {
         clickable: true,
       }) as BlessedBox;
 
-      const textarea = this.blessedImpl.textarea({
+      // Use a single-line textbox for the search term.  A textarea would
+      // swallow Enter to insert a newline; a textbox emits 'submit' on Enter,
+      // which is exactly what we want for a search/filter dialog.
+      const textbox = this.blessedImpl.textbox({
         parent: dialog,
         top: 1,
         left: 1,
         width: '100%-2',
-        height: '100%-4',
+        height: 1,
         inputOnFocus: true,
         keys: true,
         mouse: true,
-        scrollable: true,
-        alwaysScroll: true,
-      }) as BlessedTextarea;
+      }) as BlessedTextbox;
 
       try {
-        if (typeof textarea.setValue === 'function') textarea.setValue(options.initial);
+        if (typeof textbox.setValue === 'function') textbox.setValue(options.initial);
       } catch (_) {}
 
       // Use individual blessed.box widgets for Apply/Cancel instead of a
@@ -221,21 +221,17 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
-        // The textarea with inputOnFocus calls readInput() when focused,
+        // The textbox with inputOnFocus calls readInput() when focused,
         // which sets screen.grabKeys = true and monopolises all keyboard
         // input.  We MUST end input reading before destroying, otherwise
         // grabKeys stays true and the entire TUI keyboard is dead.
         try {
-          const ta = textarea as any;
-          if (ta._reading) {
-            // cancel() simulates Escape inside _listener which calls
-            // _done() -> screen.grabKeys = false.  It only works when
-            // __listener has been set (deferred via nextTick).
-            if (typeof ta.cancel === 'function' && ta.__listener) {
-              ta.cancel();
+          const tb = textbox as any;
+          if (tb._reading) {
+            if (typeof tb.cancel === 'function' && tb.__listener) {
+              tb.cancel();
             } else {
-              // __listener not yet set (same-tick destroy) – manual cleanup
-              ta._reading = false;
+              tb._reading = false;
               this.screen.grabKeys = false;
               try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
             }
@@ -248,12 +244,12 @@ export class ModalDialogsComponent {
         try { dialog.hide(); overlay.hide(); } catch (_) {}
         try { confirmBtn.removeAllListeners?.(); } catch (_) {}
         try { cancelBtn.removeAllListeners?.(); } catch (_) {}
-        try { textarea.removeAllListeners?.(); } catch (_) {}
+        try { textbox.removeAllListeners?.(); } catch (_) {}
         try { dialog.removeAllListeners?.(); } catch (_) {}
         try { overlay.removeAllListeners?.(); } catch (_) {}
         try { confirmBtn.destroy(); } catch (_) {}
         try { cancelBtn.destroy(); } catch (_) {}
-        try { textarea.destroy(); } catch (_) {}
+        try { textbox.destroy(); } catch (_) {}
         try { dialog.destroy(); } catch (_) {}
         try { overlay.destroy(); } catch (_) {}
         if (this.activeCleanup === cleanup) this.activeCleanup = null;
@@ -267,8 +263,19 @@ export class ModalDialogsComponent {
         resolve(value);
       };
 
+      // Enter submits via blessed textbox's built-in 'submit' event
+      textbox.on('submit', (val: string) => {
+        safeResolve(val ?? options.initial);
+      });
+
+      // Ctrl-S also submits
+      textbox.key(['C-s'], () => {
+        const value = textbox.getValue ? textbox.getValue() : options.initial;
+        safeResolve(value);
+      });
+
       confirmBtn.on('click', () => {
-        const value = textarea.getValue ? textarea.getValue() : options.initial;
+        const value = textbox.getValue ? textbox.getValue() : options.initial;
         safeResolve(value);
       });
 
@@ -276,14 +283,9 @@ export class ModalDialogsComponent {
         safeResolve('');
       });
 
-      // Allow Tab to move focus between textarea and confirm button
-      textarea.key(['tab'], () => {
-        confirmBtn.focus();
-        this.screen.render();
-      });
-
-      // Enter in textarea submits (Shift+Enter not reliably available in blessed)
-      textarea.key(['escape'], () => {
+      // Escape cancels (blessed textbox emits 'cancel' on Escape, but we
+      // also bind it explicitly on the dialog for safety)
+      textbox.on('cancel', () => {
         safeResolve('');
       });
 
@@ -297,7 +299,7 @@ export class ModalDialogsComponent {
 
       overlay.setFront();
       dialog.setFront();
-      textarea.focus();
+      textbox.focus();
       this.screen.render();
     });
   }
