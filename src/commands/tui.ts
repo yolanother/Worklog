@@ -12,7 +12,7 @@ import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveWorklogDir } from '../worklog-paths.js';
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { OpencodeClient, type OpencodeServerStatus } from '../tui/opencode-client.js';
 import {
   DetailComponent,
@@ -104,6 +104,7 @@ export default function register(ctx: PluginContext): void {
   // Allow tests to inject a mocked blessed implementation via the ctx object.
   // If not provided, fall back to the real blessed import.
   const blessedImpl = (ctx as any).blessed || blessed;
+  const spawnImpl: (...args: any[]) => ChildProcess = (ctx as any).spawn || spawn;
 
   program
     .command('tui')
@@ -138,6 +139,10 @@ export default function register(ctx: PluginContext): void {
         return;
       }
       const rebuildTree = () => rebuildTreeState(state);
+
+      // Active search/filter term and preserved items when a filter is applied
+      let activeFilterTerm = '';
+      let preFilterItems: Item[] | null = null;
 
       // Persisted state file per-worklog directory
       const worklogDir = resolveWorklogDir();
@@ -1237,14 +1242,28 @@ export default function register(ctx: PluginContext): void {
         // Update footer/help with right-aligned closed toggle
         try {
           const closedCount = state.items.filter((item: any) => item.status === 'completed' || item.status === 'deleted').length;
-          const leftText = 'Press ? for help';
-          const rightText = `Closed (${closedCount}): ${state.showClosed ? 'Shown' : 'Hidden'}`;
+          // Left side: show active filter if present (labelled "Filter:"), otherwise empty
+          const leftText = activeFilterTerm ? `Filter: ${activeFilterTerm}` : '';
+          // Right side: when closed items are hidden, show "-Closed (x)", otherwise show nothing
+          const rightText = state.showClosed ? '' : `-Closed (${closedCount})`;
           const cols = screen.width as number;
-          if (cols && cols > leftText.length + rightText.length + 2) {
+          if (cols && leftText && rightText && cols > leftText.length + rightText.length + 2) {
             const gap = cols - leftText.length - rightText.length;
             help.setContent(`${leftText}${' '.repeat(gap)}${rightText}`);
-          } else {
+          } else if (leftText && rightText) {
             help.setContent(`${leftText} • ${rightText}`);
+          } else if (leftText) {
+            help.setContent(leftText);
+          } else if (rightText) {
+            // Right-align the rightText by padding on the left
+            if (cols && cols > rightText.length + 1) {
+              const gap = cols - rightText.length;
+              help.setContent(`${' '.repeat(gap)}${rightText}`);
+            } else {
+              help.setContent(rightText);
+            }
+          } else {
+            help.setContent('');
           }
         } catch (err) {
           // ignore
@@ -1593,6 +1612,9 @@ export default function register(ctx: PluginContext): void {
       }
 
       function refreshFromDatabase(preferredIndex?: number) {
+        // Reset any active search filter when refreshing the full database view
+        activeFilterTerm = '';
+        preFilterItems = null;
         const selected = getSelectedItem();
         const selectedId = selected?.id;
         const query: any = {};
@@ -1620,6 +1642,9 @@ export default function register(ctx: PluginContext): void {
       }
 
       function setFilterNext(filter: 'in-progress' | 'open' | 'blocked') {
+        // Clear any active search filter when switching filters
+        activeFilterTerm = '';
+        preFilterItems = null;
         options.inProgress = false;
         options.all = false;
         state.showClosed = false;
@@ -2339,6 +2364,105 @@ export default function register(ctx: PluginContext): void {
       screen.key(['o', 'O'], async () => {
         if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
           await openOpencodeDialog();
+        }
+      });
+
+      const restoreListFocus = () => {
+        try {
+          list.focus();
+          paneFocusIndex = getFocusPanes().indexOf(list);
+          applyFocusStyles();
+          screen.render();
+        } catch (_) {}
+      };
+
+      const resetInputState = () => {
+        try { modalDialogs.forceCleanup?.(); } catch (_) {}
+        restoreListFocus();
+      };
+
+      // Open search/filter modal (shortcut /)
+      screen.key(['/'], async () => {
+        if (!detailModal.hidden || helpMenu.isVisible() || !closeDialog.hidden || !updateDialog.hidden || !nextDialog.hidden) return;
+        try {
+          const term = await modalDialogs.editTextarea({
+            title: 'Filter items',
+            initial: activeFilterTerm || '',
+            confirmLabel: 'Apply',
+            cancelLabel: 'Cancel',
+            width: '50%',
+            height: 5,
+          });
+
+          const trimmed = (term || '').trim();
+          // Force-close any lingering modal widgets and restore focus
+          resetInputState();
+          if (!trimmed) {
+            // Clear filter
+            activeFilterTerm = '';
+            if (preFilterItems) {
+              state.items = preFilterItems.slice();
+              preFilterItems = null;
+            } else {
+              // reload full DB
+              const query: any = {};
+              if (options.inProgress) query.status = 'in-progress';
+              state.items = db.list(query);
+            }
+            rebuildTree();
+            renderListAndDetail(0);
+            resetInputState();
+            return;
+          }
+
+          // Apply filter by running `wl list <term> --json`
+          activeFilterTerm = trimmed;
+          // Preserve existing items so we can restore on clear
+          if (!preFilterItems) preFilterItems = state.items.slice();
+
+          const args = ['list', trimmed, '--json'];
+          if (options.prefix) {
+            args.push('--prefix', options.prefix);
+          }
+          const child = spawnImpl('wl', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
+          child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
+              child.on('close', (code) => {
+                if (code !== 0) {
+                  showToast('Filter failed');
+                  resetInputState();
+                  return;
+                }
+                try {
+                  const payload = JSON.parse(stdout.trim());
+                  let results: any[] = [];
+                  if (Array.isArray(payload)) results = payload;
+                  else if (Array.isArray(payload.results)) results = payload.results;
+                  else if (Array.isArray(payload.workItems)) results = payload.workItems;
+                  else if (payload.workItem) results = [payload.workItem];
+
+                  if (results.length === 0) {
+                    state.items = [];
+                  } else {
+                    // map results to items (assume they are full work item objects)
+                    state.items = results.map((r: any) => r.workItem ? r.workItem : r);
+                  }
+                  state.showClosed = false; // when filtering, hide closed by default
+                  rebuildTree();
+                  renderListAndDetail(0);
+                  // After applying a filter, return focus to the list so
+                  // global key handlers remain active (help, shortcuts, etc.)
+                  resetInputState();
+                } catch (err) {
+                  showToast('Filter parse error');
+                  resetInputState();
+                }
+              });
+        } catch (err) {
+          // canceled or error - ensure focus returns to main list
+          resetInputState();
         }
       });
 

@@ -17,6 +17,7 @@ export interface ModalDialogsOptions {
 export class ModalDialogsComponent {
   private screen: BlessedScreen;
   private blessedImpl: BlessedFactory;
+  private activeCleanup: (() => void) | null = null;
 
   constructor(options: ModalDialogsOptions) {
     this.screen = options.parent;
@@ -41,6 +42,11 @@ export class ModalDialogsComponent {
 
   destroy(): void {
     // No persistent elements.
+  }
+
+  forceCleanup(): void {
+    try { this.activeCleanup?.(); } catch (_) {}
+    this.activeCleanup = null;
   }
 
   async selectList(options: {
@@ -149,6 +155,7 @@ export class ModalDialogsComponent {
     height?: string | number;
   }): Promise<string> {
     return new Promise((resolve) => {
+      let resolved = false;
       const overlay = this.createOverlay();
       const dialog = this.blessedImpl.box({
         parent: this.screen,
@@ -180,44 +187,83 @@ export class ModalDialogsComponent {
         if (typeof textarea.setValue === 'function') textarea.setValue(options.initial);
       } catch (_) {}
 
-      const buttons = this.blessedImpl.list({
+      // Use individual blessed.box widgets for Apply/Cancel instead of a
+      // blessed.list.  blessed.list does not reliably emit 'select' for mouse
+      // clicks, which caused the Promise to never resolve and left the TUI in
+      // a permanently broken input state.
+      const confirmBtn = this.blessedImpl.box({
         parent: dialog,
         bottom: 0,
         left: 1,
         height: 1,
-        width: '100%-2',
-        items: [options.confirmLabel, options.cancelLabel],
-        keys: true,
+        width: options.confirmLabel.length + 2,
+        content: `[${options.confirmLabel}]`,
         mouse: true,
-        style: { selected: { bg: 'blue' } },
-      }) as BlessedList;
+        clickable: true,
+        style: { fg: 'green' },
+      }) as BlessedBox;
 
-      buttons.select(0);
+      const cancelBtn = this.blessedImpl.box({
+        parent: dialog,
+        bottom: 0,
+        left: options.confirmLabel.length + 4,
+        height: 1,
+        width: options.cancelLabel.length + 2,
+        content: `[${options.cancelLabel}]`,
+        mouse: true,
+        clickable: true,
+        style: { fg: 'yellow' },
+      }) as BlessedBox;
 
       const cleanup = () => {
         try { dialog.hide(); overlay.hide(); } catch (_) {}
-        try { buttons.removeAllListeners?.(); } catch (_) {}
+        try { confirmBtn.removeAllListeners?.(); } catch (_) {}
+        try { cancelBtn.removeAllListeners?.(); } catch (_) {}
         try { textarea.removeAllListeners?.(); } catch (_) {}
         try { dialog.removeAllListeners?.(); } catch (_) {}
         try { overlay.removeAllListeners?.(); } catch (_) {}
+        try { confirmBtn.destroy(); } catch (_) {}
+        try { cancelBtn.destroy(); } catch (_) {}
+        try { textarea.destroy(); } catch (_) {}
         try { dialog.destroy(); } catch (_) {}
         try { overlay.destroy(); } catch (_) {}
+        if (this.activeCleanup === cleanup) this.activeCleanup = null;
+      };
+      this.activeCleanup = cleanup;
+
+      const safeResolve = (value: string) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(value);
       };
 
-      buttons.on('select', (_el: any, idx: number) => {
+      confirmBtn.on('click', () => {
         const value = textarea.getValue ? textarea.getValue() : options.initial;
-        cleanup();
-        resolve(idx === 0 ? value : '');
+        safeResolve(value);
+      });
+
+      cancelBtn.on('click', () => {
+        safeResolve('');
+      });
+
+      // Allow Tab to move focus between textarea and confirm button
+      textarea.key(['tab'], () => {
+        confirmBtn.focus();
+        this.screen.render();
+      });
+
+      // Enter in textarea submits (Shift+Enter not reliably available in blessed)
+      textarea.key(['escape'], () => {
+        safeResolve('');
       });
 
       dialog.key(['escape'], () => {
-        cleanup();
-        resolve('');
+        safeResolve('');
       });
 
       overlay.on('click', () => {
-        cleanup();
-        resolve('');
+        safeResolve('');
       });
 
       overlay.setFront();
@@ -290,7 +336,9 @@ export class ModalDialogsComponent {
         try { overlay.removeAllListeners?.(); } catch (_) {}
         try { dialog.destroy(); } catch (_) {}
         try { overlay.destroy(); } catch (_) {}
+        if (this.activeCleanup === cleanup) this.activeCleanup = null;
       };
+      this.activeCleanup = cleanup;
 
       cancelBtn.on('click', () => {
         cleanup();
