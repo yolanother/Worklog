@@ -47,6 +47,11 @@ export class ModalDialogsComponent {
   forceCleanup(): void {
     try { this.activeCleanup?.(); } catch (_) {}
     this.activeCleanup = null;
+    // Safety net: always ensure grabKeys is released after any modal cleanup.
+    // A textarea with inputOnFocus sets screen.grabKeys = true and may not
+    // properly release it if destroyed without ending its readInput cycle.
+    try { this.screen.grabKeys = false; } catch (_) {}
+    try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
   }
 
   async selectList(options: {
@@ -216,6 +221,30 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
+        // The textarea with inputOnFocus calls readInput() when focused,
+        // which sets screen.grabKeys = true and monopolises all keyboard
+        // input.  We MUST end input reading before destroying, otherwise
+        // grabKeys stays true and the entire TUI keyboard is dead.
+        try {
+          const ta = textarea as any;
+          if (ta._reading) {
+            // cancel() simulates Escape inside _listener which calls
+            // _done() -> screen.grabKeys = false.  It only works when
+            // __listener has been set (deferred via nextTick).
+            if (typeof ta.cancel === 'function' && ta.__listener) {
+              ta.cancel();
+            } else {
+              // __listener not yet set (same-tick destroy) – manual cleanup
+              ta._reading = false;
+              this.screen.grabKeys = false;
+              try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        // Safety net: always ensure grabKeys is released
+        try { this.screen.grabKeys = false; } catch (_) {}
+        try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+
         try { dialog.hide(); overlay.hide(); } catch (_) {}
         try { confirmBtn.removeAllListeners?.(); } catch (_) {}
         try { cancelBtn.removeAllListeners?.(); } catch (_) {}
@@ -329,11 +358,29 @@ export class ModalDialogsComponent {
       }) as BlessedBox;
 
       const cleanup = () => {
+        // End the textbox's readInput before destroying (same grabKeys issue
+        // as editTextarea – see comment there for details).
+        try {
+          const inp = input as any;
+          if (inp._reading) {
+            if (typeof inp.cancel === 'function' && inp.__listener) {
+              inp.cancel();
+            } else {
+              inp._reading = false;
+              this.screen.grabKeys = false;
+              try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        try { this.screen.grabKeys = false; } catch (_) {}
+        try { (this.screen as any).program?.hideCursor?.(); } catch (_) {}
+
         try { dialog.hide(); overlay.hide(); } catch (_) {}
         try { input.removeAllListeners?.(); } catch (_) {}
         try { cancelBtn.removeAllListeners?.(); } catch (_) {}
         try { dialog.removeAllListeners?.(); } catch (_) {}
         try { overlay.removeAllListeners?.(); } catch (_) {}
+        try { input.destroy(); } catch (_) {}
         try { dialog.destroy(); } catch (_) {}
         try { overlay.destroy(); } catch (_) {}
         if (this.activeCleanup === cleanup) this.activeCleanup = null;
