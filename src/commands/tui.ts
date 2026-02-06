@@ -6,6 +6,7 @@ import type { PluginContext } from '../plugin-types.js';
 import type { WorkItem, WorkItemStatus } from '../types.js';
 import blessed from 'blessed';
 import { humanFormatWorkItem, sortByPriorityAndDate, formatTitleOnly, formatTitleOnlyTUI } from './helpers.js';
+import { rebuildTreeState as state_rebuildTreeState, createTuiState as state_createTuiState, buildVisibleNodes as state_buildVisibleNodes } from '../tui/state.js';
 import chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -42,64 +43,10 @@ export const isClosedStatus = (status: WorkItemStatus): boolean =>
 export const filterVisibleItems = (items: Item[], showClosed: boolean): Item[] =>
   showClosed ? items.slice() : items.filter((item: Item) => !isClosedStatus(item.status));
 
-export const rebuildTreeState = (state: TuiState): void => {
-  state.currentVisibleItems = filterVisibleItems(state.items, state.showClosed);
-  state.itemsById = new Map<string, Item>();
-  for (const it of state.currentVisibleItems) state.itemsById.set(it.id, it);
-
-  state.childrenMap = new Map<string, Item[]>();
-  for (const it of state.currentVisibleItems) {
-    const pid = it.parentId;
-    if (pid && state.itemsById.has(pid)) {
-      const arr = state.childrenMap.get(pid) || [];
-      arr.push(it);
-      state.childrenMap.set(pid, arr);
-    }
-  }
-
-  state.roots = state.currentVisibleItems.filter(it => !it.parentId || !state.itemsById.has(it.parentId)).slice();
-  state.roots.sort(sortByPriorityAndDate);
-
-  // prune expanded nodes that are no longer present
-  for (const id of Array.from(state.expanded)) {
-    if (!state.itemsById.has(id)) state.expanded.delete(id);
-  }
-};
-
-export const createTuiState = (items: Item[], showClosed: boolean, persistedExpanded?: string[] | null): TuiState => {
-  const state: TuiState = {
-    items: items.slice(),
-    showClosed,
-    currentVisibleItems: [],
-    itemsById: new Map<string, Item>(),
-    childrenMap: new Map<string, Item[]>(),
-    roots: [],
-    expanded: new Set<string>(),
-    listLines: [],
-  };
-
-  if (persistedExpanded && Array.isArray(persistedExpanded)) {
-    for (const id of persistedExpanded) state.expanded.add(id);
-  }
-
-  rebuildTreeState(state);
-  return state;
-};
-
-export const buildVisibleNodes = (state: TuiState): VisibleNode[] => {
-  const out: VisibleNode[] = [];
-
-  function visit(it: Item, depth: number) {
-    const children = (state.childrenMap.get(it.id) || []).slice().sort(sortByPriorityAndDate);
-    out.push({ item: it, depth, hasChildren: children.length > 0 });
-    if (children.length > 0 && state.expanded.has(it.id)) {
-      for (const c of children) visit(c, depth + 1);
-    }
-  }
-
-  for (const r of state.roots) visit(r, 0);
-  return out;
-};
+// Re-exported state helpers (extracted to src/tui/state.ts)
+export const rebuildTreeState = state_rebuildTreeState;
+export const createTuiState = state_createTuiState;
+export const buildVisibleNodes = state_buildVisibleNodes;
 
 type Item = WorkItem;
 
