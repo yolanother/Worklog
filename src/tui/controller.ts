@@ -759,16 +759,10 @@ export class TuiController {
 
           // Calculate what the height WILL BE after the newline
           const futureLines = currentLines + 1;
-          const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, futureLines + 2), inputMaxHeight());
+          const desiredHeight = calculateOpencodeDesiredHeight(futureLines);
 
           // Resize the dialog FIRST
-          opencodeDialog.height = desiredHeight;
-          opencodeText.height = desiredHeight - 2;
-
-          if (opencodePane) {
-            opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
-            opencodePane.height = paneHeight();
-          }
+          applyOpencodeCompactLayout(desiredHeight);
 
           // Render with new size
           screen.render();
@@ -807,45 +801,53 @@ export class TuiController {
     const inputMaxHeight = () => Math.min(MAX_INPUT_LINES + 2, Math.floor(availableHeight() * 0.3)); // +2 for borders
     const paneHeight = () => Math.max(6, Math.floor(availableHeight() * 0.5));
 
-    function updateOpencodeInputLayout() {
-      if (!opencodeText.getValue) return;
-      const value = opencodeText.getValue();
-      const lines = value.split('\n').length;
-      // Dialog height = content lines + 2 for borders
-      const desiredHeight = Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
-      opencodeDialog.height = desiredHeight;
-      
-      // Always use compact mode settings
-      (opencodeText as any).border = false;
-      opencodeText.top = 0;  // Position at top of dialog interior
-      opencodeText.left = 0;  // Position at left of dialog interior
-      opencodeText.width = '100%-2';  // Leave 1 char padding on each side
-      opencodeText.height = desiredHeight - 2;  // Height minus top and bottom borders
-      // Ensure a style object exists but avoid replacing it entirely — blessed
-      // keeps internal references to the original style object which must be
-      // preserved. Create a style object only when missing (e.g. in tests).
+    const ensureOpencodeTextStyle = () => {
       if (!opencodeText.style) {
         (opencodeText as any).style = {};
       }
-      // Clear border and focus styles without replacing the entire style object
+    };
+
+    const clearOpencodeTextBorders = () => {
+      ensureOpencodeTextStyle();
       if (opencodeText.style.border) {
         Object.keys(opencodeText.style.border).forEach(key => {
           delete opencodeText.style.border[key];
         });
       }
-      if (opencodeText.style.focus) {
-        if (opencodeText.style.focus.border) {
-          Object.keys(opencodeText.style.focus.border).forEach(key => {
-            delete opencodeText.style.focus.border[key];
-          });
-        }
+      if (opencodeText.style.focus?.border) {
+        Object.keys(opencodeText.style.focus.border).forEach(key => {
+          delete opencodeText.style.focus.border[key];
+        });
       }
-      
+    };
+
+    const applyOpencodeCompactLayout = (desiredHeight: number) => {
+      opencodeDialog.height = desiredHeight;
+
+      (opencodeText as any).border = false;
+      opencodeText.top = 0;
+      opencodeText.left = 0;
+      opencodeText.width = '100%-2';
+      opencodeText.height = desiredHeight - 2;
+      clearOpencodeTextBorders();
+
       if (opencodePane) {
         opencodePane.bottom = desiredHeight + FOOTER_HEIGHT;
         opencodePane.height = paneHeight();
-        // No longer need to update close button position since it's in the label
       }
+    };
+
+    const calculateOpencodeDesiredHeight = (lines: number) => {
+      return Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
+    };
+
+    function updateOpencodeInputLayout() {
+      if (!opencodeText.getValue) return;
+      const value = opencodeText.getValue();
+      const lines = value.split('\n').length;
+      // Dialog height = content lines + 2 for borders
+      const desiredHeight = calculateOpencodeDesiredHeight(lines);
+      applyOpencodeCompactLayout(desiredHeight);
       screen.render();
     }
 
@@ -863,30 +865,7 @@ export class TuiController {
       opencodeSend.hide();  // Hide the send button
       opencodeCancel.hide();  // Hide the old cancel button since it's in the label now
       // Remove textarea border since dialog has the border
-      (opencodeText as any).border = false;
-      opencodeText.top = 0;  // Position at top of dialog interior
-      opencodeText.left = 0;  // Position at left of dialog interior  
-      opencodeText.width = '100%-2';  // Leave 1 char padding on each side
-      opencodeText.height = MIN_INPUT_HEIGHT - 2;  // Height minus borders
-      // Ensure a style object exists but avoid replacing it entirely — blessed
-      // keeps internal references to the original style object which must be
-      // preserved. Create a style object only when missing (e.g. in tests).
-      if (!opencodeText.style) {
-        (opencodeText as any).style = {};
-      }
-      // Clear border and focus styles without replacing the entire style object
-      if (opencodeText.style.border) {
-        Object.keys(opencodeText.style.border).forEach(key => {
-          delete opencodeText.style.border[key];
-        });
-      }
-      if (opencodeText.style.focus) {
-        if (opencodeText.style.focus.border) {
-          Object.keys(opencodeText.style.focus.border).forEach(key => {
-            delete opencodeText.style.focus.border[key];
-          });
-        }
-      }
+      applyOpencodeCompactLayout(MIN_INPUT_HEIGHT);
       
       opencodeDialog.show();
       opencodeDialog.setFront();
