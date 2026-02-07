@@ -2330,26 +2330,9 @@ export class TuiController {
     const opencodeTextFocusHandler = () => { paneFocusIndex = getFocusPanes().indexOf(opencodeDialog); applyFocusStylesForPane(opencodeDialog); };
     try { (opencodeText as any).__opencode_focus = opencodeTextFocusHandler; opencodeText.on('focus', opencodeTextFocusHandler); } catch (_) {}
 
-    const listClickHandler = () => {
-      const idx = list.selected as number;
-      updateListSelection(idx, 'click');
-      list.focus();
-      paneFocusIndex = getFocusPanes().indexOf(list);
-      applyFocusStylesForPane(list);
-    };
-    try { (list as any).__opencode_click = listClickHandler; list.on('click', listClickHandler); } catch (_) {}
-
-    const listClickCoordsHandler = (data: any) => {
-      const coords = getClickRow(list as any, data);
-      if (!coords) return;
-      const scroll = list.getScroll() as number;
-      const lineIndex = coords.row + (scroll || 0);
-      const line = state.listLines[lineIndex];
-      if (!line) return;
-      const id = extractIdAtColumn(line, coords.col);
-      if (id) openDetailsForId(id);
-    };
-    try { (list as any).__opencode_click_coords = listClickCoordsHandler; list.on('click', listClickCoordsHandler); } catch (_) {}
+    // NOTE: List click-to-select is handled via screen.on('mouse') below,
+    // because blessed routes mouse events to list *item* child elements
+    // (which have higher z-index), so list.on('click') never fires.
 
     const detailClickHandler = (data: any) => {
       detail.focus();
@@ -3015,6 +2998,22 @@ export class TuiController {
       if (!detailModal.hidden && !isInside(detailModal, data.x, data.y)) {
         closeDetails();
         return;
+      }
+      // List click-to-select: blessed routes mouse events to list item child
+      // elements so list.on('click') never fires. Handle it at screen level.
+      if (data.action === 'mousedown' && isInside(list, data.x, data.y)) {
+        const coords = getClickRow(list as any, data);
+        if (coords && coords.row >= 0) {
+          const scroll = (list as any).childBase ?? 0;
+          const lineIndex = coords.row + scroll;
+          if (lineIndex >= 0 && lineIndex < state.listLines.length) {
+            if (typeof list.select === 'function') list.select(lineIndex);
+            updateListSelection(lineIndex, 'screen-mouse');
+            list.focus();
+            paneFocusIndex = getFocusPanes().indexOf(list);
+            applyFocusStylesForPane(list);
+          }
+        }
       }
       if (detailModal.hidden && !helpMenu.isVisible() && isInside(detail, data.x, data.y)) {
         if (data.action === 'click' || data.action === 'mousedown') {
