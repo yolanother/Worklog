@@ -7,7 +7,7 @@ describe('TUI shutdown flow', () => {
   it('uses shared shutdown helper and avoids direct process.exit', () => {
     const testDir = path.dirname(fileURLToPath(import.meta.url));
     const rootDir = path.resolve(testDir, '../..');
-    const tuiPath = path.join(rootDir, 'src/commands/tui.ts');
+    const tuiPath = path.join(rootDir, 'src/tui/controller.ts');
     const source = readFileSync(tuiPath, 'utf8');
 
     expect(source).toContain('const shutdown = () =>');
