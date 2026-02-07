@@ -1743,16 +1743,45 @@ export class TuiController {
       openDetailsForId(parentId);
     }
 
-    function refreshFromDatabase(preferredIndex?: number, fallbackIndex?: number) {
-      // Reset any active search filter when refreshing the full database view
-      activeFilterTerm = '';
-      preFilterItems = null;
+    type ListRefreshOptions = {
+      status?: 'in-progress' | 'blocked';
+      includeClosed?: boolean;
+      resetSearch?: boolean;
+      updateOptions?: { inProgress: boolean; all: boolean };
+      clearShowClosed?: boolean;
+      preferredIndex?: number;
+      fallbackIndex?: number;
+      allowFallback?: boolean;
+    };
+
+    function refreshListWithOptions(opts: ListRefreshOptions = {}) {
+      const {
+        status,
+        includeClosed = false,
+        resetSearch = true,
+        updateOptions,
+        clearShowClosed = false,
+        preferredIndex,
+        fallbackIndex,
+        allowFallback = true,
+      } = opts;
+
+      if (resetSearch) {
+        activeFilterTerm = '';
+        preFilterItems = null;
+      }
+      if (updateOptions) {
+        options.inProgress = updateOptions.inProgress;
+        options.all = updateOptions.all;
+      }
+      if (clearShowClosed) state.showClosed = false;
+
       const selected = getSelectedItem();
       const selectedId = selected?.id;
       const query: any = {};
-      if (options.inProgress) query.status = 'in-progress';
+      if (status) query.status = status;
       state.items = db.list(query);
-      const nextVisible = options.all
+      const nextVisible = includeClosed
         ? state.items.slice()
         : state.items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
       if (nextVisible.length === 0) {
@@ -1769,13 +1798,22 @@ export class TuiController {
       } else if (selectedId) {
         const found = visible.findIndex(n => n.item.id === selectedId);
         if (found >= 0) nextIndex = found;
-        else if (typeof fallbackIndex === 'number') {
+        else if (allowFallback && typeof fallbackIndex === 'number') {
           nextIndex = Math.max(0, Math.min(fallbackIndex, visible.length - 1));
         }
-      } else if (typeof fallbackIndex === 'number') {
+      } else if (allowFallback && typeof fallbackIndex === 'number') {
         nextIndex = Math.max(0, Math.min(fallbackIndex, visible.length - 1));
       }
       renderListAndDetail(nextIndex);
+    }
+
+    function refreshFromDatabase(preferredIndex?: number, fallbackIndex?: number) {
+      refreshListWithOptions({
+        status: options.inProgress ? 'in-progress' : undefined,
+        includeClosed: options.all,
+        preferredIndex,
+        fallbackIndex,
+      });
     }
 
     const REFRESH_DEBOUNCE_MS = 300;
@@ -1824,33 +1862,19 @@ export class TuiController {
     };
 
     function setFilterNext(filter: 'in-progress' | 'open' | 'blocked') {
-      // Clear any active search filter when switching filters
-      activeFilterTerm = '';
-      preFilterItems = null;
-      options.inProgress = false;
-      options.all = false;
-      state.showClosed = false;
-      const selected = getSelectedItem();
-      const selectedId = selected?.id;
-      const query: any = {};
-      if (filter === 'in-progress') query.status = 'in-progress';
-      if (filter === 'blocked') query.status = 'blocked';
-      state.items = db.list(query);
-      const nextVisible = state.items.filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
-      if (nextVisible.length === 0) {
-        list.setItems([]);
-        detail.setContent('');
-        screen.render();
-        return;
-      }
-      rebuildTree();
-      const visible = buildVisible();
-      let nextIndex = 0;
-      if (selectedId) {
-        const found = visible.findIndex(n => n.item.id === selectedId);
-        if (found >= 0) nextIndex = found;
-      }
-      renderListAndDetail(nextIndex);
+      const status = filter === 'in-progress'
+        ? 'in-progress'
+        : filter === 'blocked'
+          ? 'blocked'
+          : undefined;
+      const inProgress = filter === 'in-progress';
+      refreshListWithOptions({
+        status,
+        includeClosed: false,
+        updateOptions: { inProgress, all: false },
+        clearShowClosed: true,
+        allowFallback: false,
+      });
     }
 
     function getSelectedItem(): Item | null {
@@ -2633,13 +2657,17 @@ export class TuiController {
           if (preFilterItems) {
             state.items = preFilterItems.slice();
             preFilterItems = null;
+            rebuildTree();
+            renderListAndDetail(0);
           } else {
-            const query: any = {};
-            if (options.inProgress) query.status = 'in-progress';
-            state.items = db.list(query);
+            refreshListWithOptions({
+              status: options.inProgress ? 'in-progress' : undefined,
+              includeClosed: options.all,
+              resetSearch: false,
+              preferredIndex: 0,
+              allowFallback: false,
+            });
           }
-          rebuildTree();
-          renderListAndDetail(0);
           restoreListFocus();
           return;
         }
