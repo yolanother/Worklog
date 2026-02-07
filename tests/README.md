@@ -13,6 +13,9 @@ npm run test:watch
 
 # Run tests with coverage report
 npm run test:coverage
+
+# Run TUI tests only (CI/headless)
+npm run test:tui
 ```
 
 ## Test Organization
