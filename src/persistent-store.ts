@@ -38,6 +38,7 @@ export class SqlitePersistentStore {
     try {
       this.db = new Database(dbPath);
       this.db.pragma('journal_mode = WAL'); // Better concurrency
+      this.db.pragma('foreign_keys = ON');
     } catch (error) {
       throw new Error(`Failed to open database ${dbPath}: ${(error as Error).message}`);
     }
