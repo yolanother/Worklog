@@ -67,6 +67,18 @@ describe('CLI Issue Status Tests', () => {
       expect(result.workItems[0].priority).toBe('high');
     });
 
+    it('should filter by id search term', async () => {
+      const { stdout: createStdout } = await execAsync(`tsx ${cliPath} --json create -t "Searchable"`);
+      const created = JSON.parse(createStdout).workItem;
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json list ${created.id}`);
+      const result = JSON.parse(stdout);
+
+      const ids = result.workItems.map((item: any) => item.id);
+      expect(result.success).toBe(true);
+      expect(ids).toContain(created.id);
+    });
+
     it('should filter by parent id', async () => {
       const parentResult = await execAsync(`tsx ${cliPath} --json create -t "Parent"`);
       const parent = JSON.parse(parentResult.stdout).workItem;

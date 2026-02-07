@@ -977,10 +977,11 @@ export class WorklogDatabase {
       filtered = filtered.filter(item => item.assignee === assignee);
     }
 
-    // Filter by search term if provided (fuzzy match against title, description, and comments)
+    // Filter by search term if provided (fuzzy match against id, title, description, and comments)
     if (searchTerm) {
       const lowerSearchTerm = searchTerm.toLowerCase();
       filtered = filtered.filter(item => {
+        const idMatch = item.id.toLowerCase().includes(lowerSearchTerm);
         // Check title and description
         const titleMatch = item.title.toLowerCase().includes(lowerSearchTerm);
         const descriptionMatch = item.description?.toLowerCase().includes(lowerSearchTerm) || false;
@@ -991,7 +992,7 @@ export class WorklogDatabase {
           comment.comment.toLowerCase().includes(lowerSearchTerm)
         );
         
-        return titleMatch || descriptionMatch || commentMatch;
+        return idMatch || titleMatch || descriptionMatch || commentMatch;
       });
     }
 

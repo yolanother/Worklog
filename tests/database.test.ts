@@ -584,6 +584,15 @@ describe('WorklogDatabase', () => {
       expect(result.workItem?.id).toBe(searchItem.id);
     });
 
+    it('should filter by search term in id', () => {
+      const target = db.create({ title: 'Target', priority: 'low', status: 'open' });
+      db.create({ title: 'Other', priority: 'critical', status: 'open' });
+
+      const idFragment = target.id.slice(-6).toLowerCase();
+      const result = db.findNextWorkItem(undefined, idFragment);
+      expect(result.workItem?.id).toBe(target.id);
+    });
+
     it('should return in-progress item if it has no suitable children', () => {
       const parent = db.create({ title: 'Parent', priority: 'high', status: 'in-progress' });
       db.create({ title: 'Completed child', priority: 'high', status: 'completed', parentId: parent.id });

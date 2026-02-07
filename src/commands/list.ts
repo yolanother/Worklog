@@ -13,7 +13,7 @@ export default function register(ctx: PluginContext): void {
   program
     .command('list')
     .description('List work items')
-    .argument('[search]', 'Search term (matches title and description)')
+    .argument('[search]', 'Search term (matches id, title, and description)')
     .option('-s, --status <status>', 'Filter by status')
     .option('-p, --priority <priority>', 'Filter by priority')
     .option('--parent <id>', 'Filter by parent id (direct children only)')
@@ -62,9 +62,10 @@ export default function register(ctx: PluginContext): void {
       if (search) {
         const lower = String(search).toLowerCase();
         items = items.filter(item => {
+          const idMatch = item.id && item.id.toLowerCase().includes(lower);
           const titleMatch = item.title && item.title.toLowerCase().includes(lower);
           const descMatch = item.description && item.description.toLowerCase().includes(lower);
-          return Boolean(titleMatch || descMatch);
+          return Boolean(idMatch || titleMatch || descMatch);
         });
       }
       
