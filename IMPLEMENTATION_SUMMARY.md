@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the complete implementation of the Worklog system, a simple issue tracker optimized for Git-based workflows.
+This document summarizes the current implementation of the Worklog system, a simple issue tracker optimized for Git-based workflows.
 
 ## Requirements Met
 
@@ -14,7 +14,7 @@ All requirements from the problem statement have been successfully implemented:
 ✅ **CLI tool** - Complete command-line interface
 ✅ **Git optimization** - JSONL format for minimal diffs
 ✅ **Import/Export** - JSONL file support
-✅ **In-memory database** - Fast Map-based storage
+✅ **Persistent database** - SQLite-backed storage with JSONL export
 ✅ **Node/TypeScript** - Built with modern TypeScript
 
 ## Architecture
@@ -27,18 +27,17 @@ All requirements from the problem statement have been successfully implemented:
 - Type-safe enums for status and priority
 - Input types for create and update operations
 
-### Database Layer (`src/database.ts`)
-- In-memory Map-based storage
+### Database Layer (`src/database.ts`, `src/persistent-store.ts`)
+- SQLite-backed persistent storage
 - CRUD operations (Create, Read, Update, Delete)
 - Hierarchical queries (children, descendants)
 - Filtering by status, priority, parent, tags
-- Import/export capabilities
+- Import/export capabilities with JSONL integration
 
 ### Storage Format (`src/jsonl.ts`)
-- JSONL (JSON Lines) format
-- One work item per line
-- Git-friendly (minimal diffs)
-- Easy to merge and resolve conflicts
+- JSONL (JSON Lines) format for Git-friendly sync
+- One item or comment per line
+- Import/export boundary between SQLite and git
 
 ### API Server (`src/api.ts`, `src/index.ts`)
 - Express-based REST API
@@ -54,41 +53,42 @@ All requirements from the problem statement have been successfully implemented:
   - `POST /import` - Import from JSONL
   - `GET /health` - Health check
 
-### CLI Tool (`src/cli.ts`)
-- Commands:
-  - `create` - Create new work items
-  - `list` - List with filtering options
-  - `show` - View details and children
-  - `update` - Update any field
-  - `delete` - Remove work items
-  - `export` - Export to JSONL file
-  - `import` - Import from JSONL file
+### CLI Tool (`src/cli.ts`, `src/commands/*`)
+- Command modules for create, list, show, update, delete, import/export, sync, and plugins
+- Shared helpers for ordering, filtering, and output formatting
+
+### TUI (`src/tui/*`)
+- Interactive terminal UI with tree view, details pane, and OpenCode integration
 
 ## File Structure
 
 ```
 Worklog/
 ├── src/
+│   ├── commands/         # CLI command implementations
+│   ├── tui/              # Terminal UI components
 │   ├── types.ts          # Type definitions
-│   ├── database.ts       # In-memory database
-│   ├── jsonl.ts         # Import/export functions
-│   ├── api.ts           # REST API
-│   ├── index.ts         # Server entry point
-│   └── cli.ts           # CLI tool
-├── dist/                # Compiled JavaScript
-├── package.json         # Dependencies and scripts
-├── tsconfig.json        # TypeScript config
-├── README.md            # Main documentation
-├── QUICKSTART.md        # Getting started guide
-├── EXAMPLES.md          # Usage examples
-├── GIT_WORKFLOW.md      # Team collaboration guide
-└── .gitignore          # Git ignore rules
+│   ├── database.ts       # Worklog database facade
+│   ├── persistent-store.ts # SQLite persistence
+│   ├── jsonl.ts          # Import/export functions
+│   ├── sync.ts           # JSONL merge/sync helpers
+│   ├── api.ts            # REST API
+│   ├── index.ts          # Server entry point
+│   └── cli.ts            # CLI tool entry
+├── dist/                 # Compiled JavaScript
+├── package.json          # Dependencies and scripts
+├── tsconfig.json         # TypeScript config
+├── README.md             # Main documentation
+├── QUICKSTART.md         # Getting started guide
+├── EXAMPLES.md           # Usage examples
+├── GIT_WORKFLOW.md       # Team collaboration guide
+└── .gitignore            # Git ignore rules
 ```
 
 ## Key Features
 
 ### 1. Git-Optimized Storage
-- JSONL format puts each work item on its own line
+- JSONL format puts each work item or comment on its own line
 - Changes to individual items create minimal Git diffs
 - Easy to merge changes from multiple team members
 - Conflicts are rare and easy to resolve
@@ -108,6 +108,7 @@ Worklog/
 ### 4. Multiple Interfaces
 - **API**: Programmatic access for integrations
 - **CLI**: Quick command-line operations
+- **TUI**: Interactive terminal UI
 
 ### 5. Type Safety
 - Full TypeScript implementation
@@ -183,8 +184,8 @@ git pull origin main
 
 ## Performance
 
-- **In-memory**: All operations are O(1) or O(n) for listings
-- **Fast startup**: Data loads in milliseconds
+- **SQLite-backed**: Indexed queries with stable performance for typical workloads
+- **Fast startup**: Persistent DB and JSONL refresh on demand
 - **Efficient storage**: JSONL is compact and readable
 - **Scalability**: Handles thousands of items easily
 
