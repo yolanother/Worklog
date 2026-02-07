@@ -565,7 +565,12 @@ npm run test:watch
 
 # Run tests with coverage report
 npm run test:coverage
+
+# Run TUI tests only (CI/headless)
+npm run test:tui
 ```
+
+See `docs/tui-ci.md` for headless/Docker CI details.
 
 See [tests/README.md](tests/README.md) for detailed testing documentation.
 
