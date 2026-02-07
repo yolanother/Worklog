@@ -71,7 +71,7 @@ const makeScreen = () => ({
 });
 
 describe('OpenCode prompt input modes', () => {
-  it('supports normal/insert mode and cursor movement without inserting', () => {
+  it('supports normal/insert mode and cursor movement without inserting', async () => {
     const screen = makeScreen();
     const list = makeList();
     const footer = makeBox();
@@ -185,13 +185,13 @@ describe('OpenCode prompt input modes', () => {
       OpencodeClient: FakeOpencodeClient as any,
       resolveWorklogDir: () => '/tmp',
       createPersistence: () => ({
-        loadPersistedState: () => null,
-        savePersistedState: () => undefined,
+        loadPersistedState: async () => null,
+        savePersistedState: async () => undefined,
         statePath: '/tmp/tui-state.json',
       }),
     });
 
-    controller.start({});
+    await controller.start({});
 
     const inputHandler = (opencodeText as any)._listener as (ch: any, key: any) => void;
     expect(typeof inputHandler).toBe('function');
