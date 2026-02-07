@@ -218,9 +218,36 @@ export class WorklogDatabase {
     return { updated };
   }
 
+  assignSortIndexValuesForItems(orderedItems: WorkItem[], gap: number): { updated: number } {
+    let updated = 0;
+    for (let index = 0; index < orderedItems.length; index += 1) {
+      const item = orderedItems[index];
+      const nextSortIndex = (index + 1) * gap;
+      if (item.sortIndex !== nextSortIndex) {
+        const updatedItem = {
+          ...item,
+          sortIndex: nextSortIndex,
+          updatedAt: new Date().toISOString(),
+        };
+        this.store.saveWorkItem(updatedItem);
+        updated += 1;
+      }
+    }
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return { updated };
+  }
+
   previewSortIndexOrder(gap: number): Array<{ id: string; sortIndex: number } & WorkItem> {
     const ordered = this.computeSortIndexOrder();
     return ordered.map((item, index) => ({
+      ...item,
+      sortIndex: (index + 1) * gap,
+    }));
+  }
+
+  previewSortIndexOrderForItems(items: WorkItem[], gap: number): Array<{ id: string; sortIndex: number } & WorkItem> {
+    return items.map((item, index) => ({
       ...item,
       sortIndex: (index + 1) * gap,
     }));

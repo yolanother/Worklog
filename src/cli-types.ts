@@ -82,6 +82,12 @@ export interface MigrateOptions {
   prefix?: string;
 }
 
+export interface ResortOptions {
+  dryRun?: boolean;
+  gap?: string;
+  prefix?: string;
+}
+
 export interface SyncOptions {
   file?: string;
   prefix?: string;

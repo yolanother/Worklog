@@ -27,6 +27,12 @@ Dry-run output shows each item ID, title, and the proposed sort_index value.
 wl migrate sort-index
 ```
 
+If you only need to rebuild ordering for active items based on current database values (without running the migration), use:
+
+```
+wl resort
+```
+
 3) Verify ordering:
 
 ```
