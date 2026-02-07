@@ -14,6 +14,7 @@ import { humanFormatWorkItem, formatTitleOnlyTUI } from '../commands/helpers.js'
 import { createTuiState, rebuildTreeState, buildVisibleNodes } from './state.js';
 import { createPersistence } from './persistence.js';
 import { resolveWorklogDir } from '../worklog-paths.js';
+import { getDefaultDataPath } from '../jsonl.js';
 import { createLayout } from './layout.js';
 import { createUpdateDialogFocusManager } from './update-dialog-navigation.js';
 import { buildUpdateDialogUpdates } from './update-dialog-submit.js';
@@ -1742,7 +1743,7 @@ export class TuiController {
       openDetailsForId(parentId);
     }
 
-    function refreshFromDatabase(preferredIndex?: number) {
+    function refreshFromDatabase(preferredIndex?: number, fallbackIndex?: number) {
       // Reset any active search filter when refreshing the full database view
       activeFilterTerm = '';
       preFilterItems = null;
@@ -1768,9 +1769,59 @@ export class TuiController {
       } else if (selectedId) {
         const found = visible.findIndex(n => n.item.id === selectedId);
         if (found >= 0) nextIndex = found;
+        else if (typeof fallbackIndex === 'number') {
+          nextIndex = Math.max(0, Math.min(fallbackIndex, visible.length - 1));
+        }
+      } else if (typeof fallbackIndex === 'number') {
+        nextIndex = Math.max(0, Math.min(fallbackIndex, visible.length - 1));
       }
       renderListAndDetail(nextIndex);
     }
+
+    const REFRESH_DEBOUNCE_MS = 300;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshFallbackIndex: number | null = null;
+    let dataWatcher: fs.FSWatcher | null = null;
+    let isShuttingDown = false;
+
+    const scheduleRefreshFromDatabase = (fallbackIndex?: number) => {
+      if (isShuttingDown) return;
+      if (typeof fallbackIndex === 'number') {
+        refreshFallbackIndex = fallbackIndex;
+      }
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        const fallback = refreshFallbackIndex ?? undefined;
+        refreshFallbackIndex = null;
+        refreshFromDatabase(undefined, fallback);
+      }, REFRESH_DEBOUNCE_MS);
+    };
+
+    const startDatabaseWatch = () => {
+      if (typeof fsImpl.watch !== 'function') return;
+      const dataPath = getDefaultDataPath();
+      const dataDir = pathImpl.dirname(dataPath);
+      const dataFile = pathImpl.basename(dataPath);
+      try {
+        dataWatcher = fsImpl.watch(dataDir, (eventType, filename) => {
+          if (isShuttingDown) return;
+          if (eventType !== 'change' && eventType !== 'rename') return;
+          if (filename && filename !== dataFile) return;
+          const selectedIndex = typeof list.selected === 'number' ? (list.selected as number) : 0;
+          scheduleRefreshFromDatabase(selectedIndex);
+        });
+      } catch (_) {
+        dataWatcher = null;
+      }
+    };
+
+    const stopDatabaseWatch = () => {
+      if (dataWatcher) {
+        try { dataWatcher.close(); } catch (_) {}
+        dataWatcher = null;
+      }
+    };
 
     function setFilterNext(filter: 'in-progress' | 'open' | 'blocked') {
       // Clear any active search filter when switching filters
@@ -2385,14 +2436,20 @@ export class TuiController {
     });
 
     const shutdown = () => {
+      isShuttingDown = true;
       // Persist state before exiting
       try { persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
+      stopDatabaseWatch();
       // Stop the OpenCode server if we started it
       opencodeClient.stopServer();
       // Clear pending timers to avoid keeping the process alive
       if (ctrlWTimeout) {
         try { clearTimeout(ctrlWTimeout); } catch (_) {}
         ctrlWTimeout = null;
+      }
+      if (refreshTimer) {
+        try { clearTimeout(refreshTimer); } catch (_) {}
+        refreshTimer = null;
       }
       if (lastCtrlWKeyHandledTimeout) {
         try { clearTimeout(lastCtrlWKeyHandledTimeout); } catch (_) {}
@@ -2455,6 +2512,8 @@ export class TuiController {
     paneFocusIndex = getFocusPanes().indexOf(list);
     applyFocusStyles();
     screen.render();
+
+    startDatabaseWatch();
 
     function openHelp() {
       helpMenu.show();
