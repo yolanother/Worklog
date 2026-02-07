@@ -379,7 +379,7 @@ wl migrate sort-index --dry-run
 wl migrate sort-index --gap 100
 ```
 
-### `resort` [options]
+### `re-sort` [options]
 
 Recompute `sort_index` values for active work items (excluding completed/deleted) using the current database values.
 
@@ -392,8 +392,8 @@ Options:
 Examples:
 
 ```sh
-wl resort --dry-run
-wl resort --gap 100
+wl re-sort --dry-run
+wl re-sort --gap 100
 ```
 
 ## Plugins

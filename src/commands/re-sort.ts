@@ -1,5 +1,5 @@
 /**
- * Resort command - recompute sort_index ordering
+ * Re-sort command - recompute sort_index ordering
  */
 
 import type { PluginContext } from '../plugin-types.js';
@@ -11,8 +11,8 @@ export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
 
   program
-    .command('resort')
-    .description('Recompute sort_index values for active work items from current database state')
+    .command('re-sort')
+    .description('Re-sort active work items based on current database state')
     .option('--dry-run', 'Preview changes without writing to the database')
     .option('--gap <gap>', `Gap between sort_index values (default: ${DEFAULT_SORT_GAP})`, String(DEFAULT_SORT_GAP))
     .option('--prefix <prefix>', 'Override the default prefix')

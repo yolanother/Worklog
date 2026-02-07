@@ -30,7 +30,7 @@ wl migrate sort-index
 If you only need to rebuild ordering for active items based on current database values (without running the migration), use:
 
 ```
-wl resort
+wl re-sort
 ```
 
 3) Verify ordering:

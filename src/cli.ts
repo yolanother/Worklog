@@ -28,7 +28,7 @@ import pluginsCommand from './commands/plugins.js';
 import tuiCommand from './commands/tui.js';
 import migrateCommand from './commands/migrate.js';
 import depCommand from './commands/dep.js';
-import resortCommand from './commands/resort.js';
+import reSortCommand from './commands/re-sort.js';
 
 // Watch flag parsing - supports -w, -wN, --watch, --watch=N
 function parseWatchFlag(argv: string[]) {
@@ -221,7 +221,7 @@ const builtInCommands = [
   tuiCommand,
   migrateCommand,
   depCommand,
-  resortCommand,
+  reSortCommand,
   // onboard command removed
 ];
 
@@ -246,7 +246,7 @@ const builtInCommandNames = new Set([
   'tui',
   'migrate',
   'dep',
-  'resort',
+  're-sort',
   // 'onboard' removed
 ]);
 
@@ -281,7 +281,7 @@ const formatHelp = (cmd: any, helper: any) => {
     { name: 'Issue Management', names: ['create', 'update', 'comment', 'close', 'delete', 'dep'] },
     { name: 'Status', names: ['in-progress', 'next', 'recent', 'list', 'show'] },
     { name: 'Team', names: ['sync', 'github', 'import', 'export'] },
-    { name: 'Maintenance', names: ['migrate', 'resort'] },
+    { name: 'Maintenance', names: ['migrate', 're-sort'] },
     { name: 'Plugins', names: [] },
   ];
 
