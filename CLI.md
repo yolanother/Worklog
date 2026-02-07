@@ -379,6 +379,23 @@ wl migrate sort-index --dry-run
 wl migrate sort-index --gap 100
 ```
 
+### `re-sort` [options]
+
+Recompute `sort_index` values for active work items (excluding completed/deleted) using the current database values.
+
+Options:
+
+- `--dry-run` — Print the updates without applying them.
+- `--gap <gap>` — Integer gap between consecutive `sort_index` values (optional; default: `100`).
+- `--prefix <prefix>` — Override the default prefix (optional).
+
+Examples:
+
+```sh
+wl re-sort --dry-run
+wl re-sort --gap 100
+```
+
 ## Plugins
 
 Plugin commands let you inspect installed extensions that add or alter CLI functionality. To list commands provided by plugins in your environment run `wl --help` (or `worklog --help`).
