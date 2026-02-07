@@ -1,4 +1,4 @@
-name: TUI Tests
+name: Worklog
 
 on:
   pull_request:
