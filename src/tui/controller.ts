@@ -87,13 +87,14 @@ export class TuiController {
     private readonly deps: TuiControllerDeps = {}
   ) {}
 
-  start(options: { inProgress?: boolean; prefix?: string; all?: boolean }): void {
+  async start(options: { inProgress?: boolean; prefix?: string; all?: boolean }): Promise<void> {
     const { program, utils } = this.ctx;
     // Allow tests to inject a mocked blessed implementation via the ctx object.
     // If not provided, fall back to the real blessed import.
     const blessedImpl = this.deps.blessed ?? (this.ctx as any).blessed ?? blessed;
     const spawnImpl: (...args: any[]) => ChildProcess = this.deps.spawn ?? (this.ctx as any).spawn ?? spawn;
     const fsImpl = this.deps.fs ?? fs;
+    const fsAsync = (fsImpl as typeof fs).promises ?? fs.promises;
     const pathImpl = this.deps.path ?? path;
     const resolveWorklogDirImpl = this.deps.resolveWorklogDir ?? resolveWorklogDir;
     const createPersistenceImpl = this.deps.createPersistence ?? createPersistence;
@@ -115,8 +116,8 @@ export class TuiController {
     const showClosed = Boolean(options.all);
 
     // Persisted state handling extracted to src/tui/persistence.ts
-    const persistence = createPersistenceImpl(resolveWorklogDirImpl(), { debugLog: debugLog, fs: fsImpl });
-    const persisted = persistence.loadPersistedState(db.getPrefix?.() || undefined);
+    const persistence = createPersistenceImpl(resolveWorklogDirImpl(), { debugLog: debugLog, fs: fsAsync });
+    const persisted = await persistence.loadPersistedState(db.getPrefix?.() || undefined);
     const persistedExpanded = persisted && Array.isArray(persisted.expanded) ? persisted.expanded : undefined;
     const state = createTuiState(items, showClosed, persistedExpanded);
 
@@ -2439,13 +2440,13 @@ export class TuiController {
       else state.expanded.add(node.item.id);
       renderListAndDetail(idx);
       // persist state
-      persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) });
+      void persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) });
     });
 
     const shutdown = () => {
       isShuttingDown = true;
       // Persist state before exiting
-      try { persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
+      try { void persistence.savePersistedState(db.getPrefix?.() || undefined, { expanded: Array.from(state.expanded) }); } catch (_) {}
       stopDatabaseWatch();
       // Stop the OpenCode server if we started it
       opencodeClient.stopServer();
