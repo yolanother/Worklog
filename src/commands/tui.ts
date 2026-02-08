@@ -10,6 +10,7 @@ import {
   buildVisibleNodes as state_buildVisibleNodes,
   filterVisibleItems as state_filterVisibleItems,
   isClosedStatus as state_isClosedStatus,
+  expandAncestorsForInProgress as state_expandAncestorsForInProgress,
 } from '../tui/state.js';
 import type { TuiState } from '../tui/state.js';
 
@@ -18,6 +19,7 @@ export const filterVisibleItems = state_filterVisibleItems;
 export const rebuildTreeState = state_rebuildTreeState;
 export const createTuiState = state_createTuiState;
 export const buildVisibleNodes = state_buildVisibleNodes;
+export const expandAncestorsForInProgress = state_expandAncestorsForInProgress;
 export type { TuiState };
 
 export default function register(ctx: PluginContext): void {

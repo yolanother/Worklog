@@ -4,6 +4,7 @@ import {
   createTuiState,
   rebuildTreeState,
   filterVisibleItems,
+  expandAncestorsForInProgress,
 } from '../../src/commands/tui.js';
 
 type Item = {
@@ -81,5 +82,36 @@ describe('tui state helpers', () => {
     state.expanded.add('WL-1');
     const expanded = buildVisibleNodes(state);
     expect(expanded.map(node => node.item.id)).toEqual(['WL-1', 'WL-2', 'WL-3']);
+  });
+
+  it('expands ancestors for in-progress items', () => {
+    const items = [
+      makeItem('WL-1', 'open'),
+      makeItem('WL-2', 'in-progress', 'WL-1'),
+      makeItem('WL-3', 'open', 'WL-2'),
+    ];
+
+    const state = createTuiState(items as any, true, []);
+    rebuildTreeState(state);
+
+    expandAncestorsForInProgress(state);
+
+    expect(state.expanded.has('WL-1')).toBe(true);
+    expect(state.expanded.has('WL-2')).toBe(false);
+  });
+
+  it('expands ancestors when status uses underscore form', () => {
+    const items = [
+      makeItem('WL-1', 'open'),
+      { ...makeItem('WL-2', 'open', 'WL-1'), status: 'in_progress' },
+      makeItem('WL-3', 'open', 'WL-2'),
+    ];
+
+    const state = createTuiState(items as any, true, []);
+    rebuildTreeState(state);
+
+    expandAncestorsForInProgress(state);
+
+    expect(state.expanded.has('WL-1')).toBe(true);
   });
 });
