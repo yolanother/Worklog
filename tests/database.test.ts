@@ -211,7 +211,10 @@ describe('WorklogDatabase', () => {
       const deleted = db.delete(item.id);
 
       expect(deleted).toBe(true);
-      expect(db.get(item.id)).toBe(null);
+      const updated = db.get(item.id);
+      expect(updated).not.toBe(null);
+      expect(updated?.status).toBe('deleted');
+      expect(updated?.stage).toBe('');
     });
 
     it('should return false for non-existent ID', () => {

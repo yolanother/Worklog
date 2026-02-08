@@ -404,12 +404,22 @@ export class WorklogDatabase {
    */
   delete(id: string): boolean {
     this.refreshFromJsonlIfNewer();
-    const result = this.store.deleteWorkItem(id);
-    if (result) {
-      this.exportToJsonl();
-      this.triggerAutoSync();
+    const item = this.store.getWorkItem(id);
+    if (!item) {
+      return false;
     }
-    return result;
+
+    const updated: WorkItem = {
+      ...item,
+      status: 'deleted',
+      stage: '',
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.store.saveWorkItem(updated);
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return true;
   }
 
   /**

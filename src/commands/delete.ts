@@ -10,7 +10,7 @@ export default function register(ctx: PluginContext): void {
   
   program
     .command('delete <id>')
-    .description('Delete a work item')
+    .description('Delete a work item (marks as deleted)')
     .option('--prefix <prefix>', 'Override the default prefix')
     .action((id: string, options: DeleteOptions) => {
       utils.requireInitialized();
