@@ -97,15 +97,11 @@ describe('CLI Issue Management Tests', () => {
       expect(result.success).toBe(true);
       expect(result.deletedId).toBe(workItemId);
 
-      try {
-        await execAsync(`tsx ${cliPath} --json show ${workItemId}`);
-        expect.fail('Should have thrown an error');
-      } catch (error: any) {
-        if (error?.stderr) {
-          const result = JSON.parse(error.stderr || '{}');
-          expect(result.success).toBe(false);
-        }
-      }
+      const { stdout: showStdout } = await execAsync(`tsx ${cliPath} --json show ${workItemId}`);
+      const shown = JSON.parse(showStdout);
+      expect(shown.success).toBe(true);
+      expect(shown.workItem.status).toBe('deleted');
+      expect(shown.workItem.stage).toBe('');
     });
   });
 
