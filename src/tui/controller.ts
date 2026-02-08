@@ -883,7 +883,7 @@ export class TuiController {
     }
 
       // Hook into textarea input to update autocomplete
-      const opencodeTextKeypressHandler = function(this: any, _ch: any, _key: any) {
+    const opencodeTextKeypressHandler = function(this: any, _ch: any, _key: any) {
         debugLog(`opencodeText keypress: _ch="${_ch}", key.name="${_key?.name}", key.ctrl=${_key?.ctrl}, lastCtrlWKeyHandled=${lastCtrlWKeyHandled}`);
 
         // Suppress j/k when they were just handled as Ctrl-W commands
@@ -902,10 +902,10 @@ export class TuiController {
         if (_key && _key.name === 'linefeed') {
           // Get CURRENT value BEFORE the textarea adds the newline
           const currentValue = this.getValue ? this.getValue() : '';
-          const currentLines = currentValue.split('\n').length;
+          const currentVisualLines = getOpencodeVisualLineCount(currentValue);
 
           // Calculate what the height WILL BE after the newline
-          const futureLines = currentLines + 1;
+          const futureLines = currentVisualLines + 1;
           const desiredHeight = calculateOpencodeDesiredHeight(futureLines);
 
           // Resize the dialog FIRST
@@ -933,7 +933,7 @@ export class TuiController {
           updateAutocomplete();
           updateOpencodeInputLayout();
         });
-      };
+    };
       try { (opencodeText as any).__opencode_keypress = opencodeTextKeypressHandler; (opencodeText as any).on('keypress', opencodeTextKeypressHandler); } catch (_) {}
 
     const opencodeTextInputHandler = function(this: any, ch: any, key: KeyInfo | undefined) {
@@ -992,6 +992,7 @@ export class TuiController {
           setOpencodeCursorIndex(nextValue, opencodeCursorIndex - 1);
           opencodeDesiredColumn = null;
           this.setValue?.(nextValue);
+          updateOpencodeInputLayout();
           screen.render();
         }
         return true;
@@ -1002,6 +1003,7 @@ export class TuiController {
           setOpencodeCursorIndex(nextValue, opencodeCursorIndex);
           opencodeDesiredColumn = null;
           this.setValue?.(nextValue);
+          updateOpencodeInputLayout();
           screen.render();
         }
         return true;
@@ -1018,6 +1020,7 @@ export class TuiController {
       setOpencodeCursorIndex(nextValue, opencodeCursorIndex + insertChar.length);
       opencodeDesiredColumn = null;
       this.setValue?.(nextValue);
+      updateOpencodeInputLayout();
       screen.render();
       return true;
     };
@@ -1075,13 +1078,25 @@ export class TuiController {
       return Math.min(Math.max(MIN_INPUT_HEIGHT, lines + 2), inputMaxHeight());
     };
 
+    const getOpencodeVisualLineCount = (value: string) => {
+      const clines = (opencodeText as any)._clines;
+      if (Array.isArray(clines) && clines.length > 0) {
+        return clines.length;
+      }
+      return value.split('\n').length;
+    };
+
     function updateOpencodeInputLayout() {
       if (!opencodeText.getValue) return;
       const value = opencodeText.getValue();
-      const lines = value.split('\n').length;
+      const visualLines = getOpencodeVisualLineCount(value);
       // Dialog height = content lines + 2 for borders
-      const desiredHeight = calculateOpencodeDesiredHeight(lines);
+      const desiredHeight = calculateOpencodeDesiredHeight(visualLines);
       applyOpencodeCompactLayout(desiredHeight);
+      const maxVisibleLines = Math.max(1, desiredHeight - 2);
+      if (visualLines > maxVisibleLines && typeof opencodeText.setScrollPerc === 'function') {
+        opencodeText.setScrollPerc(100);
+      }
       screen.render();
     }
 
