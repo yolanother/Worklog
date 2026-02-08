@@ -95,6 +95,9 @@ export default function register(ctx: PluginContext): void {
       }
 
       const removed = db.removeDependencyEdge(itemIdLookup, dependsOnIdLookup);
+      if (removed) {
+        db.reconcileDependentStatus(itemIdLookup);
+      }
       if (utils.isJsonMode()) {
         output.json({ success: true, removed, edge: { fromId: itemIdLookup, toId: dependsOnIdLookup } });
       } else if (removed) {
@@ -108,14 +111,7 @@ export default function register(ctx: PluginContext): void {
       }
 
       if (removed && item && !['completed', 'deleted'].includes(item.status)) {
-        const remaining = db.listDependencyEdgesFrom(itemIdLookup);
-        const stillBlocked = remaining.some(edge => {
-          const dep = db.get(edge.toId);
-          return dep && !['in_review', 'done'].includes(dep.stage);
-        });
-        if (!stillBlocked) {
-          db.update(itemIdLookup, { status: 'open' });
-        }
+        db.reconcileDependentStatus(itemIdLookup);
       }
     });
 

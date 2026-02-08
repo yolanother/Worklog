@@ -121,7 +121,7 @@ export class WorklogDatabase {
     if (fs.existsSync(this.jsonlPath)) {
       try {
         const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
-        const itemMergeResult = mergeWorkItems(items, diskItems);
+        const itemMergeResult = mergeWorkItems(items, diskItems, { sameTimestampStrategy: 'local' });
         const commentMergeResult = mergeComments(comments, diskComments);
         itemsToExport = itemMergeResult.merged;
         const localCommentIds = new Set(comments.map(comment => comment.id));
@@ -382,6 +382,9 @@ export class WorklogDatabase {
       return null;
     }
 
+    const previousStatus = item.status;
+    const previousStage = item.stage;
+
     const updated: WorkItem = {
       ...item,
       ...input,
@@ -396,6 +399,12 @@ export class WorklogDatabase {
     this.store.saveWorkItem(updated);
     this.exportToJsonl();
     this.triggerAutoSync();
+
+    if (previousStatus !== updated.status || previousStage !== updated.stage) {
+      if (this.listDependencyEdgesTo(id).length > 0) {
+        this.reconcileDependentsForTarget(id);
+      }
+    }
     return updated;
   }
 
@@ -419,6 +428,9 @@ export class WorklogDatabase {
     this.store.saveWorkItem(updated);
     this.exportToJsonl();
     this.triggerAutoSync();
+    if (this.listDependencyEdgesTo(id).length > 0) {
+      this.reconcileDependentsForTarget(id);
+    }
     return true;
   }
 
@@ -1131,6 +1143,115 @@ export class WorklogDatabase {
   listDependencyEdgesTo(toId: string): DependencyEdge[] {
     this.refreshFromJsonlIfNewer();
     return this.store.getDependencyEdgesTo(toId);
+  }
+
+  private isDependencyActive(target: WorkItem | null): boolean {
+    if (!target) {
+      return false;
+    }
+    if (target.status === 'completed' || target.status === 'deleted') {
+      return false;
+    }
+    if (target.stage === 'in_review' || target.stage === 'done') {
+      return false;
+    }
+    return true;
+  }
+
+  getInboundDependents(targetId: string): WorkItem[] {
+    const inbound = this.listDependencyEdgesTo(targetId);
+    const dependents: WorkItem[] = [];
+    for (const edge of inbound) {
+      const dependent = this.get(edge.fromId);
+      if (dependent) {
+        dependents.push(dependent);
+      }
+    }
+    return dependents;
+  }
+
+  hasActiveBlockers(itemId: string): boolean {
+    const edges = this.listDependencyEdgesFrom(itemId);
+    for (const edge of edges) {
+      const target = this.get(edge.toId);
+      if (this.isDependencyActive(target)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  reconcileBlockedStatus(itemId: string): boolean {
+    const item = this.get(itemId);
+    if (!item) {
+      return false;
+    }
+    if (item.status !== 'blocked') {
+      return false;
+    }
+    if (this.hasActiveBlockers(itemId)) {
+      return false;
+    }
+
+    const updated: WorkItem = {
+      ...item,
+      status: 'open',
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.saveWorkItem(updated);
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return true;
+  }
+
+  reconcileDependentStatus(itemId: string): boolean {
+    const item = this.get(itemId);
+    if (!item) {
+      return false;
+    }
+    if (item.status === 'completed' || item.status === 'deleted') {
+      return false;
+    }
+
+    if (this.hasActiveBlockers(itemId)) {
+      if (item.status === 'blocked') {
+        return false;
+      }
+      const updated: WorkItem = {
+        ...item,
+        status: 'blocked',
+        updatedAt: new Date().toISOString(),
+      };
+      this.store.saveWorkItem(updated);
+      this.exportToJsonl();
+      this.triggerAutoSync();
+      return true;
+    }
+
+    if (item.status !== 'blocked') {
+      return false;
+    }
+
+    const updated: WorkItem = {
+      ...item,
+      status: 'open',
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.saveWorkItem(updated);
+    this.exportToJsonl();
+    this.triggerAutoSync();
+    return true;
+  }
+
+  reconcileDependentsForTarget(targetId: string): number {
+    const dependents = this.getInboundDependents(targetId);
+    let updated = 0;
+    for (const dependent of dependents) {
+      if (this.reconcileDependentStatus(dependent.id)) {
+        updated += 1;
+      }
+    }
+    return updated;
   }
 
   /**

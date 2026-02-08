@@ -217,6 +217,18 @@ describe('WorklogDatabase', () => {
       expect(updated?.stage).toBe('');
     });
 
+    it('should not regress deleted status after dependent reconciliation', () => {
+      const blocker = db.create({ title: 'Blocker' });
+      const dependent = db.create({ title: 'Dependent' });
+      db.addDependencyEdge(dependent.id, blocker.id);
+
+      const deleted = db.delete(blocker.id);
+      expect(deleted).toBe(true);
+
+      const updated = db.get(blocker.id);
+      expect(updated?.status).toBe('deleted');
+    });
+
     it('should return false for non-existent ID', () => {
       const result = db.delete('TEST-NONEXISTENT');
       expect(result).toBe(false);
@@ -382,6 +394,41 @@ describe('WorklogDatabase', () => {
       const from = db.create({ title: 'From' });
       const edge = db.addDependencyEdge(from.id, 'TEST-NOTFOUND');
       expect(edge).toBeNull();
+    });
+
+    it('should open a blocked dependent when dependency is removed and no blockers remain', () => {
+      const blocker = db.create({ title: 'Blocker', status: 'open', stage: 'in_progress' });
+      const blocked = db.create({ title: 'Blocked', status: 'blocked' });
+      db.addDependencyEdge(blocked.id, blocker.id);
+
+      const removed = db.removeDependencyEdge(blocked.id, blocker.id);
+      expect(removed).toBe(true);
+
+      db.reconcileBlockedStatus(blocked.id);
+      expect(db.get(blocked.id)?.status).toBe('open');
+    });
+
+    it('should keep blocked status when other active blockers remain', () => {
+      const blockerA = db.create({ title: 'Blocker A', status: 'open', stage: 'in_progress' });
+      const blockerB = db.create({ title: 'Blocker B', status: 'open', stage: 'in_progress' });
+      const blocked = db.create({ title: 'Blocked', status: 'blocked' });
+      db.addDependencyEdge(blocked.id, blockerA.id);
+      db.addDependencyEdge(blocked.id, blockerB.id);
+
+      const removed = db.removeDependencyEdge(blocked.id, blockerA.id);
+      expect(removed).toBe(true);
+
+      db.reconcileBlockedStatus(blocked.id);
+      expect(db.get(blocked.id)?.status).toBe('blocked');
+    });
+
+    it('should unblock dependents when target becomes inactive', () => {
+      const blocker = db.create({ title: 'Blocker', status: 'open', stage: 'in_progress' });
+      const blocked = db.create({ title: 'Blocked', status: 'blocked' });
+      db.addDependencyEdge(blocked.id, blocker.id);
+
+      db.update(blocker.id, { stage: 'done' });
+      expect(db.get(blocked.id)?.status).toBe('open');
     });
   });
 

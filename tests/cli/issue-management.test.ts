@@ -208,6 +208,52 @@ describe('CLI Issue Management Tests', () => {
       expect(updated.status).toBe('open');
     });
 
+    it('should unblock dependents when a blocking item is closed', async () => {
+      const { stdout: blockedStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocked"`);
+      const { stdout: blockerStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocker"`);
+      const blockedId = JSON.parse(blockedStdout).workItem.id;
+      const blockerId = JSON.parse(blockerStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${blockedId} ${blockerId}`);
+      const { stdout: blockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(blockedShowStdout).workItem.status).toBe('blocked');
+
+      await execAsync(`tsx ${cliPath} --json close ${blockerId}`);
+      const { stdout: unblockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(unblockedShowStdout).workItem.status).toBe('open');
+    });
+
+    it('should unblock dependents when a blocking item is deleted', async () => {
+      const { stdout: blockedStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocked"`);
+      const { stdout: blockerStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocker"`);
+      const blockedId = JSON.parse(blockedStdout).workItem.id;
+      const blockerId = JSON.parse(blockerStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${blockedId} ${blockerId}`);
+      const { stdout: blockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(blockedShowStdout).workItem.status).toBe('blocked');
+
+      await execAsync(`tsx ${cliPath} --json delete ${blockerId}`);
+      const { stdout: unblockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(unblockedShowStdout).workItem.status).toBe('open');
+    });
+
+    it('should re-block dependents when a closed blocker is reopened', async () => {
+      const { stdout: blockedStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocked"`);
+      const { stdout: blockerStdout } = await execAsync(`tsx ${cliPath} --json create -t "Blocker"`);
+      const blockedId = JSON.parse(blockedStdout).workItem.id;
+      const blockerId = JSON.parse(blockerStdout).workItem.id;
+
+      await execAsync(`tsx ${cliPath} --json dep add ${blockedId} ${blockerId}`);
+      await execAsync(`tsx ${cliPath} --json close ${blockerId}`);
+      const { stdout: unblockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(unblockedShowStdout).workItem.status).toBe('open');
+
+      await execAsync(`tsx ${cliPath} --json update ${blockerId} --status in-progress`);
+      const { stdout: blockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
+      expect(JSON.parse(blockedShowStdout).workItem.status).toBe('blocked');
+    });
+
     it('should fail when adding an existing dependency', async () => {
       const { stdout: fromStdout } = await execAsync(`tsx ${cliPath} --json create -t "From"`);
       const { stdout: toStdout } = await execAsync(`tsx ${cliPath} --json create -t "To"`);

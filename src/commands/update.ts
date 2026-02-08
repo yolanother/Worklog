@@ -65,6 +65,10 @@ export default function register(ctx: PluginContext): void {
         output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
         process.exit(1);
       }
+
+      if (updates.status || updates.stage) {
+        db.reconcileDependentStatus(normalizedId);
+      }
       
       if (utils.isJsonMode()) {
         output.json({ success: true, workItem: item });
