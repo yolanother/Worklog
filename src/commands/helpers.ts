@@ -284,9 +284,11 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   // full output
   lines.push(renderTitle(item, '# '));
   lines.push('');
+  const issueTypeLabel = item.issueType && item.issueType.trim() !== '' ? item.issueType : 'unknown';
   const frontmatter: Array<[string, string]> = [
     ['ID', chalk.gray(item.id)],
     ['Status', item.stage !== undefined ? `${item.status} · Stage: ${item.stage === '' ? 'Undefined' : item.stage} | Priority: ${item.priority}` : `${item.status} | Priority: ${item.priority}`],
+    ['Type', issueTypeLabel],
     ['SortIndex', String(item.sortIndex)]
   ];
   if (item.risk) frontmatter.push(['Risk', item.risk]);
