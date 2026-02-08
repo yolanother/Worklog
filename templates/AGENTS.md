@@ -1,3 +1,5 @@
+<!-- Start base Worklog AGENTS.md file -->
+
 ## work-item Tracking with Worklog (wl)
 
 IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
@@ -195,3 +197,5 @@ Depending on your setup, you may have additional wl plugins installed. Check ava
 
 Run `wl --help` to see general help text and available commands.
 Run `wl <command> --help` to see help text and all available flags for any command.
+
+<!-- End base Worklog AGENTS.md file -->

@@ -82,7 +82,7 @@ This will prompt you for:
 - **Issue ID prefix**: A short prefix for your issue IDs (e.g., WI, PROJ, TASK)
 - **Auto-sync**: Enable automatic git sync after changes (optional)
 
-`wl init` also installs `AGENTS.md` in the project root from `templates/AGENTS.md`. If `AGENTS.md` already exists, it checks for the template content and prompts before appending it.
+`wl init` installs `AGENTS.md` in the project root with a pointer line to the global `AGENTS.md`. If `AGENTS.md` already exists, it prompts before inserting the pointer and preserves the existing content (unless you pass `--agents-template` for unattended runs). When workflow templates are available, `wl init` prompts you to choose between no formal workflow, a basic Worklog-aware workflow, or manual management (unless you pass `--workflow-inline` for unattended runs).
 
 Optional GitHub settings (edit `.worklog/config.yaml` manually):
 

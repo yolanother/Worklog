@@ -23,6 +23,10 @@ You can run `wl init` in unattended mode by supplying all required values on the
 wl init --project-name "My Project" --prefix PROJ --auto-export yes --auto-sync no --agents-template append --workflow-inline yes --stats-plugin-overwrite no
 ```
 
+Passing `--workflow-inline yes` selects the basic workflow option. Use `--workflow-inline no` to skip workflow setup.
+
+`--agents-template append` inserts the global `AGENTS.md` pointer line at the top of your local `AGENTS.md` while preserving existing content.
+
 **Note:** After installing globally, you can use `worklog` or `wl` commands directly. If you skip the global install, use `npm run cli -- <command>` for development.
 
 ## Your First Work Item
