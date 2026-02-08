@@ -1048,6 +1048,10 @@ export class WorklogDatabase {
     return this.store.getAllWorkItemsOrderedByHierarchySortIndex();
   }
 
+  getAllOrderedByScore(recencyPolicy: 'prefer'|'avoid'|'ignore' = 'ignore'): WorkItem[] {
+    return this.sortItemsByScore(this.store.getAllWorkItems(), recencyPolicy);
+  }
+
   /**
    * Import work items (replaces existing data)
    */
