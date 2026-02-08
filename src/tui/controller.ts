@@ -11,7 +11,7 @@ import { spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { humanFormatWorkItem, formatTitleOnlyTUI } from '../commands/helpers.js';
-import { createTuiState, rebuildTreeState, buildVisibleNodes } from './state.js';
+import { createTuiState, rebuildTreeState, buildVisibleNodes, expandAncestorsForInProgress } from './state.js';
 import { createPersistence } from './persistence.js';
 import { resolveWorklogDir } from '../worklog-paths.js';
 import { getDefaultDataPath } from '../jsonl.js';
@@ -128,6 +128,12 @@ export class TuiController {
     }
     const rebuildTree = () => rebuildTreeState(state);
 
+    const expandInProgressAncestors = () => {
+      if (!activeFilterTerm) {
+        expandAncestorsForInProgress(state);
+      }
+    };
+
     // Active search/filter term and preserved items when a filter is applied
     let activeFilterTerm = '';
     let preFilterItems: Item[] | null = null;
@@ -142,6 +148,7 @@ export class TuiController {
 
     // Default expand roots unless persisted state exists
     rebuildTree();
+    expandInProgressAncestors();
     if (!persistedExpanded) {
       for (const r of state.roots) state.expanded.add(r.id);
     }
@@ -1807,6 +1814,7 @@ export class TuiController {
         return;
       }
       rebuildTree();
+      expandInProgressAncestors();
       const visible = buildVisible();
       let nextIndex = 0;
       if (typeof preferredIndex === 'number') {
@@ -2176,6 +2184,7 @@ export class TuiController {
       options.all = true;
       state.items = db.list({}).filter((item: any) => item.status !== 'completed' && item.status !== 'deleted');
       rebuildTree();
+      expandInProgressAncestors();
       let refreshed = buildVisible();
       let refreshedIndex = refreshed.findIndex(node => node.item.id === id);
       if (refreshedIndex < 0 && state.itemsById.has(id)) {
@@ -2628,6 +2637,7 @@ export class TuiController {
             state.items = preFilterItems.slice();
             preFilterItems = null;
             rebuildTree();
+            expandInProgressAncestors();
             renderListAndDetail(0);
           } else {
             refreshListWithOptions({
@@ -2674,6 +2684,7 @@ export class TuiController {
               : results.map((r: any) => r.workItem ? r.workItem : r);
             state.showClosed = false;
             rebuildTree();
+            expandInProgressAncestors();
             renderListAndDetail(0);
           } catch (err) {
             showToast('Filter parse error');
@@ -2747,12 +2758,13 @@ export class TuiController {
         const cols = screen.width as number;
         const rightStart = cols - rightText.length;
         const clickX = data?.x ?? 0;
-        if (cols && clickX >= rightStart) {
-          state.showClosed = !state.showClosed;
-          rebuildTree();
-          renderListAndDetail(list.selected as number);
-          return;
-        }
+          if (cols && clickX >= rightStart) {
+            state.showClosed = !state.showClosed;
+            rebuildTree();
+            expandInProgressAncestors();
+            renderListAndDetail(list.selected as number);
+            return;
+          }
       } catch (err) {
         // ignore
       }
