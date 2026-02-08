@@ -1929,46 +1929,17 @@ export class TuiController {
       const nextIndex = Math.max(0, currentIndex - 1);
 
       if (stage === 'deleted') {
-        const args = ['--json', 'delete', item.id];
-        if (options.prefix) {
-          args.push('--prefix', options.prefix);
-        }
-        const child = spawnImpl('wl', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout?.on('data', (chunk) => {
-          stdout += chunk.toString();
-        });
-
-        child.stderr?.on('data', (chunk) => {
-          stderr += chunk.toString();
-        });
-
-        child.on('error', () => {
-          showToast('Delete failed');
-        });
-
-        child.on('close', (code) => {
-          if (code !== 0) {
-            showToast(stderr.trim() || 'Delete failed');
+        try {
+          const updated = db.update(item.id, { status: 'deleted', stage: '' });
+          if (!updated) {
+            showToast('Delete failed');
             return;
           }
-
-          try {
-            const payload = JSON.parse(stdout.trim());
-            if (!payload?.success) {
-              showToast('Delete failed');
-              return;
-            }
-          } catch (err) {
-            showToast('Delete parse error');
-            return;
-          }
-
           showToast('Deleted');
           refreshFromDatabase(nextIndex);
-        });
+        } catch (err) {
+          showToast('Delete failed');
+        }
         return;
       }
 
