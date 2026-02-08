@@ -217,6 +217,18 @@ describe('WorklogDatabase', () => {
       expect(updated?.stage).toBe('');
     });
 
+    it('should not regress deleted status after dependent reconciliation', () => {
+      const blocker = db.create({ title: 'Blocker' });
+      const dependent = db.create({ title: 'Dependent' });
+      db.addDependencyEdge(dependent.id, blocker.id);
+
+      const deleted = db.delete(blocker.id);
+      expect(deleted).toBe(true);
+
+      const updated = db.get(blocker.id);
+      expect(updated?.status).toBe('deleted');
+    });
+
     it('should return false for non-existent ID', () => {
       const result = db.delete('TEST-NONEXISTENT');
       expect(result).toBe(false);

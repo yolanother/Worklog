@@ -121,7 +121,7 @@ export class WorklogDatabase {
     if (fs.existsSync(this.jsonlPath)) {
       try {
         const { items: diskItems, comments: diskComments } = importFromJsonl(this.jsonlPath);
-        const itemMergeResult = mergeWorkItems(items, diskItems);
+        const itemMergeResult = mergeWorkItems(items, diskItems, { sameTimestampStrategy: 'local' });
         const commentMergeResult = mergeComments(comments, diskComments);
         itemsToExport = itemMergeResult.merged;
         const localCommentIds = new Set(comments.map(comment => comment.id));
