@@ -15,8 +15,7 @@ IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use
 - Work items cannot be closed until all child items are closed, all blocking dependencies resolved and a Producer has reviewed and approved the work
 - Never commit changes without associating them with a work item
 - Never commit changes without ensuring all tests and quality checks pass
-- Whenever a comment is made add a comment to impacted the work item(s) describing the changes, the files affected, and including the commit hash.
-- Never push changes until all work items associated with the changes are closed
+- Whenever a commit is made add a comment to impacted the work item(s) describing the changes, the files affected, and including the commit hash.
 - If push fails, resolve and retry until it succeeds
 - When using backticks in arguments to shell commands, escape them properly to avoid errors
 

@@ -2,11 +2,6 @@ name: Worklog
 
 on:
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'examples/**'
-      - 'LICENSE'
 
 concurrency:
   group: tui-tests-${{ github.event.pull_request.number || github.ref }}
@@ -55,6 +50,14 @@ jobs:
               - 'vitest.tui.config.ts'
               - 'Dockerfile.tui-tests'
               - 'test-tui.sh'
+
+  docs-only:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.cli != 'true' && needs.changes.outputs.tui != 'true' && needs.changes.outputs.shared != 'true' }}
+    steps:
+      - name: No test changes detected
+        run: echo "Docs-only change; skipping CLI/TUI test jobs."
 
   cli-tests:
     runs-on: ubuntu-latest
