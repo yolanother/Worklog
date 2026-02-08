@@ -422,7 +422,7 @@ Other commands cover repository bootstrap and local system status. Use these to 
 
 ### `init`
 
-Initialize Worklog configuration in the repository (creates `.worklog` and default config). `wl init` also installs `AGENTS.md` in the project root from `templates/AGENTS.md`. If `AGENTS.md` already exists, it checks for the template content and prompts before appending it.
+Initialize Worklog configuration in the repository (creates `.worklog` and default config). `wl init` also installs `AGENTS.md` in the project root with a pointer line to the global `AGENTS.md`. If `AGENTS.md` already exists, it prompts before inserting the pointer and preserves the existing content (unless you pass `--agents-template` for unattended runs). When workflow templates are available, `wl init` prompts you to choose between no formal workflow, a basic Worklog-aware workflow, or manual management (unless you pass `--workflow-inline` for unattended runs).
 
 Options:
 
@@ -430,8 +430,8 @@ Options:
 - `--prefix <prefix>` — Issue ID prefix (optional).
 - `--auto-export <yes|no>` — Auto-export data to JSONL after changes (optional).
 - `--auto-sync <yes|no>` — Auto-sync data to git after changes (optional).
-- `--agents-template <overwrite|append|skip>` — What to do when AGENTS.md exists (optional).
-- `--workflow-inline <yes|no>` — Inline workflow into AGENTS.md when prompted (optional).
+- `--agents-template <overwrite|append|skip>` — What to do when AGENTS.md exists (optional). Append inserts the pointer line at the top while keeping existing content.
+- `--workflow-inline <yes|no>` — Answer the workflow prompt (yes chooses the basic workflow option; no chooses no formal workflow). Omit to prompt interactively.
 - `--stats-plugin-overwrite <yes|no>` — Overwrite existing stats plugin if present (optional).
 
 Example:

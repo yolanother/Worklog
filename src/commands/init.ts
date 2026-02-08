@@ -28,6 +28,7 @@ const WORKLOG_AGENT_DESTINATION_FILENAME = 'AGENTS.md';
 const WORKFLOW_TEMPLATE_RELATIVE_PATH = 'templates/WORKFLOW.md';
 const WORKFLOW_DESTINATION_FILENAME = 'WORKFLOW.md';
 const WORKLOG_GITIGNORE_TEMPLATE_RELATIVE_PATH = 'templates/GITIGNORE_WORKLOG.txt';
+const WORKLOG_AGENT_POINTER_LINE = 'Follow the global AGENTS.md in addition to the rules below. The local rules below take priority in the event of a conflict.';
 
 const DEFAULT_COMMITTED_HOOKS_DIR = '.githooks';
 
@@ -36,8 +37,8 @@ type NormalizedInitOptions = {
   prefix?: string;
   autoExport?: boolean;
   autoSync?: boolean;
-  agentsTemplateAction: AgentTemplateAction;
-  workflowInline: boolean;
+  agentsTemplateAction?: AgentTemplateAction;
+  workflowInline?: boolean;
   statsPluginOverwrite: boolean;
 };
 
@@ -74,8 +75,8 @@ function normalizeInitOptions(options: InitOptions): NormalizedInitOptions {
     prefix,
     autoExport: normalizeBooleanOption(options.autoExport, '--auto-export'),
     autoSync: normalizeBooleanOption(options.autoSync, '--auto-sync'),
-    agentsTemplateAction: normalizeAgentTemplateAction(options.agentsTemplate) ?? 'skip',
-    workflowInline: normalizeBooleanOption(options.workflowInline, '--workflow-inline') ?? false,
+    agentsTemplateAction: normalizeAgentTemplateAction(options.agentsTemplate),
+    workflowInline: normalizeBooleanOption(options.workflowInline, '--workflow-inline'),
     statsPluginOverwrite: normalizeBooleanOption(options.statsPluginOverwrite, '--stats-plugin-overwrite') ?? false,
   };
 }
@@ -511,7 +512,10 @@ function locateAgentTemplate(): string | null {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const packageRoot = path.resolve(moduleDir, '..', '..');
   const candidate = path.join(packageRoot, WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH);
-  return fs.existsSync(candidate) ? candidate : null;
+  if (fs.existsSync(candidate)) return candidate;
+  const projectRoot = resolveProjectRoot();
+  const repoCandidate = path.join(projectRoot, WORKLOG_AGENT_TEMPLATE_RELATIVE_PATH);
+  return fs.existsSync(repoCandidate) ? repoCandidate : null;
 }
 
 function locateExampleStatsPlugin(): string | null {
@@ -525,7 +529,10 @@ function locateWorkflowTemplate(): string | null {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const packageRoot = path.resolve(moduleDir, '..', '..');
   const candidate = path.join(packageRoot, WORKFLOW_TEMPLATE_RELATIVE_PATH);
-  return fs.existsSync(candidate) ? candidate : null;
+  if (fs.existsSync(candidate)) return candidate;
+  const projectRoot = resolveProjectRoot();
+  const repoCandidate = path.join(projectRoot, WORKFLOW_TEMPLATE_RELATIVE_PATH);
+  return fs.existsSync(repoCandidate) ? repoCandidate : null;
 }
 
 function locateGitignoreTemplate(): string | null {
@@ -539,9 +546,32 @@ function hasWorklogGitignoreSection(content: string): boolean {
   return content.includes(WORKLOG_GITIGNORE_SECTION_START) && content.includes(WORKLOG_GITIGNORE_SECTION_END);
 }
 
-async function promptWorkflowInstall(questionText: string, forceAnswer?: boolean): Promise<boolean> {
-  if (forceAnswer !== undefined) return forceAnswer;
-  return promptYesNo(questionText);
+type WorkflowChoice = 'none' | 'basic' | 'manual';
+
+async function promptWorkflowChoice(forceAnswer?: boolean): Promise<WorkflowChoice> {
+  if (forceAnswer !== undefined) return forceAnswer ? 'basic' : 'none';
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const prompt =
+    'Worklog is designed to support whatever workflow you wish to adopt. It is possible to use it without any formal workflow definition at all. However, many users like to define specifc actions that agents should take under specific circumstances. To that end please choose how you want manage your workflow.\n\n' +
+    'N - No formal workflow, let the agents figure it out.\n' +
+    '\tPRO: Worklog simply augments whatever agents you use.\n' +
+    '\tCON: Very little control over how and when things occur.\n\n' +
+    'B - Include a basic workflow that is Worklog aware.\n' +
+    '\tPRO: Minimally invasive but prompts agents to record key information at key stages of work.\n' +
+    '\tCON: Agents sill have significant freedom, some agents will all but ignore these lightweight workflow instructions.\n\n' +
+    'M - Manage custom workflow by editing AGENTS.md directly.\n' +
+    '\tPRO: Maximum flexibility to define the workflow that suits you best.\n' +
+    '\tCON: More work to setup\n\n' +
+    'Choose No workflow (N), Basic workflow (B), or Manual (M): ';
+  return new Promise(resolve => {
+    rl.question(prompt, answer => {
+      rl.close();
+      const trimmed = answer.trim().toLowerCase();
+      if (trimmed === 'b' || trimmed === 'basic') return resolve('basic');
+      if (trimmed === 'm' || trimmed === 'manual') return resolve('manual');
+      return resolve('none');
+    });
+  });
 }
 
 async function ensureWorkflowTemplateInstalled(options: { silent: boolean; agentTemplateAction?: string; agentDestinationPath?: string }) {
@@ -660,12 +690,36 @@ function normalizeContent(content: string): string {
   return content.replace(/\r\n/g, '\n').trimEnd();
 }
 
+function analyzeAgentContent(existingContent: string): { hasPointer: boolean; trimmed: string; eol: string; hasOnlyWhitespace: boolean } {
+  const lines = existingContent.split(/\r?\n/);
+  const firstNonEmpty = lines.find(line => line.trim().length > 0);
+  const eol = existingContent.includes('\r\n') ? '\r\n' : '\n';
+  return {
+    hasPointer: firstNonEmpty === WORKLOG_AGENT_POINTER_LINE,
+    trimmed: existingContent.trimEnd(),
+    eol,
+    hasOnlyWhitespace: firstNonEmpty === undefined
+  };
+}
+
 type AgentTemplateAction = 'overwrite' | 'append' | 'skip';
 
 async function promptAgentTemplateAction(): Promise<AgentTemplateAction> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
-    rl.question('AGENTS.md already exists. Overwrite, append, or manage manually? (o/a/m): ', answer => {
+    const prompt =
+      'AGENTS.md already exists. To use Worklog we need to ensure that agents are aware of it. You have a few options:\n\n' +
+      'O - Overwrite the existing AGENTS.md\n' +
+      '\tPRO: no chance of a conflict between existing AGENTS.md and the Workflow instructions\n' +
+      '\tCON: DESTRUCTIVE to your existing configuration\n\n' +
+      'A - Add a pointer to the global AGENTS.md\n' +
+      '\tPRO: retains your existing instructions and simply adds to them\n' +
+      '\tCON: potentially conflicting instructions between the two files\n\n' +
+      'M - Manual management, read the docs and set things up as you like\n' +
+      '\tPRO: keep what you need, remove any conflicts\n' +
+      '\tCON: Worklog will not be used until you do more config work\n\n' +
+      'Choose Overwrite (O), Add (A) or Manual (M): ';
+    rl.question(prompt, answer => {
       rl.close();
       const trimmed = answer.trim().toLowerCase();
       if (trimmed === 'o' || trimmed === 'overwrite') {
@@ -693,18 +747,18 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean; action?:
   try {
     const templateContent = normalizeContent(fs.readFileSync(templatePath, 'utf-8'));
     if (fs.existsSync(destinationPath)) {
-      const existingContent = normalizeContent(fs.readFileSync(destinationPath, 'utf-8'));
-      // Consider the template present if the template content is included in the existing file
-      const templateAlreadyPresent = existingContent.includes(templateContent);
-      if (templateAlreadyPresent) {
-        return { installed: false, skipped: true, reason: 'template already in place', templatePath, destinationPath };
+      const existingRaw = fs.readFileSync(destinationPath, 'utf-8');
+      const { hasPointer, trimmed: existingContent, eol, hasOnlyWhitespace } = analyzeAgentContent(existingRaw);
+      if (hasPointer) {
+        return { installed: false, skipped: true, reason: 'pointer already present', templatePath, destinationPath };
       }
       if (options.action === 'skip') {
         return { installed: false, skipped: true, reason: 'user chose to manage manually', templatePath, destinationPath };
       }
 
       if (options.action === 'overwrite') {
-        fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+        const pointerTemplate = `${WORKLOG_AGENT_POINTER_LINE}\n\n${templateContent}`;
+        fs.writeFileSync(destinationPath, `${pointerTemplate}\n`, { encoding: 'utf-8' });
         if (!options.silent) {
           console.log(`✓ Overwrote AGENTS template at ${destinationPath}`);
         }
@@ -712,12 +766,14 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean; action?:
       }
 
       if (options.action === 'append') {
-        const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
-        fs.appendFileSync(destinationPath, `${separator}${templateContent}\n`, { encoding: 'utf-8' });
+        const insertion = hasOnlyWhitespace
+          ? `${WORKLOG_AGENT_POINTER_LINE}${eol}${eol}${templateContent}`
+          : `${WORKLOG_AGENT_POINTER_LINE}${existingContent ? `${eol}${eol}${existingContent}` : ''}`;
+        fs.writeFileSync(destinationPath, `${insertion}${eol}`, { encoding: 'utf-8' });
         if (!options.silent) {
-          console.log(`✓ Appended AGENTS template to ${destinationPath}`);
+          console.log(`✓ Updated AGENTS.md with Worklog pointer at ${destinationPath}`);
         }
-        return { installed: true, skipped: false, templatePath, destinationPath, appended: true };
+        return { installed: true, skipped: false, templatePath, destinationPath, insertedPointer: true };
       }
 
       if (options.silent) {
@@ -731,22 +787,26 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean; action?:
       }
 
       if (resolvedAction === 'overwrite') {
-        fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+        const pointerTemplate = `${WORKLOG_AGENT_POINTER_LINE}\n\n${templateContent}`;
+        fs.writeFileSync(destinationPath, `${pointerTemplate}\n`, { encoding: 'utf-8' });
         if (!options.silent) {
           console.log(`✓ Overwrote AGENTS template at ${destinationPath}`);
         }
         return { installed: true, skipped: false, templatePath, destinationPath, overwritten: true };
       }
 
-      const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
-      fs.appendFileSync(destinationPath, `${separator}${templateContent}\n`, { encoding: 'utf-8' });
+      const insertion = hasOnlyWhitespace
+        ? `${WORKLOG_AGENT_POINTER_LINE}${eol}${eol}${templateContent}`
+        : `${WORKLOG_AGENT_POINTER_LINE}${existingContent ? `${eol}${eol}${existingContent}` : ''}`;
+      fs.writeFileSync(destinationPath, `${insertion}${eol}`, { encoding: 'utf-8' });
       if (!options.silent) {
-        console.log(`✓ Appended AGENTS template to ${destinationPath}`);
+        console.log(`✓ Updated AGENTS.md with Worklog pointer at ${destinationPath}`);
       }
-      return { installed: true, skipped: false, templatePath, destinationPath, appended: true };
+      return { installed: true, skipped: false, templatePath, destinationPath, insertedPointer: true };
     }
 
-    fs.writeFileSync(destinationPath, `${templateContent}\n`, { encoding: 'utf-8' });
+    const pointerTemplate = `${WORKLOG_AGENT_POINTER_LINE}\n\n${templateContent}`;
+    fs.writeFileSync(destinationPath, `${pointerTemplate}\n`, { encoding: 'utf-8' });
     if (!options.silent) {
       console.log(`✓ Installed AGENTS template at ${destinationPath}`);
     }
@@ -757,12 +817,6 @@ async function ensureAgentTemplateInstalled(options: { silent: boolean; action?:
 }
 
 function printAgentTemplateSummary(): void {
-  console.log('You already have an AGENTS.md file, but it is different from the template provided by Worklog.');
-  console.log('');
-  console.log('The AGENTS.md template adds Worklog-aware instructions so agents use wl for tracking, manage workflow stages, and follow the project rules for issues, priorities, and sync.');
-  console.log('');
-  console.log('If you do not add this content to AGENTS.md, you are expected to add your own Worklog-aware instructions to your agent definition files.');
-  console.log('');
 }
 
 async function performInitSync(dataPath: string, prefix?: string, isJsonMode: boolean = false): Promise<void> {
@@ -823,11 +877,14 @@ export default function register(ctx: PluginContext): void {
     .option('--prefix <prefix>', 'Issue ID prefix (e.g., WI, PROJ, TASK)')
     .option('--auto-export <yes|no>', 'Auto-export data to JSONL after changes')
     .option('--auto-sync <yes|no>', 'Auto-sync data to git after changes')
-    .option('--agents-template <overwrite|append|skip>', 'What to do when AGENTS.md exists (default: skip)')
-    .option('--workflow-inline <yes|no>', 'Inline workflow into AGENTS.md when prompted (default: no)')
+    .option('--agents-template <overwrite|append|skip>', 'What to do when AGENTS.md exists (append inserts the pointer line; omit to prompt)')
+    .option('--workflow-inline <yes|no>', 'Inline workflow into AGENTS.md when prompted (omit to prompt interactively)')
     .option('--stats-plugin-overwrite <yes|no>', 'Overwrite existing stats plugin if present (default: no)')
     .action(async (_options: InitOptions) => {
-      const isJsonMode = program.opts().json;
+      const argv = process.argv;
+      const isJsonMode = program.opts().json || argv.includes('--json');
+      const isVerbose = program.opts().verbose === true || argv.includes('--verbose');
+      const workflowInlineProvided = argv.includes('--workflow-inline');
       let normalizedOptions: NormalizedInitOptions;
       try {
         normalizedOptions = normalizeInitOptions(_options);
@@ -855,7 +912,28 @@ export default function register(ctx: PluginContext): void {
           const hookResult = installPrePushHook({ silent: true });
           const postPullResult = installPostPullHooks({ silent: true });
           const committedHooksResult = installCommittedHooks({ silent: true });
-          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction });
+          const agentTemplatePath = locateAgentTemplate();
+          if (!agentTemplatePath && isVerbose && !isJsonMode) {
+            console.log('Verbose: AGENTS template not found, skipping AGENTS.md update.');
+          }
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction ?? 'skip' });
+          const workflowTemplatePath = locateWorkflowTemplate();
+          const workflowInlineAnswer = normalizedOptions.workflowInline ?? false;
+          if (!workflowTemplatePath && isVerbose && !isJsonMode) {
+            console.log('Verbose: workflow template not found, skipping workflow integration.');
+          }
+          if (workflowTemplatePath) {
+            const projectRoot = resolveProjectRoot();
+            const agentDestination = resolveAgentDestination(projectRoot);
+            if (fs.existsSync(agentDestination)) {
+              const agentContent = fs.readFileSync(agentDestination, 'utf-8');
+              if (!agentContent.includes('<!-- WORKFLOW: start -->') && workflowInlineAnswer) {
+                await ensureWorkflowTemplateInstalled({ silent: true, agentDestinationPath: agentDestination });
+              }
+            } else if (workflowInlineAnswer) {
+              await ensureWorkflowTemplateInstalled({ silent: true, agentDestinationPath: agentDestination });
+            }
+          }
           const statsPluginResult = await ensureStatsPluginInstalled({ silent: true, overwrite: normalizedOptions.statsPluginOverwrite });
           output.json({
             success: true,
@@ -947,16 +1025,26 @@ export default function register(ctx: PluginContext): void {
             }
 
             console.log('\n' + chalk.blue('## Agent Template') + '\n');
-            const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false, action: normalizedOptions.agentsTemplateAction });
-            if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
-              console.log('AGENTS.md already matches the Worklog template.');
+            const agentTemplatePath = locateAgentTemplate();
+            if (!agentTemplatePath && isVerbose) {
+              console.log('Verbose: AGENTS template not found, skipping AGENTS.md update.');
             }
-            if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
+            const agentTemplateResult = await ensureAgentTemplateInstalled({
+              silent: false,
+              action: normalizedOptions.agentsTemplateAction
+            });
+            if (!agentTemplateResult.installed && agentTemplateResult.reason === 'pointer already present') {
+              console.log('AGENTS.md already contains the Worklog pointer.');
+            }
+            if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'pointer already present') {
               console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
             }
             console.log('');
             // Offer workflow integration after AGENTS.md handling
             const workflowTemplatePath = locateWorkflowTemplate();
+            if (!workflowTemplatePath && isVerbose) {
+              console.log('Verbose: workflow template not found, skipping workflow integration.');
+            }
             if (workflowTemplatePath) {
               const projectRoot = resolveProjectRoot();
               const agentDestination = resolveAgentDestination(projectRoot);
@@ -988,18 +1076,22 @@ export default function register(ctx: PluginContext): void {
                   }
                 } else {
                   // Loader missing: offer to insert loader and install WORKFLOW.md
-                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ', normalizedOptions.workflowInline);
-                  if (wantBoth) {
+                  const choice = await promptWorkflowChoice(
+                    workflowInlineProvided ? normalizedOptions.workflowInline : undefined
+                  );
+                  if (choice === 'basic') {
                     await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
                     insertWorkflowLoaderIntoAgents(agentDestination);
                   } else {
-                  // user skipped — do not add summary lines
+                    // user skipped — do not add summary lines
                   }
                 }
               } else {
                 // No AGENTS.md present: offer to install only WORKFLOW.md
-                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ', normalizedOptions.workflowInline);
-                if (wantWorkflow) {
+                const choice = await promptWorkflowChoice(
+                  workflowInlineProvided ? normalizedOptions.workflowInline : undefined
+                );
+                if (choice === 'basic') {
                   await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
                 } else {
                   // user skipped — no summary
@@ -1057,8 +1149,8 @@ export default function register(ctx: PluginContext): void {
             // agent template
             if (agentTemplateResult.installed) {
               console.log(' - AGENTS.md: installed');
-            } else if (agentTemplateResult.skipped && agentTemplateResult.reason === 'template already in place') {
-              console.log(' - AGENTS.md: already in place');
+            } else if (agentTemplateResult.skipped && agentTemplateResult.reason === 'pointer already present') {
+              console.log(' - AGENTS.md: pointer already present');
             } else if (agentTemplateResult.skipped) {
               console.log(` - AGENTS.md: skipped${agentTemplateResult.reason ? `: ${agentTemplateResult.reason}` : ''}`);
             }
@@ -1096,7 +1188,28 @@ export default function register(ctx: PluginContext): void {
         if (isJsonMode) {
           const gitignoreResult = ensureGitignore({ silent: true });
           const hookResult = installPrePushHook({ silent: true });
-          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction });
+          const agentTemplatePath = locateAgentTemplate();
+          if (!agentTemplatePath && isVerbose && !isJsonMode) {
+            console.log('Verbose: AGENTS template not found, skipping AGENTS.md update.');
+          }
+          const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: true, action: normalizedOptions.agentsTemplateAction ?? 'skip' });
+          const workflowTemplatePath = locateWorkflowTemplate();
+          const workflowInlineAnswer = normalizedOptions.workflowInline ?? false;
+          if (!workflowTemplatePath && isVerbose && !isJsonMode) {
+            console.log('Verbose: workflow template not found, skipping workflow integration.');
+          }
+          if (workflowTemplatePath) {
+            const projectRoot = resolveProjectRoot();
+            const agentDestination = resolveAgentDestination(projectRoot);
+            if (fs.existsSync(agentDestination)) {
+              const agentContent = fs.readFileSync(agentDestination, 'utf-8');
+              if (!agentContent.includes('<!-- WORKFLOW: start -->') && workflowInlineAnswer) {
+                await ensureWorkflowTemplateInstalled({ silent: true, agentDestinationPath: agentDestination });
+              }
+            } else if (workflowInlineAnswer) {
+              await ensureWorkflowTemplateInstalled({ silent: true, agentDestinationPath: agentDestination });
+            }
+          }
           output.json({
             success: true,
             message: 'Configuration initialized',
@@ -1185,8 +1298,14 @@ export default function register(ctx: PluginContext): void {
 
           console.log('\n' + chalk.blue('## Agent Template') + '\n');
           const agentTemplateResult = await ensureAgentTemplateInstalled({ silent: false, action: normalizedOptions.agentsTemplateAction });
+          if (!agentTemplateResult.templatePath && isVerbose) {
+            console.log('Verbose: AGENTS template not found, skipping AGENTS.md update.');
+          }
           // Offer workflow integration after AGENTS.md handling
           const workflowTemplatePath = locateWorkflowTemplate();
+          if (!workflowTemplatePath && isVerbose) {
+            console.log('Verbose: workflow template not found, skipping workflow integration.');
+          }
           if (workflowTemplatePath) {
             const projectRoot = resolveProjectRoot();
             const agentDestination = resolveAgentDestination(projectRoot);
@@ -1218,8 +1337,10 @@ export default function register(ctx: PluginContext): void {
                   }
                 } else {
                 // Loader missing: offer to insert loader and install WORKFLOW.md
-                  const wantBoth = await promptWorkflowInstall('Would you like to inline the workflow into AGENTS.md? (y/N): ', normalizedOptions.workflowInline);
-                  if (wantBoth) {
+                  const choice = await promptWorkflowChoice(
+                    workflowInlineProvided ? normalizedOptions.workflowInline : undefined
+                  );
+                  if (choice === 'basic') {
                     await ensureWorkflowTemplateInstalled({ silent: false, agentDestinationPath: agentDestination });
                     insertWorkflowLoaderIntoAgents(agentDestination);
                   } else {
@@ -1228,8 +1349,10 @@ export default function register(ctx: PluginContext): void {
               }
             } else {
               // No AGENTS.md present: offer to install only WORKFLOW.md
-                const wantWorkflow = await promptWorkflowInstall('No AGENTS.md found. Would you like to create AGENTS.md with the workflow inlined? (y/N): ', normalizedOptions.workflowInline);
-                if (wantWorkflow) {
+                const choice = await promptWorkflowChoice(
+                  workflowInlineProvided ? normalizedOptions.workflowInline : undefined
+                );
+                if (choice === 'basic') {
                   await ensureWorkflowTemplateInstalled({ silent: false });
                 } else {
                   // user skipped — no summary output
@@ -1239,10 +1362,10 @@ export default function register(ctx: PluginContext): void {
             // We no longer print a workflowReport summary; helpers print output
           }
 
-          if (!agentTemplateResult.installed && agentTemplateResult.reason === 'template already in place') {
-            console.log('AGENTS.md already matches the Worklog template.');
+          if (!agentTemplateResult.installed && agentTemplateResult.reason === 'pointer already present') {
+            console.log('AGENTS.md already contains the Worklog pointer.');
           }
-          if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'template already in place') {
+          if (!agentTemplateResult.installed && agentTemplateResult.reason && agentTemplateResult.reason !== 'pointer already present') {
             console.log(`Note: AGENTS template not installed: ${agentTemplateResult.reason}`);
           }
           // Offer to install example stats plugin

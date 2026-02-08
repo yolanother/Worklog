@@ -13,6 +13,45 @@ import {
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
 
 describe('CLI Init Tests', () => {
+  it('should insert the AGENTS.md pointer line when an existing file is present', async () => {
+    const tempState = enterTempDir();
+    try {
+      const existing = '## Local Rules\n\n- Do the local thing\n';
+      fs.writeFileSync('AGENTS.md', existing, 'utf-8');
+
+      await execAsync(
+        `tsx ${cliPath} init --project-name "Test Project" --prefix TEST --auto-export yes --auto-sync no --workflow-inline no --agents-template append --stats-plugin-overwrite no`
+      );
+
+      const updated = fs.readFileSync('AGENTS.md', 'utf-8');
+      const pointer = 'Follow the global AGENTS.md in addition to the rules below. The local rules below take priority in the event of a conflict.';
+      const lines = updated.split(/\r?\n/).filter(line => line.trim().length > 0);
+      expect(lines[0]).toBe(pointer);
+      expect(updated).toContain(existing.trim());
+    } finally {
+      leaveTempDir(tempState);
+    }
+  });
+
+  it('should not duplicate the AGENTS.md pointer line on re-run', async () => {
+    const tempState = enterTempDir();
+    try {
+      const pointer = 'Follow the global AGENTS.md in addition to the rules below. The local rules below take priority in the event of a conflict.';
+      const existing = `${pointer}\n\n## Local Rules\n\n- Keep it\n`;
+      fs.writeFileSync('AGENTS.md', existing, 'utf-8');
+
+      await execAsync(
+        `tsx ${cliPath} init --project-name "Test Project" --prefix TEST --auto-export yes --auto-sync no --workflow-inline no --agents-template append --stats-plugin-overwrite no`
+      );
+
+      const updated = fs.readFileSync('AGENTS.md', 'utf-8');
+      const pointerMatches = updated.split(/\r?\n/).filter(line => line.trim() === pointer).length;
+      expect(pointerMatches).toBe(1);
+      expect(updated).toContain('## Local Rules');
+    } finally {
+      leaveTempDir(tempState);
+    }
+  });
   it('should create semaphore when config exists but semaphore does not', async () => {
     const tempState = enterTempDir();
     try {
