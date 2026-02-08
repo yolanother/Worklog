@@ -1,6 +1,7 @@
 Follow the global AGENTS.md in addition to the rules below. The local rules below take priority in the event of a conflict.
 
-<!-- Start base Worklog AGETNS.md file -->
+<!-- Start base Worklog AGENTS.md file -->
+
 ## work-item Tracking with Worklog (wl)
 
 IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
@@ -16,8 +17,7 @@ IMPORTANT: This project uses Worklog (wl) for ALL work-item tracking. Do NOT use
 - Work items cannot be closed until all child items are closed, all blocking dependencies resolved and a Producer has reviewed and approved the work
 - Never commit changes without associating them with a work item
 - Never commit changes without ensuring all tests and quality checks pass
-- Whenever a comment is made add a comment to impacted the work item(s) describing the changes, the files affected, and including the commit hash.
-- Never push changes until all work items associated with the changes are closed
+- Whenever a commit is made add a comment to impacted the work item(s) describing the changes, the files affected, and including the commit hash.
 - If push fails, resolve and retry until it succeeds
 - When using backticks in arguments to shell commands, escape them properly to avoid errors
 
@@ -198,4 +198,5 @@ Depending on your setup, you may have additional wl plugins installed. Check ava
 
 Run `wl --help` to see general help text and available commands.
 Run `wl <command> --help` to see help text and all available flags for any command.
-<!-- End base Worklog AGETNS.md file -->
+
+<!-- End base Worklog AGENTS.md file -->
