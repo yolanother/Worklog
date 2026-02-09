@@ -29,12 +29,12 @@ Options:
 
 - `-t, --title <title>` (required) — Title of the work item.
 - `-d, --description <description>` — Description text (optional; defaults to empty).
-- `-s, --status <status>` — One of `open`, `in-progress`, `completed`, `blocked`, `deleted` (optional; default: `open`).
+- `-s, --status <status>` — Status value from config defaults (optional; default: `open`).
 - `-p, --priority <priority>` — `low|medium|high|critical` (optional; default: `medium`).
 - `-P, --parent <parentId>` — Parent work item ID (optional).
 - `--tags <tags>` — Comma-separated tags (optional).
 - `-a, --assignee <assignee>` — Assignee name (optional).
-- `--stage <stage>` — Stage of the work item in the workflow (optional).
+- `--stage <stage>` — Stage value from config defaults (optional).
 - `--risk <risk>` — Risk level: `Low|Medium|High|Severe` (optional; no default).
 - `--effort <effort>` — Effort level: `XS|S|M|L|XL` (optional; no default).
 - `--issue-type <issueType>` — Interoperability: issue type (optional).
@@ -52,6 +52,10 @@ wl create -t "Add telemetry" -d "Add event for signup" -p high -a alice --tags t
 wl create -t "High-risk task" --risk High --effort M
 wl --json create -t "Investigate CI flakes" -d "Flaky tests seen" -p high
 ```
+
+Notes:
+
+- Status and stage values are configured in `.worklog/config.defaults.yaml` under `statuses` and `stages`.
 
 ### `update` [options] <id>
 
