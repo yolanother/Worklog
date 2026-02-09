@@ -6,33 +6,43 @@ and any gaps/ambiguities. It is intended to be the single reference for shared
 validation helpers and UI wiring.
 
 ## Status and Stage Values
-- Statuses (canonical): open, in-progress, blocked, completed, deleted
-  - Source: src/tui/status-stage-rules.ts
+- Statuses (canonical): config defaults in .worklog/config.defaults.yaml
+  - Source of truth: .worklog/config.defaults.yaml (statuses)
   - Type: src/types.ts
-- Stages (canonical): (blank), idea, prd_complete, plan_complete, intake_complete, in_progress, in_review, done
-  - Source: templates/AGENTS.md, templates/WORKFLOW.md, src/tui/status-stage-rules.ts
+  - Current defaults:
+    - open
+    - in-progress
+    - blocked
+    - completed
+    - deleted
+- Stages (canonical): config defaults in .worklog/config.defaults.yaml
+  - Source of truth: .worklog/config.defaults.yaml (stages)
+  - Current defaults:
+    - idea
+    - intake_complete
+    - plan_complete
+    - in_progress
+    - in_review
+    - done
   - Defaulting behavior on create/import: blank stage
     - Source: src/database.ts (create) and src/jsonl.ts (import default)
 
 ## Compatibility Rules (Explicit)
 ### Status -> Allowed Stages
-Defined in src/tui/status-stage-rules.ts.
-- open -> '', idea, prd_complete, plan_complete, intake_complete, in_progress
-- in-progress -> in_progress
-- blocked -> '', idea, prd_complete, plan_complete, intake_complete, in_progress
-- completed -> in_review, done
-- deleted -> ''
+Defined in config defaults.
+- Source of truth: .worklog/config.defaults.yaml (statusStageCompatibility)
+- Runtime loader: src/tui/status-stage-rules.ts
+- Current defaults:
+  - open -> idea, intake_complete, plan_complete, in_progress
+  - in-progress -> in_progress
+  - blocked -> idea, intake_complete, plan_complete
+  - completed -> in_review, done
+  - deleted -> idea, intake_complete, plan_complete, done
 
 ### Stage -> Allowed Statuses
-Derived in src/tui/status-stage-rules.ts from status compatibility.
-- '' -> open, blocked, deleted
-- idea -> open, blocked
-- prd_complete -> open, blocked
-- plan_complete -> open, blocked
-- intake_complete -> open, blocked
-- in_progress -> open, in-progress, blocked
-- in_review -> completed
-- done -> completed
+Derived at runtime from the compatibility mapping.
+- Source of truth: .worklog/config.defaults.yaml (statusStageCompatibility)
+- Runtime derivation: src/tui/status-stage-rules.ts
 
 ### Update Dialog Validation
 TUI update dialog rejects invalid status/stage combinations.
@@ -64,18 +74,20 @@ The next-item selection logic treats in_review specially and filters statuses.
   - Source: src/database.ts (findNextWorkItemFromItems)
 
 ## CLI/Docs References
-- CLI docs list statuses and stage options without compatibility rules.
+- CLI docs should reference config defaults for status/stage values.
   - Source: CLI.md
 - Workflow templates reference stages, not status/stage compatibility.
   - Source: templates/AGENTS.md, templates/WORKFLOW.md
 
 ## Gaps and Ambiguities
+- Historical note: any hard-coded status/stage arrays in older docs or helpers are obsolete.
+  - Current source of truth is .worklog/config.defaults.yaml and the loader in src/tui/status-stage-rules.ts.
 - CLI update/create paths do not enforce status/stage compatibility.
   - Observed: src/commands/update.ts allows any status/stage values.
   - Behavior: database stores values without validation.
 - Stage value "blocked" appears in tests but is not in canonical stage list.
   - Observed: tests/tui/tui-update-dialog.test.ts uses stage='blocked' in Update Dialog Functions
-  - Not present in src/tui/status-stage-rules.ts stages list.
+  - Not present in .worklog/config.defaults.yaml stages list.
 - Status default and stage default are set during create/import, but no validation
   is applied on update or import beyond missing-field normalization.
 
