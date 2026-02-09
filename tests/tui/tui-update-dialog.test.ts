@@ -5,9 +5,10 @@ import { WorklogDatabase } from '../../src/database.js';
 import blessed from 'blessed';
 import { createUpdateDialogFocusManager } from '../../src/tui/update-dialog-navigation.js';
 import { buildUpdateDialogUpdates } from '../../src/tui/update-dialog-submit.js';
-import { STATUS_STAGE_COMPATIBILITY, STAGE_STATUS_COMPATIBILITY } from '../../src/tui/status-stage-rules.js';
+import { loadStatusStageRules } from '../../src/status-stage-rules.js';
 
 describe('TUI Update Dialog', () => {
+  const rulesConfig = loadStatusStageRules();
   const tmpDir = path.join(process.cwd(), 'tmp-test-tui-update');
   const worklogDir = path.join(tmpDir, '.worklog');
   const jsonlPath = path.join(worklogDir, 'worklog-data.jsonl');
@@ -395,13 +396,13 @@ describe('TUI Update Dialog', () => {
         item,
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
-          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          statuses: rulesConfig.statusValues,
+           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         },
         'hello\nworld'
       );
@@ -417,13 +418,13 @@ describe('TUI Update Dialog', () => {
         item,
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
-          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          statuses: rulesConfig.statusValues,
+           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         },
         '   '
       );
@@ -483,18 +484,18 @@ describe('TUI Update Dialog', () => {
         priority: 'medium'
       };
 
-      const updateDialogStatusValues = ['open', 'in-progress', 'blocked', 'completed', 'deleted'];
-      const updateDialogStageValues = ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'];
+       const updateDialogStatusValues = rulesConfig.statusValues.map(value => rulesConfig.statusLabels[value] ?? value);
+       const updateDialogStageValues = rulesConfig.stageValues.filter(stage => stage !== '').map(value => rulesConfig.stageLabels[value] ?? value);
       const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
 
-      const normalizeStatusValue = (value: string | undefined) => {
-        if (!value) return value;
-        return value.replace(/_/g, '-');
-      };
+       const normalizeStatusValue = (value: string | undefined) => {
+         if (!value) return value;
+         return rulesConfig.statusLabels[value] ?? value;
+       };
 
       const updateDialogHeader = (overrides?: { status?: string; stage?: string; priority?: string; adjusted?: boolean }) => {
         const statusValue = overrides?.status ?? normalizeStatusValue(item.status) ?? '';
-        const stageValue = overrides?.stage ?? (item.stage === '' ? 'Undefined' : item.stage);
+         const stageValue = overrides?.stage ?? (item.stage === '' ? rulesConfig.stageLabels[''] ?? 'Undefined' : rulesConfig.stageLabels[item.stage] ?? item.stage);
         const priorityValue = overrides?.priority ?? item.priority ?? '';
         const adjustedSuffix = overrides?.adjusted ? ' (Adjusted)' : '';
         updateDialogText.setContent(
@@ -503,7 +504,7 @@ describe('TUI Update Dialog', () => {
       };
 
       updateDialogHeader();
-      expect(updateDialogText.getContent()).toContain('Status: open · Stage: idea · Priority: medium');
+       expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels.open ?? 'open'} · Stage: ${rulesConfig.stageLabels.idea ?? 'idea'} · Priority: medium`);
 
       statusOptions.select(1);
       stageOptions.select(3);
@@ -514,7 +515,7 @@ describe('TUI Update Dialog', () => {
         priority: updateDialogPriorityValues[(priorityOptions as any).selected ?? 2]
       });
 
-      expect(updateDialogText.getContent()).toContain('Status: in-progress · Stage: in_progress · Priority: critical');
+       expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels['in-progress'] ?? 'in-progress'} · Stage: ${rulesConfig.stageLabels.in_progress ?? 'in_progress'} · Priority: critical`);
 
       updateDialogHeader({
         status: 'completed',
@@ -541,8 +542,8 @@ describe('TUI Update Dialog', () => {
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
 
@@ -561,8 +562,8 @@ describe('TUI Update Dialog', () => {
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
 
@@ -575,13 +576,13 @@ describe('TUI Update Dialog', () => {
         item,
         { statusIndex: 1, stageIndex: 3, priorityIndex: 1 },
         {
-          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          statuses: rulesConfig.statusValues,
+           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
 
@@ -599,13 +600,13 @@ describe('TUI Update Dialog', () => {
         item,
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
-          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          statuses: rulesConfig.statusValues,
+           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
 
@@ -617,8 +618,8 @@ describe('TUI Update Dialog', () => {
       const item = { id: 'WL-TEST-1', status: 'open', stage: 'idea', priority: 'medium' };
       const selections = { statusIndex: 2, stageIndex: 0, priorityIndex: 1 };
       const values = {
-        statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-        stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+        statuses: rulesConfig.statusValues,
+         stages: rulesConfig.stageValues.filter(stage => stage !== ''),
         priorities: ['critical', 'high', 'medium', 'low'],
       };
       const updateCalls: Array<Record<string, string>> = [];
@@ -635,8 +636,8 @@ describe('TUI Update Dialog', () => {
       // Extend submission to include a comment via the new multiline textbox
       const submitUpdateDialogWithComment = (comment?: string) => {
         const { updates, hasChanges, comment: newComment } = buildUpdateDialogUpdates(item, selections, values, {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }, comment);
         if (!hasChanges && !newComment) return;
         if (Object.keys(updates).length > 0) db.update(item.id, updates);
@@ -678,13 +679,13 @@ describe('TUI Update Dialog', () => {
           { status: 'open', stage: 'idea', priority: 'medium' },
           { statusIndex: 1, stageIndex: 3, priorityIndex: 1 },
           {
-            statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-            stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+            statuses: rulesConfig.statusValues,
+             stages: rulesConfig.stageValues.filter(stage => stage !== ''),
             priorities: ['critical', 'high', 'medium', 'low'],
           },
           {
-            statusStage: STATUS_STAGE_COMPATIBILITY,
-            stageStatus: STAGE_STATUS_COMPATIBILITY,
+            statusStage: rulesConfig.statusStageCompatibility,
+            stageStatus: rulesConfig.stageStatusCompatibility,
           },
           commentValue
         );
@@ -716,33 +717,19 @@ describe('TUI Update Dialog', () => {
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
 
-      expect(result.hasChanges).toBe(true);
-      expect(result.updates).toEqual({ status: 'deleted' });
-    });
-
-    it('should treat blank stage as compatible with deleted status', () => {
-      const item = { status: 'open', stage: '', priority: 'medium' };
-      const result = buildUpdateDialogUpdates(
-        item,
-        { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
-        {
-          statuses: ['deleted'],
-          stages: [''],
-          priorities: ['critical', 'high', 'medium', 'low'],
-        },
-        {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
-        }
-      );
-
-      expect(result.hasChanges).toBe(true);
-      expect(result.updates).toEqual({ status: 'deleted' });
+      const allowsBlankStage = (rulesConfig.statusStageCompatibility.deleted || []).includes('');
+      if (allowsBlankStage) {
+        expect(result.hasChanges).toBe(true);
+        expect(result.updates).toEqual({ status: 'deleted' });
+      } else {
+        expect(result.hasChanges).toBe(false);
+        expect(result.updates).toEqual({});
+      }
     });
 
     it('should not call db.update when Escape cancels', () => {

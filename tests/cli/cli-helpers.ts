@@ -69,7 +69,42 @@ export function writeConfig(dir: string, projectName: string = 'Test Project', p
   fs.mkdirSync(path.join(dir, '.worklog'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, '.worklog', 'config.yaml'),
-    `projectName: ${projectName}\nprefix: ${prefix}`,
+    [
+      `projectName: ${projectName}`,
+      `prefix: ${prefix}`,
+      'statuses:',
+      '  - value: open',
+      '    label: Open',
+      '  - value: in-progress',
+      '    label: In Progress',
+      '  - value: blocked',
+      '    label: Blocked',
+      '  - value: completed',
+      '    label: Completed',
+      '  - value: deleted',
+      '    label: Deleted',
+      'stages:',
+      '  - value: ""',
+      '    label: Undefined',
+      '  - value: idea',
+      '    label: Idea',
+      '  - value: prd_complete',
+      '    label: PRD Complete',
+      '  - value: plan_complete',
+      '    label: Plan Complete',
+      '  - value: in_progress',
+      '    label: In Progress',
+      '  - value: in_review',
+      '    label: In Review',
+      '  - value: done',
+      '    label: Done',
+      'statusStageCompatibility:',
+      '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+      '  in-progress: [in_progress]',
+      '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+      '  completed: [in_review, done]',
+      '  deleted: [""]'
+    ].join('\n'),
     'utf-8'
   );
 }

@@ -173,10 +173,8 @@ wl list --assignee alice --json
 # List items filtered by stage (e.g. triage, review, done)
 wl list --stage review --json
 
-# Show details for a specific work item
-wl show <work-item-id> --comments --json
-# Show details including child/subtask items
-wl show <work-item-id> --children --json
+# Show full details for a specific work item
+wl show <work-item-id> --format full --json
 ```
 
 #### Team

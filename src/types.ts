@@ -128,6 +128,9 @@ export interface WorklogConfig {
   githubImportCreateNew?: boolean;
   // Human display format preference for CLI (concise | normal | full | raw)
   humanDisplay?: 'concise' | 'normal' | 'full' | 'raw';
+  statuses?: Array<{ value: string; label: string }>;
+  stages?: Array<{ value: string; label: string }>;
+  statusStageCompatibility?: Record<string, string[]>;
 }
 
 /**

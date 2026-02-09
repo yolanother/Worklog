@@ -143,7 +143,7 @@ Worklog Specific Ignores
 ##################################
 
 # Ignore Worklog directory by default
-.worklog/
+.worklog/*
 
 # Keep defaults and plugins tracked
 !.worklog/config.defaults.yaml

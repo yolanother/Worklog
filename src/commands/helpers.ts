@@ -7,6 +7,7 @@ import type { WorkItem, Comment } from '../types.js';
 import type { SyncResult } from '../sync.js';
 import type { WorklogDatabase } from '../database.js';
 import { loadConfig } from '../config.js';
+import { getStageLabel, getStatusLabel, loadStatusStageRules } from '../status-stage-rules.js';
 import type { Command } from 'commander';
 
 // Priority ordering for sorting work items (higher number = higher priority)
@@ -234,6 +235,7 @@ function walkItemTree(items: WorkItem[], options: TreeRenderOptions): void {
 export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, format: string | undefined): string {
   const fmt = (format || loadConfig()?.humanDisplay || 'concise').toLowerCase();
   const sortIndexLabel = `SortIndex: ${item.sortIndex}`;
+  const rules = loadStatusStageRules();
 
   const lines: string[] = [];
   const titleLine = `Title: ${formatTitleOnly(item)}`;
@@ -249,10 +251,12 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     lines.push(`${formatTitleOnly(item)} ${chalk.gray(item.id)}`);
     // Second line: status, stage (if present) and priority (core metadata shown previously by list)
     if (item.stage !== undefined) {
-      const stageLabel = item.stage === '' ? 'Undefined' : item.stage;
-      lines.push(`Status: ${item.status} · Stage: ${stageLabel} | Priority: ${item.priority}`);
+      const stageLabel = item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules) || item.stage;
+      const statusLabel = getStatusLabel(item.status, rules) || item.status;
+      lines.push(`Status: ${statusLabel} · Stage: ${stageLabel} | Priority: ${item.priority}`);
     } else {
-      lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+      const statusLabel = getStatusLabel(item.status, rules) || item.status;
+      lines.push(`Status: ${statusLabel} | Priority: ${item.priority}`);
     }
     lines.push(sortIndexLabel);
     if (item.risk) lines.push(`Risk: ${item.risk}`);
@@ -267,10 +271,12 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
     lines.push(idLine);
     lines.push(titleLine);
     if (item.stage !== undefined) {
-      const stageLabel = item.stage === '' ? 'Undefined' : item.stage;
-      lines.push(`Status: ${item.status} · Stage: ${stageLabel} | Priority: ${item.priority}`);
+      const stageLabel = item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules) || item.stage;
+      const statusLabel = getStatusLabel(item.status, rules) || item.status;
+      lines.push(`Status: ${statusLabel} · Stage: ${stageLabel} | Priority: ${item.priority}`);
     } else {
-      lines.push(`Status: ${item.status} | Priority: ${item.priority}`);
+      const statusLabel = getStatusLabel(item.status, rules) || item.status;
+      lines.push(`Status: ${statusLabel} | Priority: ${item.priority}`);
     }
     lines.push(sortIndexLabel);
     if (item.risk) lines.push(`Risk: ${item.risk}`);
@@ -287,7 +293,7 @@ export function humanFormatWorkItem(item: WorkItem, db: WorklogDatabase | null, 
   const issueTypeLabel = item.issueType && item.issueType.trim() !== '' ? item.issueType : 'unknown';
   const frontmatter: Array<[string, string]> = [
     ['ID', chalk.gray(item.id)],
-    ['Status', item.stage !== undefined ? `${item.status} · Stage: ${item.stage === '' ? 'Undefined' : item.stage} | Priority: ${item.priority}` : `${item.status} | Priority: ${item.priority}`],
+    ['Status', item.stage !== undefined ? `${getStatusLabel(item.status, rules) || item.status} · Stage: ${item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules) || item.stage} | Priority: ${item.priority}` : `${getStatusLabel(item.status, rules) || item.status} | Priority: ${item.priority}`],
     ['Type', issueTypeLabel],
     ['SortIndex', String(item.sortIndex)]
   ];

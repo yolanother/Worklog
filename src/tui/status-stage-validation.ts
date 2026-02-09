@@ -1,5 +1,4 @@
-import type { WorkItemStatus } from '../types.js';
-import { STATUS_STAGE_COMPATIBILITY, STAGE_STATUS_COMPATIBILITY } from './status-stage-rules.js';
+import { loadStatusStageRules } from '../status-stage-rules.js';
 
 export interface StatusStageValidationRules {
   statusStage?: Record<string, readonly string[]>;
@@ -7,10 +6,10 @@ export interface StatusStageValidationRules {
 }
 
 const resolveStatusStageRules = (rules?: StatusStageValidationRules) =>
-  rules?.statusStage ?? STATUS_STAGE_COMPATIBILITY;
+  rules?.statusStage ?? loadStatusStageRules().statusStageCompatibility;
 
 const resolveStageStatusRules = (rules?: StatusStageValidationRules) =>
-  rules?.stageStatus ?? STAGE_STATUS_COMPATIBILITY;
+  rules?.stageStatus ?? loadStatusStageRules().stageStatusCompatibility;
 
 export const getAllowedStagesForStatus = (
   status?: string,
@@ -18,7 +17,7 @@ export const getAllowedStagesForStatus = (
 ): readonly string[] => {
   if (!status) return [];
   const statusStageRules = resolveStatusStageRules(rules);
-  return statusStageRules[status as WorkItemStatus] ?? [];
+  return statusStageRules[status] ?? [];
 };
 
 export const getAllowedStatusesForStage = (

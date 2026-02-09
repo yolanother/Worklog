@@ -4,24 +4,19 @@ import {
   getAllowedStatusesForStage,
   isStatusStageCompatible,
 } from '../../src/tui/status-stage-validation.js';
-import {
-  STATUS_STAGE_COMPATIBILITY,
-  STAGE_STATUS_COMPATIBILITY,
-  WORK_ITEM_STATUSES,
-  WORK_ITEM_STAGES,
-} from '../../src/tui/status-stage-rules.js';
+import { loadStatusStageRules } from '../../src/status-stage-rules.js';
 
 describe('Status/Stage Validation Helper', () => {
+  const rulesConfig = loadStatusStageRules();
   const rules = {
-    statusStage: STATUS_STAGE_COMPATIBILITY,
-    stageStatus: STAGE_STATUS_COMPATIBILITY,
+    statusStage: rulesConfig.statusStageCompatibility,
+    stageStatus: rulesConfig.stageStatusCompatibility,
   };
 
   it('returns allowed stages for status', () => {
     expect(getAllowedStagesForStatus('open', rules)).toEqual([
-      '',
       'idea',
-      'prd_complete',
+      'intake_complete',
       'plan_complete',
       'in_progress',
     ]);
@@ -42,9 +37,9 @@ describe('Status/Stage Validation Helper', () => {
   });
 
   it('covers compatibility permutations for all statuses', () => {
-    WORK_ITEM_STATUSES.forEach((status) => {
-      const allowedStages = new Set(STATUS_STAGE_COMPATIBILITY[status]);
-      WORK_ITEM_STAGES.forEach((stage) => {
+    rulesConfig.statusValues.forEach((status) => {
+      const allowedStages = new Set(rulesConfig.statusStageCompatibility[status]);
+      rulesConfig.stageValues.forEach((stage) => {
         const compatible = isStatusStageCompatible(status, stage, rules);
         if (allowedStages.has(stage)) {
           expect(compatible).toBe(true);
@@ -56,8 +51,8 @@ describe('Status/Stage Validation Helper', () => {
   });
 
   it('matches allowed statuses for each stage', () => {
-    WORK_ITEM_STAGES.forEach((stage) => {
-      const expected = [...STAGE_STATUS_COMPATIBILITY[stage]].sort();
+    rulesConfig.stageValues.forEach((stage) => {
+      const expected = [...(rulesConfig.stageStatusCompatibility[stage] ?? [])].sort();
       const actual = [...getAllowedStatusesForStage(stage, rules)].sort();
       expect(actual).toEqual(expected);
     });
