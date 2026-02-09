@@ -62,7 +62,46 @@ describe('Configuration', () => {
     it('should return true when config exists', () => {
       const configDir = getConfigDir();
       fs.mkdirSync(configDir, { recursive: true });
-      fs.writeFileSync(getConfigPath(), 'projectName: Test\nprefix: TEST', 'utf-8');
+      fs.writeFileSync(
+        getConfigPath(),
+        [
+          'projectName: Test',
+          'prefix: TEST',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
+        'utf-8'
+      );
       
       expect(configExists()).toBe(true);
     });
@@ -72,7 +111,30 @@ describe('Configuration', () => {
     it('should save config to file', () => {
       const config = {
         projectName: 'Test Project',
-        prefix: 'TEST'
+        prefix: 'TEST',
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       };
 
       saveConfig(config);
@@ -87,7 +149,30 @@ describe('Configuration', () => {
       const config = {
         projectName: 'Test Project',
         prefix: 'TEST',
-        autoExport: false
+        autoExport: false,
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       };
 
       saveConfig(config);
@@ -102,7 +187,30 @@ describe('Configuration', () => {
     it('should create .worklog directory if it does not exist', () => {
       const config = {
         projectName: 'Test Project',
-        prefix: 'TEST'
+        prefix: 'TEST',
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       };
 
       saveConfig(config);
@@ -118,10 +226,67 @@ describe('Configuration', () => {
       expect(config).toBe(null);
     });
 
+    it('should reject configs missing required status/stage sections', () => {
+      const configDir = getConfigDir();
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        getConfigPath(),
+        'projectName: Test Project\nprefix: TEST',
+        'utf-8'
+      );
+
+      const loaded = loadConfig();
+
+      expect(loaded).toBe(null);
+    });
+
+    it('should reject empty status/stage compatibility sections', () => {
+      const configDir = getConfigDir();
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        getConfigPath(),
+        [
+          'projectName: Test Project',
+          'prefix: TEST',
+          'statuses: []',
+          'stages: []',
+          'statusStageCompatibility: {}'
+        ].join('\n'),
+        'utf-8'
+      );
+
+      const loaded = loadConfig();
+
+      expect(loaded).toBe(null);
+    });
+
     it('should load config from file', () => {
       const testConfig = {
         projectName: 'Test Project',
-        prefix: 'TEST'
+        prefix: 'TEST',
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       };
       saveConfig(testConfig);
 
@@ -136,7 +301,30 @@ describe('Configuration', () => {
       const testConfig = {
         projectName: 'Test Project',
         prefix: 'TEST',
-        autoExport: false
+        autoExport: false,
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       };
       saveConfig(testConfig);
 
@@ -153,7 +341,42 @@ describe('Configuration', () => {
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         getConfigDefaultsPath(), 
-        'projectName: Default Project\nprefix: DEF',
+        [
+          'projectName: Default Project',
+          'prefix: DEF',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -164,12 +387,62 @@ describe('Configuration', () => {
       expect(loaded?.prefix).toBe('DEF');
     });
 
+    it('should require status/stage sections in defaults', () => {
+      const configDir = getConfigDir();
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        getConfigDefaultsPath(),
+        'projectName: Default Project\nprefix: DEF',
+        'utf-8'
+      );
+
+      const loaded = loadConfig();
+
+      expect(loaded).toBe(null);
+    });
+
     it('should load autoExport from defaults', () => {
       const configDir = getConfigDir();
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         getConfigDefaultsPath(), 
-        'projectName: Default Project\nprefix: DEF\nautoExport: true',
+        [
+          'projectName: Default Project',
+          'prefix: DEF',
+          'autoExport: true',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -188,14 +461,83 @@ describe('Configuration', () => {
       // Create defaults
       fs.writeFileSync(
         getConfigDefaultsPath(), 
-        'projectName: Default Project\nprefix: DEF',
+        [
+          'projectName: Default Project',
+          'prefix: DEF',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
       // Create user config that overrides prefix
       fs.writeFileSync(
         getConfigPath(), 
-        'prefix: USER',
+        [
+          'prefix: USER',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -213,14 +555,84 @@ describe('Configuration', () => {
       // Create defaults with autoExport: true
       fs.writeFileSync(
         getConfigDefaultsPath(), 
-        'projectName: Default Project\nprefix: DEF\nautoExport: true',
+        [
+          'projectName: Default Project',
+          'prefix: DEF',
+          'autoExport: true',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
       // Create user config that disables autoExport
       fs.writeFileSync(
         getConfigPath(), 
-        'autoExport: false',
+        [
+          'autoExport: false',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -237,7 +649,42 @@ describe('Configuration', () => {
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         getConfigPath(), 
-        'projectName: 123\nprefix: TEST',
+        [
+          'projectName: 123',
+          'prefix: TEST',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -252,7 +699,42 @@ describe('Configuration', () => {
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         getConfigPath(), 
-        'projectName: Test\nprefix: 123',
+        [
+          'projectName: Test',
+          'prefix: 123',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 
@@ -272,7 +754,30 @@ describe('Configuration', () => {
     it('should return prefix from config when it exists', () => {
       saveConfig({
         projectName: 'Test Project',
-        prefix: 'CUSTOM'
+        prefix: 'CUSTOM',
+        statuses: [
+          { value: 'open', label: 'Open' },
+          { value: 'in-progress', label: 'In Progress' },
+          { value: 'blocked', label: 'Blocked' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'deleted', label: 'Deleted' }
+        ],
+        stages: [
+          { value: '', label: 'Undefined' },
+          { value: 'idea', label: 'Idea' },
+          { value: 'prd_complete', label: 'PRD Complete' },
+          { value: 'plan_complete', label: 'Plan Complete' },
+          { value: 'in_progress', label: 'In Progress' },
+          { value: 'in_review', label: 'In Review' },
+          { value: 'done', label: 'Done' }
+        ],
+        statusStageCompatibility: {
+          open: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          'in-progress': ['in_progress'],
+          blocked: ['', 'idea', 'prd_complete', 'plan_complete', 'in_progress'],
+          completed: ['in_review', 'done'],
+          deleted: ['']
+        }
       });
 
       const prefix = getDefaultPrefix();
@@ -284,7 +789,42 @@ describe('Configuration', () => {
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(
         getConfigDefaultsPath(), 
-        'projectName: Default\nprefix: DEF',
+        [
+          'projectName: Default',
+          'prefix: DEF',
+          'statuses:',
+          '  - value: open',
+          '    label: Open',
+          '  - value: in-progress',
+          '    label: In Progress',
+          '  - value: blocked',
+          '    label: Blocked',
+          '  - value: completed',
+          '    label: Completed',
+          '  - value: deleted',
+          '    label: Deleted',
+          'stages:',
+          '  - value: ""',
+          '    label: Undefined',
+          '  - value: idea',
+          '    label: Idea',
+          '  - value: prd_complete',
+          '    label: PRD Complete',
+          '  - value: plan_complete',
+          '    label: Plan Complete',
+          '  - value: in_progress',
+          '    label: In Progress',
+          '  - value: in_review',
+          '    label: In Review',
+          '  - value: done',
+          '    label: Done',
+          'statusStageCompatibility:',
+          '  open: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  in-progress: [in_progress]',
+          '  blocked: ["", idea, prd_complete, plan_complete, in_progress]',
+          '  completed: [in_review, done]',
+          '  deleted: [""]'
+        ].join('\n'),
         'utf-8'
       );
 

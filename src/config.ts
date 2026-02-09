@@ -148,8 +148,90 @@ export function loadConfig(): WorklogConfig | null {
     console.error('Invalid config: prefix must be a string');
     return null;
   }
+
+  const statusStageError = validateStatusStageConfig(config);
+  if (statusStageError) {
+    console.error(statusStageError);
+    return null;
+  }
   
   return config;
+}
+
+function validateStatusStageConfig(config: WorklogConfig): string | null {
+  const statuses = config.statuses;
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    return 'Invalid config: statuses must be a non-empty array of { value, label } entries';
+  }
+
+  const statusValues = new Set<string>();
+  for (const entry of statuses) {
+    if (!entry || typeof entry !== 'object') {
+      return 'Invalid config: statuses must be objects with value and label fields';
+    }
+    const value = (entry as { value?: unknown }).value;
+    const label = (entry as { label?: unknown }).label;
+    if (typeof value !== 'string' || value.trim() === '') {
+      return 'Invalid config: statuses values must be non-empty strings';
+    }
+    if (typeof label !== 'string' || label.trim() === '') {
+      return 'Invalid config: statuses labels must be non-empty strings';
+    }
+    statusValues.add(value);
+  }
+
+  const stages = config.stages;
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return 'Invalid config: stages must be a non-empty array of { value, label } entries';
+  }
+
+  const stageValues = new Set<string>();
+  for (const entry of stages) {
+    if (!entry || typeof entry !== 'object') {
+      return 'Invalid config: stages must be objects with value and label fields';
+    }
+    const value = (entry as { value?: unknown }).value;
+    const label = (entry as { label?: unknown }).label;
+    if (typeof value !== 'string') {
+      return 'Invalid config: stages values must be strings (empty string allowed)';
+    }
+    if (typeof label !== 'string' || label.trim() === '') {
+      return 'Invalid config: stages labels must be non-empty strings';
+    }
+    stageValues.add(value);
+  }
+
+  const compatibility = config.statusStageCompatibility;
+  if (!compatibility || typeof compatibility !== 'object' || Array.isArray(compatibility)) {
+    return 'Invalid config: statusStageCompatibility must be an object mapping status to allowed stages';
+  }
+
+  const compatibilityEntries = Object.entries(compatibility);
+  if (compatibilityEntries.length === 0) {
+    return 'Invalid config: statusStageCompatibility must not be empty';
+  }
+
+  for (const status of statusValues) {
+    if (!(status in compatibility)) {
+      return `Invalid config: statusStageCompatibility missing entry for status "${status}"`;
+    }
+  }
+
+  for (const [status, allowedStages] of compatibilityEntries) {
+    if (!Array.isArray(allowedStages) || allowedStages.length === 0) {
+      return `Invalid config: statusStageCompatibility for status "${status}" must be a non-empty array`; 
+    }
+    for (const stage of allowedStages) {
+      if (typeof stage !== 'string') {
+        return `Invalid config: statusStageCompatibility for status "${status}" must contain stage strings`;
+      }
+      if (!stageValues.has(stage)) {
+        return `Invalid config: statusStageCompatibility for status "${status}" references unknown stage "${stage}"`;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
