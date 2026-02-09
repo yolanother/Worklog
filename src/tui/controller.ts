@@ -24,11 +24,12 @@ import {
   isStatusStageCompatible,
 } from './status-stage-validation.js';
 import {
-  STATUS_STAGE_COMPATIBILITY,
-  STAGE_STATUS_COMPATIBILITY,
-  WORK_ITEM_STATUSES,
-  WORK_ITEM_STAGES,
-} from './status-stage-rules.js';
+  getStageLabel,
+  getStageValueFromLabel,
+  getStatusLabel,
+  getStatusValueFromLabel,
+  loadStatusStageRules,
+} from '../status-stage-rules.js';
 import { OpencodeClient, type OpencodeServerStatus } from './opencode-client.js';
 
 type Item = WorkItem;
@@ -204,18 +205,22 @@ export class TuiController {
       updateDialogComment,
     ];
     const updateDialogFocusManager = createUpdateDialogFocusManager(updateDialogFieldOrder);
-    const updateDialogStatusValues = [...WORK_ITEM_STATUSES];
-    const updateDialogStageValues = WORK_ITEM_STAGES.filter(stage => stage !== '');
+    const rules = loadStatusStageRules();
+    const updateDialogStatusValues = rules.statusValues;
+    const updateDialogStageValues = rules.stageValues.filter(stage => stage !== '');
     const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
 
     const normalizeStatusValue = (value: string | undefined) => {
       if (!value) return value;
-      return value.replace(/_/g, '-');
+      const normalized = getStatusValueFromLabel(value, rules) ?? value;
+      return getStatusLabel(normalized, rules) || normalized;
     };
 
     const normalizeStageValue = (value: string | undefined) => {
       if (!value) return value;
-      return value === 'Undefined' ? '' : value;
+      const normalizedValue = getStageValueFromLabel(value, rules) ?? value;
+      if (normalizedValue === '') return '';
+      return normalizedValue;
     };
 
     const getListItemValue = (list: Pane | undefined | null, fallback: string) => {
@@ -228,10 +233,11 @@ export class TuiController {
 
     const buildStageItems = (allowed: readonly string[], item?: Item | null) => {
       const allowBlank = allowed.includes('') && (item?.stage === '' || allowed.length === 1);
-      const filtered = allowed.filter(stage => stage !== '');
-      if (allowBlank) return ['Undefined', ...filtered];
+      const filtered = allowed.filter(stage => stage !== '').map(stage => getStageLabel(stage, rules));
+      const undefinedLabel = getStageLabel('', rules) || 'Undefined';
+      if (allowBlank) return [undefinedLabel, ...filtered];
       if (filtered.length > 0) return filtered;
-      return ['Undefined'];
+      return [undefinedLabel];
     };
 
     const setListItems = (list: Pane | undefined | null, items: string[], preferred?: string) => {
@@ -244,11 +250,12 @@ export class TuiController {
     };
 
     const resetUpdateDialogItems = (item?: Item | null) => {
-      updateDialogStatusOptions.setItems([...updateDialogStatusValues]);
+      updateDialogStatusOptions.setItems(updateDialogStatusValues.map(status => getStatusLabel(status, rules)));
       updateDialogPriorityOptions.setItems([...updateDialogPriorityValues]);
+      const undefinedLabel = getStageLabel('', rules) || 'Undefined';
       const stageItems = item?.stage === ''
-        ? ['Undefined', ...updateDialogStageValues]
-        : [...updateDialogStageValues];
+        ? [undefinedLabel, ...updateDialogStageValues.map(stage => getStageLabel(stage, rules))]
+        : updateDialogStageValues.map(stage => getStageLabel(stage, rules));
       updateDialogStageOptions.setItems(stageItems);
     };
 
@@ -262,7 +269,7 @@ export class TuiController {
         return;
       }
       const statusValue = overrides?.status ?? normalizeStatusValue(item.status) ?? '';
-      const stageValue = overrides?.stage ?? (item.stage === '' ? 'Undefined' : item.stage);
+      const stageValue = overrides?.stage ?? (item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules));
       const priorityValue = overrides?.priority ?? item.priority ?? '';
       const adjustedSuffix = overrides?.adjusted ? ' (Adjusted)' : '';
       updateDialogText.setContent(
@@ -274,25 +281,31 @@ export class TuiController {
       if (updateDialogApplying) return;
       updateDialogApplying = true;
       const complete = () => { updateDialogApplying = false; };
-      const statusValue = getListItemValue(updateDialogStatusOptions, updateDialogStatusValues[0]);
-      const stageValue = getListItemValue(updateDialogStageOptions, updateDialogStageValues[0]);
+      const statusValue = getListItemValue(
+        updateDialogStatusOptions,
+        getStatusLabel(updateDialogStatusValues[0], rules)
+      );
+      const stageValue = getListItemValue(
+        updateDialogStageOptions,
+        getStageLabel(updateDialogStageValues[0], rules)
+      );
       const priorityValue = getListItemValue(updateDialogPriorityOptions, updateDialogPriorityValues[2]);
 
       const normalizedStageValue = normalizeStageValue(stageValue) ?? '';
-      const allowedStages = getAllowedStagesForStatus(statusValue, {
-        statusStage: STATUS_STAGE_COMPATIBILITY,
-        stageStatus: STAGE_STATUS_COMPATIBILITY,
+      const allowedStages = getAllowedStagesForStatus(getStatusValueFromLabel(statusValue, rules), {
+        statusStage: rules.statusStageCompatibility,
+        stageStatus: rules.stageStatusCompatibility,
       });
       const allowedStatuses = getAllowedStatusesForStage(normalizedStageValue, {
-        statusStage: STATUS_STAGE_COMPATIBILITY,
-        stageStatus: STAGE_STATUS_COMPATIBILITY,
+        statusStage: rules.statusStageCompatibility,
+        stageStatus: rules.stageStatusCompatibility,
       });
 
       if (!updateDialogLastChanged) {
         if (item) {
           updateDialogHeader(item, {
             status: normalizeStatusValue(item.status),
-            stage: item.stage === '' ? 'Undefined' : item.stage,
+            stage: item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules),
             priority: item.priority,
           });
         }
@@ -305,12 +318,19 @@ export class TuiController {
           const stageItems = buildStageItems(allowedStages, item);
           setListItems(updateDialogStageOptions, stageItems, stageValue);
         } else if (updateDialogLastChanged === 'stage') {
-          const statusItems = allowedStatuses.length ? [...allowedStatuses] : updateDialogStatusValues;
+          const statusItems = (allowedStatuses.length ? [...allowedStatuses] : updateDialogStatusValues)
+            .map(status => getStatusLabel(status, rules));
           setListItems(updateDialogStatusOptions, statusItems, statusValue);
         }
 
-        const currentStatus = getListItemValue(updateDialogStatusOptions, updateDialogStatusValues[0]);
-        const currentStage = getListItemValue(updateDialogStageOptions, updateDialogStageValues[0]);
+      const currentStatus = getListItemValue(
+        updateDialogStatusOptions,
+        getStatusLabel(updateDialogStatusValues[0], rules)
+      );
+      const currentStage = getListItemValue(
+        updateDialogStageOptions,
+        getStageLabel(updateDialogStageValues[0], rules)
+      );
         const currentPriority = getListItemValue(updateDialogPriorityOptions, updateDialogPriorityValues[2]);
         const adjusted = currentStatus !== statusValue || currentStage !== stageValue;
         updateDialogHeader(item ?? null, {
@@ -1709,10 +1729,10 @@ export class TuiController {
       updateDialogItem = item ?? null;
       if (item) {
         resetUpdateDialogItems(item);
-        updateDialogHeader(item, { status: normalizeStatusValue(item.status), stage: item.stage === '' ? 'Undefined' : item.stage, priority: item.priority });
-        updateDialogStatusOptions.select(findListIndex(updateDialogStatusValues, normalizeStatusValue(item.status), 0));
-        const selectedStage = item.stage === '' ? undefined : item.stage;
-        updateDialogStageOptions.select(findListIndex(updateDialogStageValues, selectedStage, 0));
+        updateDialogHeader(item, { status: normalizeStatusValue(item.status), stage: item.stage === '' ? getStageLabel('', rules) || 'Undefined' : getStageLabel(item.stage, rules), priority: item.priority });
+        updateDialogStatusOptions.select(findListIndex(updateDialogStatusValues.map(status => getStatusLabel(status, rules)), normalizeStatusValue(item.status), 0));
+        const selectedStage = item.stage === '' ? undefined : getStageLabel(item.stage, rules);
+        updateDialogStageOptions.select(findListIndex(updateDialogStageValues.map(stage => getStageLabel(stage, rules)), selectedStage, 0));
         updateDialogPriorityOptions.select(findListIndex(updateDialogPriorityValues, item.priority, 2));
         updateDialogLastChanged = null;
         applyStatusStageCompatibility(item);
@@ -1969,8 +1989,8 @@ export class TuiController {
       try {
         const updates = { status: 'completed' as const, stage };
         const compatible = isStatusStageCompatible(updates.status, updates.stage, {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rules.statusStageCompatibility,
+          stageStatus: rules.stageStatusCompatibility,
         });
         if (!compatible) {
           showToast('Close blocked');
@@ -2001,8 +2021,8 @@ export class TuiController {
 
     function formatStageLabel(stage: string | undefined): string | null {
       if (stage === undefined) return null;
-      if (stage === '') return 'Undefined';
-      return stage;
+      if (stage === '') return getStageLabel('', rules) || 'Undefined';
+      return getStageLabel(stage, rules) || stage;
     }
 
     function setNextDialogContent(content: string) {
@@ -2836,8 +2856,8 @@ export class TuiController {
         const values = items.map((value: string) => (map ? map(value) : value));
         return values.filter((value: string) => value !== undefined);
       };
-      const statusValues = listItemsToValues(updateDialogStatusOptions);
-      const stageValues = listItemsToValues(updateDialogStageOptions, (value) => (value === 'Undefined' ? '' : value));
+      const statusValues = listItemsToValues(updateDialogStatusOptions, (value) => getStatusValueFromLabel(value, rules) ?? value);
+      const stageValues = listItemsToValues(updateDialogStageOptions, (value) => getStageValueFromLabel(value, rules) ?? value);
       const priorityValues = listItemsToValues(updateDialogPriorityOptions);
 
       const commentValue = updateDialogComment?.getValue ? updateDialogComment.getValue() : '';
@@ -2850,8 +2870,8 @@ export class TuiController {
           priorities: priorityValues,
         },
         {
-          statusStage: STATUS_STAGE_COMPATIBILITY,
-          stageStatus: STAGE_STATUS_COMPATIBILITY,
+          statusStage: rules.statusStageCompatibility,
+          stageStatus: rules.stageStatusCompatibility,
         },
         commentValue
       );

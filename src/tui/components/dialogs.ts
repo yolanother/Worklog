@@ -176,7 +176,7 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
+      items: [],
     });
 
     const stageList = this.blessedImpl.list({
@@ -190,7 +190,7 @@ export class DialogsComponent {
       style: {
         selected: { bg: 'blue' },
       },
-      items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+      items: [],
     });
 
     const priorityList = this.blessedImpl.list({

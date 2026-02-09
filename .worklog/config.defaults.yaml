@@ -17,12 +17,10 @@ statuses:
   - value: deleted
     label: Deleted
 stages:
-  - value: ""
-    label: Undefined
   - value: idea
     label: Idea
-  - value: prd_complete
-    label: PRD Complete
+  - value: intake_complete
+    label: Intake Complete
   - value: plan_complete
     label: Plan Complete
   - value: in_progress
@@ -32,8 +30,8 @@ stages:
   - value: done
     label: Done
 statusStageCompatibility:
-  open: ["", idea, prd_complete, plan_complete, in_progress]
+  open: [idea, intake_complete, plan_complete, in_progress]
   in-progress: [in_progress]
-  blocked: ["", idea, prd_complete, plan_complete, in_progress]
+  blocked: [idea, intake_complete, plan_complete]
   completed: [in_review, done]
-  deleted: [""]
+  deleted: [idea, intake_complete, plan_complete, done]
