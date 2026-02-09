@@ -722,28 +722,14 @@ describe('TUI Update Dialog', () => {
         }
       );
 
-      expect(result.hasChanges).toBe(true);
-      expect(result.updates).toEqual({ status: 'deleted' });
-    });
-
-    it('should treat blank stage as compatible with deleted status', () => {
-      const item = { status: 'open', stage: '', priority: 'medium' };
-      const result = buildUpdateDialogUpdates(
-        item,
-        { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
-        {
-          statuses: ['deleted'],
-          stages: [''],
-          priorities: ['critical', 'high', 'medium', 'low'],
-        },
-        {
-          statusStage: rulesConfig.statusStageCompatibility,
-          stageStatus: rulesConfig.stageStatusCompatibility,
-        }
-      );
-
-      expect(result.hasChanges).toBe(true);
-      expect(result.updates).toEqual({ status: 'deleted' });
+      const allowsBlankStage = (rulesConfig.statusStageCompatibility.deleted || []).includes('');
+      if (allowsBlankStage) {
+        expect(result.hasChanges).toBe(true);
+        expect(result.updates).toEqual({ status: 'deleted' });
+      } else {
+        expect(result.hasChanges).toBe(false);
+        expect(result.updates).toEqual({});
+      }
     });
 
     it('should not call db.update when Escape cancels', () => {

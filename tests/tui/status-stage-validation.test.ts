@@ -15,9 +15,8 @@ describe('Status/Stage Validation Helper', () => {
 
   it('returns allowed stages for status', () => {
     expect(getAllowedStagesForStatus('open', rules)).toEqual([
-      '',
       'idea',
-      'prd_complete',
+      'intake_complete',
       'plan_complete',
       'in_progress',
     ]);
