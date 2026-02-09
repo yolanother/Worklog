@@ -379,6 +379,25 @@ wl migrate sort-index --dry-run
 wl migrate sort-index --gap 100
 ```
 
+### `doctor`
+
+Validate work items against config-driven status/stage rules. Reports invalid values or incompatible combinations.
+
+Options:
+
+- `--prefix <prefix>` — Override the default prefix (optional).
+- `--json` — Output findings as JSON (optional).
+
+Examples:
+
+```sh
+wl doctor
+wl --json doctor
+```
+
+JSON output is a raw array of findings. Each finding includes:
+`checkId`, `itemId`, `message`, `proposedFix`, `safe`, `context`.
+
 ### `re-sort` [options]
 
 Recompute `sort_index` values for active work items (excluding completed/deleted) using the current database values.
