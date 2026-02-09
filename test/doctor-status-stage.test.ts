@@ -81,18 +81,27 @@ describe('doctor status/stage validation', () => {
     const items = [baseItem({ id: 'WL-BAD-STATUS', status: 'invalid' as any, stage: 'idea' })];
     const findings = validateStatusStageItems(items, rules);
     expect(findings.some(f => f.checkId === 'status-stage.invalid-status')).toBe(true);
+    const statusFinding = findings.find(f => f.checkId === 'status-stage.invalid-status');
+    expect(statusFinding?.type).toBe('invalid-status');
+    expect(statusFinding?.severity).toBe('warning');
   });
 
   it('flags invalid stage values', () => {
     const items = [baseItem({ id: 'WL-BAD-STAGE', status: 'open', stage: 'blocked' })];
     const findings = validateStatusStageItems(items, rules);
     expect(findings.some(f => f.checkId === 'status-stage.invalid-stage')).toBe(true);
+    const stageFinding = findings.find(f => f.checkId === 'status-stage.invalid-stage');
+    expect(stageFinding?.type).toBe('invalid-stage');
+    expect(stageFinding?.severity).toBe('warning');
   });
 
   it('flags incompatible status/stage combinations', () => {
     const items = [baseItem({ id: 'WL-BAD-COMBINATION', status: 'completed', stage: 'idea' })];
     const findings = validateStatusStageItems(items, rules);
     expect(findings.some(f => f.checkId === 'status-stage.incompatible')).toBe(true);
+    const incompatibleFinding = findings.find(f => f.checkId === 'status-stage.incompatible');
+    expect(incompatibleFinding?.type).toBe('incompatible-status-stage');
+    expect(incompatibleFinding?.severity).toBe('warning');
   });
 
   it('accepts normalized legacy values as fix suggestions', () => {

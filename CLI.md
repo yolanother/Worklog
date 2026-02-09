@@ -400,7 +400,7 @@ wl --json doctor
 ```
 
 JSON output is a raw array of findings. Each finding includes:
-`checkId`, `itemId`, `message`, `proposedFix`, `safe`, `context`.
+`checkId`, `type`, `severity`, `itemId`, `message`, `proposedFix`, `safe`, `context`.
 
 ### `re-sort` [options]
 

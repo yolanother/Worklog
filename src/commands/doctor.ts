@@ -5,6 +5,7 @@
 import type { PluginContext } from '../plugin-types.js';
 import { loadStatusStageRules } from '../status-stage-rules.js';
 import { validateStatusStageItems } from '../doctor/status-stage-check.js';
+import { validateDependencyEdges } from '../doctor/dependency-check.js';
 
 interface DoctorOptions {
   prefix?: string;
@@ -30,7 +31,11 @@ export default function register(ctx: PluginContext): void {
         process.exit(1);
       }
 
-      const findings = validateStatusStageItems(items, rules);
+      const dependencyEdges = db.getAllDependencyEdges();
+      const findings = [
+        ...validateStatusStageItems(items, rules),
+        ...validateDependencyEdges(items, dependencyEdges),
+      ];
 
       if (utils.isJsonMode()) {
         output.json(findings);
@@ -38,11 +43,11 @@ export default function register(ctx: PluginContext): void {
       }
 
       if (findings.length === 0) {
-        console.log('Doctor: no status/stage issues found.');
+        console.log('Doctor: no issues found.');
         return;
       }
 
-      console.log('Doctor: status/stage validation findings');
+      console.log('Doctor: validation findings');
       console.log('Rules source: docs/validation/status-stage-inventory.md');
       const byItem = new Map<string, typeof findings>();
       for (const finding of findings) {

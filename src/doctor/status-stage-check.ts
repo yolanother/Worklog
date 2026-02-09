@@ -3,8 +3,12 @@ import type { StatusStageRules } from '../status-stage-rules.js';
 import { normalizeStageValue, normalizeStatusValue } from '../status-stage-rules.js';
 import { getAllowedStagesForStatus, getAllowedStatusesForStage, isStatusStageCompatible } from '../tui/status-stage-validation.js';
 
+export type DoctorSeverity = 'info' | 'warning' | 'error';
+
 export type DoctorFinding = {
   checkId: string;
+  type: string;
+  severity: DoctorSeverity;
   itemId: string;
   message: string;
   proposedFix: Record<string, unknown> | string | null;
@@ -15,6 +19,10 @@ export type DoctorFinding = {
 const CHECK_ID_STATUS_INVALID = 'status-stage.invalid-status';
 const CHECK_ID_STAGE_INVALID = 'status-stage.invalid-stage';
 const CHECK_ID_STATUS_STAGE_INCOMPATIBLE = 'status-stage.incompatible';
+const TYPE_STATUS_INVALID = 'invalid-status';
+const TYPE_STAGE_INVALID = 'invalid-stage';
+const TYPE_STATUS_STAGE_INCOMPATIBLE = 'incompatible-status-stage';
+const STATUS_STAGE_SEVERITY: DoctorSeverity = 'warning';
 const RULE_SOURCE = 'docs/validation/status-stage-inventory.md';
 
 type Resolution = {
@@ -63,6 +71,8 @@ export function validateStatusStageItems(items: WorkItem[], rules: StatusStageRu
       if (status.isNormalizedValid) {
         findings.push({
           checkId: CHECK_ID_STATUS_INVALID,
+          type: TYPE_STATUS_INVALID,
+          severity: STATUS_STAGE_SEVERITY,
           itemId: item.id,
           message: `Status "${status.value}" is not canonical; use "${status.normalized}" per config.`,
           proposedFix: { status: status.normalized, allowedStatuses: rules.statusValues },
@@ -76,6 +86,8 @@ export function validateStatusStageItems(items: WorkItem[], rules: StatusStageRu
       } else {
         findings.push({
           checkId: CHECK_ID_STATUS_INVALID,
+          type: TYPE_STATUS_INVALID,
+          severity: STATUS_STAGE_SEVERITY,
           itemId: item.id,
           message: `Status "${status.value}" is not defined in config statuses.`,
           proposedFix: { allowedStatuses: rules.statusValues },
@@ -92,6 +104,8 @@ export function validateStatusStageItems(items: WorkItem[], rules: StatusStageRu
       if (stage.isNormalizedValid) {
         findings.push({
           checkId: CHECK_ID_STAGE_INVALID,
+          type: TYPE_STAGE_INVALID,
+          severity: STATUS_STAGE_SEVERITY,
           itemId: item.id,
           message: `Stage "${stage.value}" is not canonical; use "${stage.normalized}" per config.`,
           proposedFix: { stage: stage.normalized, allowedStages: rules.stageValues },
@@ -105,6 +119,8 @@ export function validateStatusStageItems(items: WorkItem[], rules: StatusStageRu
       } else {
         findings.push({
           checkId: CHECK_ID_STAGE_INVALID,
+          type: TYPE_STAGE_INVALID,
+          severity: STATUS_STAGE_SEVERITY,
           itemId: item.id,
           message: `Stage "${stage.value}" is not defined in config stages.`,
           proposedFix: { allowedStages: rules.stageValues },
@@ -144,6 +160,8 @@ export function validateStatusStageItems(items: WorkItem[], rules: StatusStageRu
 
       findings.push({
         checkId: CHECK_ID_STATUS_STAGE_INCOMPATIBLE,
+        type: TYPE_STATUS_STAGE_INCOMPATIBLE,
+        severity: STATUS_STAGE_SEVERITY,
         itemId: item.id,
         message: `Status "${status.canonical}" is not compatible with stage "${stage.canonical}" per config statusStageCompatibility.`,
         proposedFix,
