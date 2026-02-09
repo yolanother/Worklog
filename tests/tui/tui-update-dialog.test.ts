@@ -9,6 +9,9 @@ import { loadStatusStageRules } from '../../src/status-stage-rules.js';
 
 describe('TUI Update Dialog', () => {
   const rulesConfig = loadStatusStageRules();
+  const statusLabels = rulesConfig.statusValues.map(value => rulesConfig.statusLabels[value] ?? value);
+  const stageValuesNoBlank = rulesConfig.stageValues.filter(stage => stage !== '');
+  const stageLabels = stageValuesNoBlank.map(value => rulesConfig.stageLabels[value] ?? value);
   const tmpDir = path.join(process.cwd(), 'tmp-test-tui-update');
   const worklogDir = path.join(tmpDir, '.worklog');
   const jsonlPath = path.join(worklogDir, 'worklog-data.jsonl');
@@ -196,13 +199,7 @@ describe('TUI Update Dialog', () => {
         style: {
           selected: { bg: 'blue' }
         },
-        items: [
-          'open',
-          'in-progress',
-          'blocked',
-          'completed',
-          'deleted'
-        ]
+        items: statusLabels
       });
 
       const stageOptions = blessed.list({
@@ -216,14 +213,7 @@ describe('TUI Update Dialog', () => {
         style: {
           selected: { bg: 'blue' }
         },
-        items: [
-          'idea',
-          'prd_complete',
-          'plan_complete',
-          'in_progress',
-          'in_review',
-          'done'
-        ]
+        items: stageLabels
       });
 
       const priorityOptions = blessed.list({
@@ -324,24 +314,8 @@ describe('TUI Update Dialog', () => {
     it('should handle all stage selections correctly', () => {
       const db = new WorklogDatabase('WL', undefined, undefined, true, false);
 
-      const stages = [
-        'idea',
-        'prd_complete',
-        'plan_complete',
-        'in_progress',
-        'in_review',
-        'done'
-      ];
-
-      // Verify each stage index maps to correct stage value
-      const stageMapping: Record<number, string> = {
-        0: 'idea',
-        1: 'prd_complete',
-        2: 'plan_complete',
-        3: 'in_progress',
-        4: 'in_review',
-        5: 'done'
-      };
+      const stages = stageValuesNoBlank;
+      const stageMapping = Object.fromEntries(stageValuesNoBlank.map((value, idx) => [idx, value]));
 
       // Test each selection index
       stages.forEach((expectedStage, idx) => {
@@ -353,7 +327,7 @@ describe('TUI Update Dialog', () => {
 
     it('should not expose a cancel stage option', () => {
       const screen = blessed.screen({ mouse: true, smartCSR: true });
-      const stageOptions = blessed.list({ parent: screen, items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'] });
+      const stageOptions = blessed.list({ parent: screen, items: stageLabels });
       expect(stageOptions.children.some((child: any) => child.getContent?.() === 'Cancel')).toBe(false);
       screen.destroy();
     });
@@ -363,8 +337,8 @@ describe('TUI Update Dialog', () => {
     it('should cycle focus forward and backward', () => {
       const screen = blessed.screen({ mouse: true, smartCSR: true });
 
-      const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
-      const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
+      const stageList = blessed.list({ parent: screen, items: stageLabels.slice(0, 2) });
+      const statusList = blessed.list({ parent: screen, items: statusLabels.slice(0, 2) });
       const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
       const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true });
 
@@ -397,7 +371,7 @@ describe('TUI Update Dialog', () => {
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
           statuses: rulesConfig.statusValues,
-           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+          stages: stageValuesNoBlank,
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -419,7 +393,7 @@ describe('TUI Update Dialog', () => {
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
           statuses: rulesConfig.statusValues,
-           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+          stages: stageValuesNoBlank,
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -439,8 +413,8 @@ describe('TUI Update Dialog', () => {
     it('should select current item values when opening dialog', () => {
       const screen = blessed.screen({ mouse: true, smartCSR: true });
 
-      const statusOptions = blessed.list({ parent: screen, items: ['open', 'in-progress', 'blocked', 'completed', 'deleted'] });
-      const stageOptions = blessed.list({ parent: screen, items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'] });
+      const statusOptions = blessed.list({ parent: screen, items: statusLabels });
+      const stageOptions = blessed.list({ parent: screen, items: stageLabels });
       const priorityOptions = blessed.list({ parent: screen, items: ['critical', 'high', 'medium', 'low'] });
 
       const item = {
@@ -449,12 +423,12 @@ describe('TUI Update Dialog', () => {
         priority: 'high'
       };
 
-      statusOptions.select(2);
-      stageOptions.select(4);
+      statusOptions.select(Math.max(0, statusLabels.indexOf(rulesConfig.statusLabels.blocked ?? 'blocked')));
+      stageOptions.select(Math.max(0, stageLabels.indexOf(rulesConfig.stageLabels.in_review ?? 'in_review')));
       priorityOptions.select(1);
 
-      expect((statusOptions as any).selected).toBe(2);
-      expect((stageOptions as any).selected).toBe(4);
+      expect((statusOptions as any).selected).toBe(Math.max(0, statusLabels.indexOf(rulesConfig.statusLabels.blocked ?? 'blocked')));
+      expect((stageOptions as any).selected).toBe(Math.max(0, stageLabels.indexOf(rulesConfig.stageLabels.in_review ?? 'in_review')));
       expect((priorityOptions as any).selected).toBe(1);
 
       screen.destroy();
@@ -472,8 +446,8 @@ describe('TUI Update Dialog', () => {
         content: ''
       });
 
-      const statusOptions = blessed.list({ parent: screen, items: ['open', 'in-progress', 'blocked', 'completed', 'deleted'] });
-      const stageOptions = blessed.list({ parent: screen, items: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'] });
+      const statusOptions = blessed.list({ parent: screen, items: statusLabels });
+      const stageOptions = blessed.list({ parent: screen, items: stageLabels });
       const priorityOptions = blessed.list({ parent: screen, items: ['critical', 'high', 'medium', 'low'] });
 
       const item = {
@@ -484,14 +458,14 @@ describe('TUI Update Dialog', () => {
         priority: 'medium'
       };
 
-       const updateDialogStatusValues = rulesConfig.statusValues.map(value => rulesConfig.statusLabels[value] ?? value);
-       const updateDialogStageValues = rulesConfig.stageValues.filter(stage => stage !== '').map(value => rulesConfig.stageLabels[value] ?? value);
+      const updateDialogStatusValues = statusLabels;
+      const updateDialogStageValues = stageLabels;
       const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
 
-       const normalizeStatusValue = (value: string | undefined) => {
-         if (!value) return value;
-         return rulesConfig.statusLabels[value] ?? value;
-       };
+      const normalizeStatusValue = (value: string | undefined) => {
+        if (!value) return value;
+        return rulesConfig.statusLabels[value] ?? value;
+      };
 
       const updateDialogHeader = (overrides?: { status?: string; stage?: string; priority?: string; adjusted?: boolean }) => {
         const statusValue = overrides?.status ?? normalizeStatusValue(item.status) ?? '';
@@ -504,10 +478,10 @@ describe('TUI Update Dialog', () => {
       };
 
       updateDialogHeader();
-       expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels.open ?? 'open'} · Stage: ${rulesConfig.stageLabels.idea ?? 'idea'} · Priority: medium`);
+      expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels.open ?? 'open'} · Stage: ${rulesConfig.stageLabels.idea ?? 'idea'} · Priority: medium`);
 
-      statusOptions.select(1);
-      stageOptions.select(3);
+      statusOptions.select(Math.max(0, updateDialogStatusValues.indexOf(rulesConfig.statusLabels['in-progress'] ?? 'in-progress')));
+      stageOptions.select(Math.max(0, updateDialogStageValues.indexOf(rulesConfig.stageLabels.in_progress ?? 'in_progress')));
       priorityOptions.select(0);
       updateDialogHeader({
         status: updateDialogStatusValues[(statusOptions as any).selected ?? 0],
@@ -515,7 +489,7 @@ describe('TUI Update Dialog', () => {
         priority: updateDialogPriorityValues[(priorityOptions as any).selected ?? 2]
       });
 
-       expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels['in-progress'] ?? 'in-progress'} · Stage: ${rulesConfig.stageLabels.in_progress ?? 'in_progress'} · Priority: critical`);
+      expect(updateDialogText.getContent()).toContain(`Status: ${rulesConfig.statusLabels['in-progress'] ?? 'in-progress'} · Stage: ${rulesConfig.stageLabels.in_progress ?? 'in_progress'} · Priority: critical`);
 
       updateDialogHeader({
         status: 'completed',
@@ -533,12 +507,13 @@ describe('TUI Update Dialog', () => {
   describe('Update Dialog Submit Updates', () => {
     it('should reject invalid status/stage combinations', () => {
       const item = { status: 'open', stage: 'idea', priority: 'medium' };
+      const statusIndex = rulesConfig.statusValues.indexOf('completed');
       const result = buildUpdateDialogUpdates(
         item,
-        { statusIndex: 3, stageIndex: 0, priorityIndex: 2 },
+        { statusIndex, stageIndex: 0, priorityIndex: 2 },
         {
-          statuses: ['open', 'in-progress', 'blocked', 'completed', 'deleted'],
-          stages: ['idea', 'prd_complete', 'plan_complete', 'in_progress', 'in_review', 'done'],
+          statuses: rulesConfig.statusValues,
+          stages: stageValuesNoBlank,
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -572,12 +547,14 @@ describe('TUI Update Dialog', () => {
     });
     it('should build updates only for changed fields', () => {
       const item = { status: 'open', stage: 'idea', priority: 'medium' };
+      const statusIndex = rulesConfig.statusValues.indexOf('in-progress');
+      const stageIndex = stageValuesNoBlank.indexOf('in_progress');
       const result = buildUpdateDialogUpdates(
         item,
-        { statusIndex: 1, stageIndex: 3, priorityIndex: 1 },
+        { statusIndex, stageIndex, priorityIndex: 1 },
         {
           statuses: rulesConfig.statusValues,
-           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+          stages: stageValuesNoBlank,
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -601,7 +578,7 @@ describe('TUI Update Dialog', () => {
         { statusIndex: 0, stageIndex: 0, priorityIndex: 2 },
         {
           statuses: rulesConfig.statusValues,
-           stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+          stages: stageValuesNoBlank,
           priorities: ['critical', 'high', 'medium', 'low'],
         },
         {
@@ -616,10 +593,14 @@ describe('TUI Update Dialog', () => {
 
     it('should submit updates and comment in a single action', () => {
       const item = { id: 'WL-TEST-1', status: 'open', stage: 'idea', priority: 'medium' };
-      const selections = { statusIndex: 2, stageIndex: 0, priorityIndex: 1 };
+      const selections = {
+        statusIndex: rulesConfig.statusValues.indexOf('blocked'),
+        stageIndex: 0,
+        priorityIndex: 1,
+      };
       const values = {
         statuses: rulesConfig.statusValues,
-         stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+        stages: stageValuesNoBlank,
         priorities: ['critical', 'high', 'medium', 'low'],
       };
       const updateCalls: Array<Record<string, string>> = [];
@@ -675,12 +656,14 @@ describe('TUI Update Dialog', () => {
 
       let commentValue = 'keep me';
       const submitUpdateDialogWithFailure = () => {
+        const statusIndex = rulesConfig.statusValues.indexOf('in-progress');
+        const stageIndex = stageValuesNoBlank.indexOf('in_progress');
         const { updates, hasChanges, comment } = buildUpdateDialogUpdates(
           { status: 'open', stage: 'idea', priority: 'medium' },
-          { statusIndex: 1, stageIndex: 3, priorityIndex: 1 },
+          { statusIndex, stageIndex, priorityIndex: 1 },
           {
             statuses: rulesConfig.statusValues,
-             stages: rulesConfig.stageValues.filter(stage => stage !== ''),
+            stages: stageValuesNoBlank,
             priorities: ['critical', 'high', 'medium', 'low'],
           },
           {
@@ -756,8 +739,8 @@ describe('TUI Update Dialog', () => {
 
     it('should move focus forward and back when textarea handles Tab/Shift-Tab', () => {
       const screen = blessed.screen({ mouse: true, smartCSR: true });
-      const stageList = blessed.list({ parent: screen, items: ['idea', 'done'] });
-      const statusList = blessed.list({ parent: screen, items: ['open', 'completed'] });
+      const stageList = blessed.list({ parent: screen, items: stageLabels.slice(0, 2) });
+      const statusList = blessed.list({ parent: screen, items: statusLabels.slice(0, 2) });
       const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
       const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true, keys: true });
 
@@ -830,18 +813,10 @@ describe('TUI Update Dialog', () => {
 
       // Step 2: Simulate selecting a stage option
       // In actual code: updateDialogOptions.on('select', ...)
-      const selectedIdx = 3; // 'in_progress'
-      const stageMapping: Record<number, string> = {
-        0: 'idea',
-        1: 'prd_complete',
-        2: 'plan_complete',
-        3: 'in_progress',
-        4: 'in_review',
-        5: 'done',
-        6: 'blocked'
-      };
+      const selectedIdx = stageValuesNoBlank.indexOf('in_progress');
+      const stageMapping = Object.fromEntries(stageValuesNoBlank.map((value, idx) => [idx, value]));
 
-      if (selectedIdx < 7) {
+      if (selectedIdx >= 0 && selectedIdx < stageValuesNoBlank.length) {
         db.update('WL-TEST-1', { stage: stageMapping[selectedIdx] });
       }
 
@@ -857,20 +832,24 @@ describe('TUI Update Dialog', () => {
       const db = new WorklogDatabase('WL', undefined, undefined, true, false);
 
       // First update
-      db.update('WL-TEST-1', { stage: 'prd_complete' });
-      expect(db.get('WL-TEST-1')?.stage).toBe('prd_complete');
+      const firstStage = stageValuesNoBlank[0] ?? 'idea';
+      db.update('WL-TEST-1', { stage: firstStage });
+      expect(db.get('WL-TEST-1')?.stage).toBe(firstStage);
 
       // Second update
-      db.update('WL-TEST-1', { stage: 'plan_complete' });
-      expect(db.get('WL-TEST-1')?.stage).toBe('plan_complete');
+      const secondStage = stageValuesNoBlank[1] ?? firstStage;
+      db.update('WL-TEST-1', { stage: secondStage });
+      expect(db.get('WL-TEST-1')?.stage).toBe(secondStage);
 
       // Third update
-      db.update('WL-TEST-1', { stage: 'in_progress' });
-      expect(db.get('WL-TEST-1')?.stage).toBe('in_progress');
+      const thirdStage = stageValuesNoBlank[2] ?? secondStage;
+      db.update('WL-TEST-1', { stage: thirdStage });
+      expect(db.get('WL-TEST-1')?.stage).toBe(thirdStage);
 
       // Fourth update
-      db.update('WL-TEST-1', { stage: 'done' });
-      expect(db.get('WL-TEST-1')?.stage).toBe('done');
+      const finalStage = stageValuesNoBlank[stageValuesNoBlank.length - 1] ?? thirdStage;
+      db.update('WL-TEST-1', { stage: finalStage });
+      expect(db.get('WL-TEST-1')?.stage).toBe(finalStage);
     });
   });
 

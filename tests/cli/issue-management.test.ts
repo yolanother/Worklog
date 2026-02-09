@@ -36,7 +36,7 @@ describe('CLI Issue Management Tests', () => {
 
     it('should create a work item with all optional fields', async () => {
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json create -t "Full task" -d "Description" -s in-progress -p high --tags "tag1,tag2" -a "john" --stage "dev"`
+        `tsx ${cliPath} --json create -t "Full task" -d "Description" -s in-progress -p high --tags "tag1,tag2" -a "john" --stage "in_progress"`
       );
 
       const result = JSON.parse(stdout);
@@ -47,7 +47,35 @@ describe('CLI Issue Management Tests', () => {
       expect(result.workItem.priority).toBe('high');
       expect(result.workItem.tags).toEqual(['tag1', 'tag2']);
       expect(result.workItem.assignee).toBe('john');
-      expect(result.workItem.stage).toBe('dev');
+      expect(result.workItem.stage).toBe('in_progress');
+    });
+
+    it('should reject incompatible status/stage combinations', async () => {
+      try {
+        await execAsync(
+          `tsx ${cliPath} --json create -t "Bad combo" -s open --stage "done"`
+        );
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || error.stdout || '{}');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid status/stage combination');
+        expect(result.error).toContain('Allowed stages for status "open"');
+        expect(result.error).toContain('Allowed statuses for stage "done"');
+      }
+    });
+
+    it('should normalize kebab/underscore status and stage with warnings', async () => {
+      const { stdout, stderr } = await execAsync(
+        `tsx ${cliPath} --json create -t "Normalize" -s in_progress --stage "in-progress"`
+      );
+
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.status).toBe('in-progress');
+      expect(result.workItem.stage).toBe('in_progress');
+      expect(stderr).toContain('Warning: normalized status "in_progress" to "in-progress".');
+      expect(stderr).toContain('Warning: normalized stage "in-progress" to "in_progress".');
     });
   });
 
@@ -71,8 +99,13 @@ describe('CLI Issue Management Tests', () => {
     });
 
     it('should update multiple fields', async () => {
+      const { stdout: created } = await execAsync(
+        `tsx ${cliPath} --json create -t "Update base" -s in-progress --stage "in_progress"`
+      );
+      const itemId = JSON.parse(created).workItem.id;
+
       const { stdout } = await execAsync(
-        `tsx ${cliPath} --json update ${workItemId} -t "Updated" -s completed -p high`
+        `tsx ${cliPath} --json update ${itemId} -t "Updated" -s completed -p high --stage "in_review"`
       );
 
       const result = JSON.parse(stdout);
@@ -80,6 +113,42 @@ describe('CLI Issue Management Tests', () => {
       expect(result.workItem.title).toBe('Updated');
       expect(result.workItem.status).toBe('completed');
       expect(result.workItem.priority).toBe('high');
+      expect(result.workItem.stage).toBe('in_review');
+    });
+
+    it('should reject incompatible status/stage updates', async () => {
+      const { stdout: created } = await execAsync(
+        `tsx ${cliPath} --json create -t "Done item" -s completed --stage "done"`
+      );
+      const itemId = JSON.parse(created).workItem.id;
+
+      try {
+        await execAsync(
+          `tsx ${cliPath} --json update ${itemId} --stage "idea"`
+        );
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        const result = JSON.parse(error.stderr || error.stdout || '{}');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid status/stage combination');
+      }
+    });
+
+    it('should normalize status/stage updates with warnings', async () => {
+      const created = await execAsync(
+        `tsx ${cliPath} --json create -t "Stage base" --stage "in_progress"`
+      );
+      const baseItem = JSON.parse(created.stdout).workItem.id;
+
+      const { stdout, stderr } = await execAsync(
+        `tsx ${cliPath} --json update ${baseItem} --status in_progress --stage "in-progress"`
+      );
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.workItem.status).toBe('in-progress');
+      expect(result.workItem.stage).toBe('in_progress');
+      expect(stderr).toContain('Warning: normalized status "in_progress" to "in-progress".');
+      expect(stderr).toContain('Warning: normalized stage "in-progress" to "in_progress".');
     });
   });
 
@@ -249,7 +318,7 @@ describe('CLI Issue Management Tests', () => {
       const { stdout: unblockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
       expect(JSON.parse(unblockedShowStdout).workItem.status).toBe('open');
 
-      await execAsync(`tsx ${cliPath} --json update ${blockerId} --status in-progress`);
+      await execAsync(`tsx ${cliPath} --json update ${blockerId} --status in-progress --stage in_progress`);
       const { stdout: blockedShowStdout } = await execAsync(`tsx ${cliPath} --json show ${blockedId}`);
       expect(JSON.parse(blockedShowStdout).workItem.status).toBe('blocked');
     });
