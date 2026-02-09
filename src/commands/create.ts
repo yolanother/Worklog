@@ -6,6 +6,7 @@ import type { PluginContext } from '../plugin-types.js';
 import type { CreateOptions } from '../cli-types.js';
 import type { WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
+import { canValidateStatusStage, validateStatusStageCompatibility, validateStatusStageInput } from './status-stage-validation.js';
 import { promises as fs } from 'fs';
 
 export default function register(ctx: PluginContext): void {
@@ -45,15 +46,43 @@ export default function register(ctx: PluginContext): void {
         }
       }
 
+      const config = utils.getConfig();
+      let normalizedStatus = (options.status || 'open') as WorkItemStatus;
+      let normalizedStage = options.stage || '';
+      if (canValidateStatusStage(config)) {
+        let warnings: string[] = [];
+        try {
+          const validation = validateStatusStageInput(
+            {
+              status: options.status || 'open',
+              stage: options.stage || '',
+            },
+            config
+          );
+          normalizedStatus = validation.status as WorkItemStatus;
+          normalizedStage = validation.stage;
+          warnings = validation.warnings;
+          validateStatusStageCompatibility(normalizedStatus, normalizedStage, validation.rules);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          output.error(message, { success: false, error: message });
+          process.exit(1);
+        }
+
+        for (const warning of warnings) {
+          console.error(warning);
+        }
+      }
+
       const item = db.createWithNextSortIndex({
         title: options.title,
         description: description,
-        status: (options.status || 'open') as WorkItemStatus,
+        status: normalizedStatus as WorkItemStatus,
         priority: (options.priority || 'medium') as WorkItemPriority,
         parentId: utils.normalizeCliId(options.parent, options.prefix) || null,
         tags: options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [],
         assignee: options.assignee || '',
-        stage: options.stage || '',
+        stage: normalizedStage,
         risk: (options.risk || '') as WorkItemRiskLevel | '',
         effort: (options.effort || '') as WorkItemEffortLevel | '',
         issueType: options.issueType || '',

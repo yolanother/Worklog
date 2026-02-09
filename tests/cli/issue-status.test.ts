@@ -239,7 +239,9 @@ describe('CLI Issue Status Tests', () => {
       const openResult = JSON.parse(openStdout);
       const openId = openResult.workItem.id;
 
-      const { stdout: inProgressStdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress task" -s in-progress -p low`);
+      const { stdout: inProgressStdout } = await execAsync(
+        `tsx ${cliPath} --json create -t "In progress task" -s in-progress --stage in_progress -p low`
+      );
       const inProgressResult = JSON.parse(inProgressStdout);
       const inProgressId = inProgressResult.workItem.id;
 
@@ -252,7 +254,7 @@ describe('CLI Issue Status Tests', () => {
     });
 
     it('should skip completed items', async () => {
-      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed -p critical`);
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed --stage done -p critical`);
       const { stdout: openStdout } = await execAsync(`tsx ${cliPath} --json create -t "Open task" -s open -p low`);
       const openResult = JSON.parse(openStdout);
 
@@ -278,9 +280,13 @@ describe('CLI Issue Status Tests', () => {
   describe('in-progress command', () => {
     it('should list in-progress work items in JSON mode', async () => {
       await execAsync(`tsx ${cliPath} create -t "Open task" -s open`);
-      const { stdout: ip1Stdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress 1" -s in-progress -p high`);
-      const { stdout: ip2Stdout } = await execAsync(`tsx ${cliPath} --json create -t "In progress 2" -s in-progress -p medium`);
-      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed`);
+      const { stdout: ip1Stdout } = await execAsync(
+        `tsx ${cliPath} --json create -t "In progress 1" -s in-progress --stage in_progress -p high`
+      );
+      const { stdout: ip2Stdout } = await execAsync(
+        `tsx ${cliPath} --json create -t "In progress 2" -s in-progress --stage in_progress -p medium`
+      );
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed --stage done`);
 
       const ip1 = JSON.parse(ip1Stdout);
       const ip2 = JSON.parse(ip2Stdout);
@@ -299,7 +305,7 @@ describe('CLI Issue Status Tests', () => {
 
     it('should return empty list when no in-progress items exist', async () => {
       await execAsync(`tsx ${cliPath} create -t "Open task" -s open`);
-      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed`);
+      await execAsync(`tsx ${cliPath} create -t "Completed task" -s completed --stage done`);
 
       const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress`);
 
@@ -310,10 +316,14 @@ describe('CLI Issue Status Tests', () => {
     });
 
     it('should display in-progress items with parent-child relationships', async () => {
-      const { stdout: parentStdout } = await execAsync(`tsx ${cliPath} --json create -t "Parent task" -s in-progress -p high`);
+      const { stdout: parentStdout } = await execAsync(
+        `tsx ${cliPath} --json create -t "Parent task" -s in-progress --stage in_progress -p high`
+      );
       const parent = JSON.parse(parentStdout);
 
-      await execAsync(`tsx ${cliPath} --json create -t "Child task" -s in-progress -p medium -P ${parent.workItem.id}`);
+      await execAsync(
+        `tsx ${cliPath} --json create -t "Child task" -s in-progress --stage in_progress -p medium -P ${parent.workItem.id}`
+      );
 
       const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress`);
 
@@ -327,7 +337,7 @@ describe('CLI Issue Status Tests', () => {
     });
 
     it('should display human-readable output in non-JSON mode', async () => {
-      await execAsync(`tsx ${cliPath} create -t "In progress task" -s in-progress -p high`);
+      await execAsync(`tsx ${cliPath} create -t "In progress task" -s in-progress --stage in_progress -p high`);
 
       const { stdout } = await execAsync(`tsx ${cliPath} in-progress`);
 
@@ -342,9 +352,9 @@ describe('CLI Issue Status Tests', () => {
     });
 
     it('should filter by assignee', async () => {
-      await execAsync(`tsx ${cliPath} --json create -t "Alice task" -s in-progress -a "alice"`);
-      await execAsync(`tsx ${cliPath} --json create -t "Bob task" -s in-progress -a "bob"`);
-      await execAsync(`tsx ${cliPath} --json create -t "Unassigned task" -s in-progress`);
+      await execAsync(`tsx ${cliPath} --json create -t "Alice task" -s in-progress --stage in_progress -a "alice"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Bob task" -s in-progress --stage in_progress -a "bob"`);
+      await execAsync(`tsx ${cliPath} --json create -t "Unassigned task" -s in-progress --stage in_progress`);
 
       const { stdout } = await execAsync(`tsx ${cliPath} --json in-progress --assignee alice`);
 
@@ -356,7 +366,9 @@ describe('CLI Issue Status Tests', () => {
     });
 
     it('should show output in new format Title - ID', async () => {
-      const { stdout: createStdout } = await execAsync(`tsx ${cliPath} --json create -t "Test Task" -s in-progress`);
+      const { stdout: createStdout } = await execAsync(
+        `tsx ${cliPath} --json create -t "Test Task" -s in-progress --stage in_progress`
+      );
       const created = JSON.parse(createStdout);
       const itemId = created.workItem.id;
 

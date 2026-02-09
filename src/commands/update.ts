@@ -7,6 +7,7 @@ import type { UpdateOptions } from '../cli-types.js';
 import type { UpdateWorkItemInput, WorkItemStatus, WorkItemPriority, WorkItemRiskLevel, WorkItemEffortLevel } from '../types.js';
 import { promises as fs } from 'fs';
 import { humanFormatWorkItem, resolveFormat } from './helpers.js';
+import { canValidateStatusStage, validateStatusStageCompatibility, validateStatusStageInput } from './status-stage-validation.js';
 
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
@@ -46,13 +47,46 @@ export default function register(ctx: PluginContext): void {
           process.exit(1);
         }
       }
-      if (options.status) updates.status = options.status as WorkItemStatus;
+      const statusCandidate = options.status !== undefined ? options.status : undefined;
       if (options.priority) updates.priority = options.priority as WorkItemPriority;
       if (options.parent !== undefined) updates.parentId = utils.normalizeCliId(options.parent, options.prefix) || null;
       
       if (options.tags) updates.tags = options.tags.split(',').map((t: string) => t.trim());
       if (options.assignee !== undefined) updates.assignee = options.assignee;
-      if (options.stage !== undefined) updates.stage = options.stage;
+      const stageCandidate = options.stage !== undefined ? options.stage : undefined;
+      const config = utils.getConfig();
+      if ((statusCandidate !== undefined || stageCandidate !== undefined) && canValidateStatusStage(config)) {
+        const current = db.get(normalizedId);
+        if (!current) {
+          output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
+          process.exit(1);
+        }
+        let normalizedStatus = current.status;
+        let normalizedStage = current.stage;
+        let warnings: string[] = [];
+        try {
+          const validation = validateStatusStageInput(
+            {
+              status: statusCandidate ?? current.status,
+              stage: stageCandidate ?? current.stage,
+            },
+            config
+          );
+          normalizedStatus = validation.status as WorkItemStatus;
+          normalizedStage = validation.stage;
+          warnings = validation.warnings;
+          validateStatusStageCompatibility(normalizedStatus, normalizedStage, validation.rules);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          output.error(message, { success: false, error: message });
+          process.exit(1);
+        }
+        for (const warning of warnings) {
+          console.error(warning);
+        }
+        if (statusCandidate !== undefined) updates.status = normalizedStatus as WorkItemStatus;
+        if (stageCandidate !== undefined) updates.stage = normalizedStage;
+      }
       if (options.risk !== undefined) updates.risk = options.risk as WorkItemRiskLevel | '';
       if (options.effort !== undefined) updates.effort = options.effort as WorkItemEffortLevel | '';
       if (options.issueType !== undefined) updates.issueType = options.issueType;

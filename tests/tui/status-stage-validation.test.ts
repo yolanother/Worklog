@@ -4,7 +4,7 @@ import {
   getAllowedStatusesForStage,
   isStatusStageCompatible,
 } from '../../src/tui/status-stage-validation.js';
-import { loadStatusStageRules } from '../../src/status-stage-rules.js';
+import { loadStatusStageRules, normalizeStageValue, normalizeStatusValue } from '../../src/status-stage-rules.js';
 
 describe('Status/Stage Validation Helper', () => {
   const rulesConfig = loadStatusStageRules();
@@ -56,5 +56,17 @@ describe('Status/Stage Validation Helper', () => {
       const actual = [...getAllowedStatusesForStage(stage, rules)].sort();
       expect(actual).toEqual(expected);
     });
+  });
+
+  it('normalizes status values by replacing underscores', () => {
+    expect(normalizeStatusValue('in_progress')).toBe('in-progress');
+    expect(normalizeStatusValue('open')).toBe('open');
+    expect(normalizeStatusValue(undefined)).toBeUndefined();
+  });
+
+  it('normalizes stage values by replacing hyphens', () => {
+    expect(normalizeStageValue('in-progress')).toBe('in_progress');
+    expect(normalizeStageValue('idea')).toBe('idea');
+    expect(normalizeStageValue(undefined)).toBeUndefined();
   });
 });
