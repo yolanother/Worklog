@@ -78,10 +78,16 @@ export class WorklogDatabase {
 
     const metadata = this.store.getAllMetadata();
     const lastImportMtime = metadata.lastJsonlImportMtime;
+    const lastExportMtimeStr = this.store.getMetadata('lastJsonlExportMtime');
+    const lastExportMtime = lastExportMtimeStr ? Number(lastExportMtimeStr) : undefined;
 
     // If DB is empty or JSONL is newer, refresh from JSONL
     const itemCount = this.store.countWorkItems();
-    const shouldRefresh = itemCount === 0 || !lastImportMtime || jsonlMtime > lastImportMtime;
+    // Avoid re-importing a file we just exported ourselves. If the JSONL mtime equals the
+    // last export mtime recorded in the DB, skip the refresh. Otherwise fall back to the
+    // previous logic (DB empty or JSONL newer than last import).
+    const isOurExport = lastExportMtime !== undefined && Math.abs(jsonlMtime - lastExportMtime) < 1;
+    const shouldRefresh = !isOurExport && (itemCount === 0 || !lastImportMtime || jsonlMtime > lastImportMtime);
 
      if (shouldRefresh) {
        if (!this.silent) {
@@ -138,7 +144,17 @@ export class WorklogDatabase {
       this.debug(`WorklogDatabase.exportToJsonl: exporting ${itemsToExport.length} items and ${commentsToExport.length} comments to ${this.jsonlPath}`);
     }
     const dependencyEdges = this.store.getAllDependencyEdges();
-    exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath, dependencyEdges);
+    try {
+      const mtime = exportToJsonl(itemsToExport, commentsToExport, this.jsonlPath, dependencyEdges);
+      // Record export mtime so other processes can avoid re-importing our own export
+      this.store.setMetadata('lastJsonlExportMtime', String(Math.floor(mtime)));
+      this.store.setMetadata('lastJsonlExportAt', new Date().toISOString());
+    } catch (error) {
+      if (!this.silent) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.debug(`WorklogDatabase.exportToJsonl: failed to write JSONL: ${message}`);
+      }
+    }
   }
 
   private debug(message: string): void {
@@ -421,7 +437,11 @@ export class WorklogDatabase {
     const updated: WorkItem = {
       ...item,
       status: 'deleted',
-      stage: '',
+      // Preserve the existing stage so UI/clients can still show where the
+      // item was in the workflow when it was deleted. Clearing the stage
+      // caused unexpected regressions in clients/tests that expect the
+      // original stage to be retained.
+      stage: item.stage,
       updatedAt: new Date().toISOString(),
     };
 

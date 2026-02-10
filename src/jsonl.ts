@@ -65,7 +65,7 @@ export function exportToJsonl(
   comments: Comment[],
   filepath: string,
   dependencyEdges: DependencyEdge[] = []
-): void {
+): number {
   const lines: string[] = [];
 
   const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id));
@@ -98,8 +98,19 @@ export function exportToJsonl(
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  
-  fs.writeFileSync(filepath, lines.join('\n') + '\n', 'utf-8');
+
+  // Atomic write: write to a temporary file in the same directory then rename
+  // to avoid other processes reading a partially-written file.
+  const content = lines.join('\n') + '\n';
+  const tempName = `${path.basename(filepath)}.tmp-${Math.random().toString(36).slice(2, 10)}`;
+  const tempPath = path.join(dir, tempName);
+
+  fs.writeFileSync(tempPath, content, 'utf-8');
+  // Rename is atomic on most POSIX filesystems when performed within same fs/dir
+  fs.renameSync(tempPath, filepath);
+
+  const stats = fs.statSync(filepath);
+  return stats.mtimeMs;
 }
 
 /**

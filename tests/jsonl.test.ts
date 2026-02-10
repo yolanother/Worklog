@@ -121,6 +121,24 @@ describe('JSONL Import/Export', () => {
       const content = fs.readFileSync(testFilePath, 'utf-8');
       expect(content).toBe('\n');
     });
+
+    it('should return file mtime and not leave temporary files behind', () => {
+      const items: WorkItem[] = [];
+      const comments: Comment[] = [];
+
+      const mtime = exportToJsonl(items, comments, testFilePath);
+
+      expect(typeof mtime).toBe('number');
+      const stats = fs.statSync(testFilePath);
+      expect(mtime).toBe(stats.mtimeMs);
+
+      // Ensure no temp files remain (pattern: <basename>.tmp-<random>)
+      const dir = path.dirname(testFilePath);
+      const base = path.basename(testFilePath);
+      const files = fs.readdirSync(dir);
+      const hasTemp = files.some(f => f.startsWith(base + '.tmp-'));
+      expect(hasTemp).toBe(false);
+    });
   });
 
   describe('importFromJsonl', () => {
