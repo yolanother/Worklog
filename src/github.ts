@@ -718,6 +718,20 @@ export function listGithubIssueComments(config: GithubConfig, issueNumber: numbe
   return raw.map(comment => normalizeGithubIssueComment(comment));
 }
 
+// Async variants -----------------------------------------------------------
+export async function listGithubIssueCommentsAsync(config: GithubConfig, issueNumber: number): Promise<GithubIssueComment[]> {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api repos/${owner}/${name}/issues/${issueNumber}/comments --paginate`;
+  try {
+    const data = await runGhJsonAsync(command);
+    if (!data) return [];
+    const raw = Array.isArray(data) ? data : [];
+    return raw.map(comment => normalizeGithubIssueComment(comment));
+  } catch {
+    return [];
+  }
+}
+
 export function createGithubIssueComment(config: GithubConfig, issueNumber: number, body: string): GithubIssueComment {
   const { owner, name } = parseRepoSlug(config.repo);
   const command = `gh api -X POST repos/${owner}/${name}/issues/${issueNumber}/comments -f body=${JSON.stringify(body)}`;
@@ -725,10 +739,24 @@ export function createGithubIssueComment(config: GithubConfig, issueNumber: numb
   return normalizeGithubIssueComment(data);
 }
 
+export async function createGithubIssueCommentAsync(config: GithubConfig, issueNumber: number, body: string): Promise<GithubIssueComment> {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api -X POST repos/${owner}/${name}/issues/${issueNumber}/comments -f body=${JSON.stringify(body)}`;
+  const data = await runGhJsonAsync(command);
+  return normalizeGithubIssueComment(data);
+}
+
 export function updateGithubIssueComment(config: GithubConfig, commentId: number, body: string): GithubIssueComment {
   const { owner, name } = parseRepoSlug(config.repo);
   const command = `gh api -X PATCH repos/${owner}/${name}/issues/comments/${commentId} -f body=${JSON.stringify(body)}`;
   const data = runGhJson(command);
+  return normalizeGithubIssueComment(data);
+}
+
+export async function updateGithubIssueCommentAsync(config: GithubConfig, commentId: number, body: string): Promise<GithubIssueComment> {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api -X PATCH repos/${owner}/${name}/issues/comments/${commentId} -f body=${JSON.stringify(body)}`;
+  const data = await runGhJsonAsync(command);
   return normalizeGithubIssueComment(data);
 }
 
@@ -822,6 +850,114 @@ export function createGithubIssue(config: GithubConfig, payload: { title: string
   const view = runGh(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
   const parsed = JSON.parse(view) as any;
   return normalizeGithubIssue(parsed);
+}
+
+export async function ensureGithubLabelsAsync(config: GithubConfig, labels: string[]): Promise<void> {
+  const unique = Array.from(new Set(labels.filter(label => label.trim() !== '')));
+  if (unique.length === 0) return;
+  const { owner, name } = parseRepoSlug(config.repo);
+  try {
+    const existingRaw = await runGhJsonAsync(`gh api repos/${owner}/${name}/labels --paginate`);
+    const existing = new Set<string>();
+    if (existingRaw) {
+      for (const entry of existingRaw) {
+        if (entry?.name) existing.add(entry.name);
+      }
+    }
+    for (const label of unique) {
+      if (existing.has(label)) continue;
+      const color = labelColor(label);
+      const createCommand = `gh api -X POST repos/${owner}/${name}/labels -f name=${JSON.stringify(label)} -f color=${JSON.stringify(color)}`;
+      try {
+        await runGhAsync(createCommand);
+        continue;
+      } catch {
+        const fallbackCommand = `gh issue label create ${JSON.stringify(label)} --repo ${config.repo} --color ${color}`;
+        try { await runGhAsync(fallbackCommand); } catch (_) { /* ignore */ }
+      }
+    }
+  } catch {
+    // ignore label creation failures
+  }
+}
+
+export async function createGithubIssueAsync(config: GithubConfig, payload: { title: string; body: string; labels: string[] }): Promise<GithubIssueRecord> {
+  const command = `gh issue create --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
+  const output = await runGhAsync(command, payload.body);
+  let issueNumber: number | null = null;
+  const match = output.match(/\/(\d+)$/);
+  if (match) issueNumber = parseInt(match[1], 10);
+  if (issueNumber !== null && payload.labels.length > 0) {
+    await ensureGithubLabelsAsync(config, payload.labels);
+    try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`); } catch (_) {}
+  }
+  if (issueNumber === null) {
+    const view = await runGhJsonAsync(`gh issue list --repo ${config.repo} --limit 1 --json number,id,title,body,state,labels,updatedAt`);
+    if (Array.isArray(view) && view.length > 0) return normalizeGithubIssue(view[0]);
+    throw new Error('Failed to create GitHub issue');
+  }
+  const parsed = await runGhJsonAsync(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
+  return normalizeGithubIssue(parsed);
+}
+
+export async function updateGithubIssueAsync(
+  config: GithubConfig,
+  issueNumber: number,
+  payload: { title: string; body: string; labels: string[]; state: 'open' | 'closed' }
+): Promise<GithubIssueRecord> {
+  const command = `gh issue edit ${issueNumber} --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
+  await runGhAsync(command, payload.body);
+
+  if (payload.state === 'closed') {
+    try { await runGhAsync(`gh issue close ${issueNumber} --repo ${config.repo}`); } catch (_) {}
+  } else {
+    try { await runGhAsync(`gh issue reopen ${issueNumber} --repo ${config.repo}`); } catch (_) {}
+  }
+
+  if (payload.labels.length > 0) {
+    const normalizedPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
+    let current: GithubIssueRecord;
+    try { current = await getGithubIssueAsync(config, issueNumber); } catch { current = getGithubIssue(config, issueNumber); }
+    const statusLabelsToRemove = current.labels.filter(label => isStatusLabel(label, config.labelPrefix) && label !== (payload.labels.find(l => l.startsWith(`${normalizedPrefix}status:`)) || null));
+    if (statusLabelsToRemove.length > 0) {
+      try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --remove-label ${JSON.stringify(statusLabelsToRemove.join(','))}`); } catch (_) {}
+    }
+
+    await ensureGithubLabelsAsync(config, payload.labels);
+    try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`); } catch (_) {}
+  }
+
+  const parsed = await runGhJsonAsync(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
+  return normalizeGithubIssue(parsed);
+}
+
+export async function getGithubIssueAsync(config: GithubConfig, issueNumber: number): Promise<GithubIssueRecord> {
+  const parsed = await runGhJsonAsync(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
+  return normalizeGithubIssue(parsed);
+}
+
+export async function listGithubIssuesAsync(config: GithubConfig, since?: string): Promise<GithubIssueRecord[]> {
+  const sinceParam = since ? `&since=${encodeURIComponent(since)}` : '';
+  const apiPath = `repos/${config.repo}/issues?state=all&per_page=100${sinceParam}`;
+  const apiCommand = `gh api ${quoteShellValue(apiPath)} --paginate`;
+  const output = await runGhAsync(apiCommand);
+  const parsed = JSON.parse(output) as any[];
+  const issuesOnly = parsed.filter(entry => {
+    if (entry.pull_request) return false;
+    if (typeof entry.html_url === 'string' && entry.html_url.includes('/pull/')) return false;
+    if (typeof entry.pull_request_url === 'string' && entry.pull_request_url.length > 0) return false;
+    return true;
+  });
+  return issuesOnly.map(entry => normalizeGithubIssue({
+    id: entry.id,
+    number: entry.number,
+    title: entry.title,
+    body: entry.body,
+    state: entry.state,
+    labels: entry.labels || [],
+    updatedAt: entry.updated_at,
+    subIssuesSummary: entry.sub_issues_summary ? { total: entry.sub_issues_summary.total ?? 0, completed: entry.sub_issues_summary.completed ?? 0 } : undefined,
+  }));
 }
 
 export function updateGithubIssue(

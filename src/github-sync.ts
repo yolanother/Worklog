@@ -20,11 +20,17 @@ import {
   workItemToIssuePayload,
   createGithubIssue,
   updateGithubIssue,
+  createGithubIssueAsync,
+  updateGithubIssueAsync,
+  getGithubIssueAsync,
   listGithubIssues,
   getGithubIssue,
   listGithubIssueComments,
+  listGithubIssueCommentsAsync,
   createGithubIssueComment,
+  createGithubIssueCommentAsync,
   updateGithubIssueComment,
+  updateGithubIssueCommentAsync,
   normalizeGithubLabelPrefix,
   issueToWorkItemFields,
 } from './github.js';
@@ -221,9 +227,12 @@ export async function upsertIssuesFromWorkItems(
     return { created, updated, latestUpdatedAt };
   };
 
-  for (const item of issueItems) {
+  // Concurrency: upsert issues and comments with a bounded concurrency pool
+  const upsertConcurrency = Number(process.env.WL_GITHUB_CONCURRENCY || '6');
+
+  async function upsertMapper(item: WorkItem, idx: number) {
     if (onProgress) {
-      onProgress({ phase: 'push', current: processed + 1, total: issueItems.length });
+      onProgress({ phase: 'push', current: idx + 1, total: issueItems.length });
     }
     const itemComments = byItemId.get(item.id) || [];
     const shouldSyncComments = commentNeedsSync(item, itemComments);
@@ -237,8 +246,7 @@ export async function upsertIssuesFromWorkItems(
         onVerboseLog(`[upsert] skip ${item.id} (no issue or comment changes)`);
       }
       skippedUpdates += 1;
-      processed += 1;
-      continue;
+      return;
     }
     const payload = workItemToIssuePayload(item, itemComments, labelPrefix, items);
 
@@ -255,10 +263,10 @@ export async function upsertIssuesFromWorkItems(
           onVerboseLog(`[upsert] ${item.githubIssueNumber ? 'update' : 'create'} ${item.id}`);
         }
         if (item.githubIssueNumber) {
-          issue = updateGithubIssue(config, item.githubIssueNumber, payload);
+          issue = await updateGithubIssueAsync(config, item.githubIssueNumber, payload);
           result.updated += 1;
         } else {
-          issue = createGithubIssue(config, {
+          issue = await createGithubIssueAsync(config, {
             title: payload.title,
             body: payload.body,
             labels: payload.labels,
@@ -278,10 +286,10 @@ export async function upsertIssuesFromWorkItems(
       const shouldSyncCommentsNow = itemComments.length > 0 && (shouldSyncComments || shouldUpdateIssue);
       if (shouldSyncCommentsNow && issueNumber) {
         const commentListStart = Date.now();
-        const existingComments = listGithubIssueComments(config, issueNumber);
+        const existingComments = await listGithubIssueCommentsAsync(config, issueNumber);
         timing.commentListMs += Date.now() - commentListStart;
         const commentUpsertStart = Date.now();
-        const commentSummary = upsertGithubIssueComments(config, issueNumber, itemComments, existingComments);
+        const commentSummary = await upsertGithubIssueCommentsAsync(config, issueNumber, itemComments, existingComments);
         timing.commentUpsertMs += Date.now() - commentUpsertStart;
         result.commentsCreated = (result.commentsCreated || 0) + commentSummary.created;
         result.commentsUpdated = (result.commentsUpdated || 0) + commentSummary.updated;
@@ -300,8 +308,79 @@ export async function upsertIssuesFromWorkItems(
       result.errors.push(`${item.id}: ${(error as Error).message}`);
       updatedById.set(item.id, item);
     }
-    processed += 1;
   }
+
+  // Helper async versions of comment upsert and list used by the mapper
+  async function upsertGithubIssueCommentsAsync(
+    issueConfig: GithubConfig,
+    issueNumber: number,
+    itemComments: Comment[],
+    existingComments: GithubIssueComment[]
+  ): Promise<{ created: number; updated: number; latestUpdatedAt: string | null }> {
+    // Build map of existing GH comments by worklog comment id (from markers)
+    const byWorklogId = new Map<string, GithubIssueComment>();
+    for (const ghComment of existingComments) {
+      const markerId = extractWorklogCommentId(ghComment.body || undefined);
+      if (!markerId) continue;
+      if (!byWorklogId.has(markerId)) byWorklogId.set(markerId, ghComment);
+    }
+
+    let created = 0;
+    let updated = 0;
+    let latestUpdatedAt: string | null = null;
+    const sorted = [...itemComments].sort(sortCommentsByCreatedAt);
+    for (const comment of sorted) {
+      const body = buildGithubCommentBody(comment);
+      const existing = byWorklogId.get(comment.id);
+      if (existing) {
+        // If the GH comment exists, only update if body changed OR GH's updatedAt is newer than our recorded mapping
+        const bodyMatch = (existing.body || '').trim() === body.trim();
+        if (!bodyMatch) {
+          const updatedComment = await updateGithubIssueCommentAsync(issueConfig, existing.id, body);
+          // Persist mapping back to local comment
+          comment.githubCommentId = existing.id;
+          comment.githubCommentUpdatedAt = updatedComment.updatedAt;
+          if (persistComment) {
+            try { persistComment(comment); } catch (err) { if (onVerboseLog) onVerboseLog && onVerboseLog(`[persist] failed to save comment mapping for ${comment.id}: ${(err as Error).message}`); }
+          }
+          updated += 1;
+          latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, updatedComment.updatedAt);
+        }
+        continue;
+      }
+
+      // No GH comment mapping found — create a new comment
+      const createdComment = await createGithubIssueCommentAsync(issueConfig, issueNumber, body);
+      // Persist mapping back to local comment so future runs can directly reference by ID
+      comment.githubCommentId = createdComment.id;
+      comment.githubCommentUpdatedAt = createdComment.updatedAt;
+      if (persistComment) {
+        try { persistComment(comment); } catch (err) { if (onVerboseLog) onVerboseLog && onVerboseLog(`[persist] failed to save comment mapping for ${comment.id}: ${(err as Error).message}`); }
+      }
+      created += 1;
+      latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, createdComment.updatedAt);
+    }
+
+    return { created, updated, latestUpdatedAt };
+  }
+
+  // simple concurrent mapper for issue upserts
+  async function mapWithConcurrencyItems(arr: WorkItem[], limit: number, fn: (v: WorkItem, i: number) => Promise<void>) {
+    const results: Promise<void>[] = [];
+    let i = 0;
+    async function worker() {
+      while (true) {
+        const idx = i++;
+        if (idx >= arr.length) return;
+        await fn(arr[idx], idx);
+      }
+    }
+    const workers = Math.min(limit, arr.length);
+    for (let w = 0; w < workers; w += 1) results.push(worker());
+    await Promise.all(results);
+  }
+
+  await mapWithConcurrencyItems(issueItems, upsertConcurrency, upsertMapper);
 
   result.skipped = items.length - issueItems.length + skippedUpdates;
 
