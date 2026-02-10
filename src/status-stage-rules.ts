@@ -65,9 +65,16 @@ export function createStatusStageRules(
 
   const statuses = config.statuses;
   const stages = config.stages;
-  const statusStageCompatibility = config.statusStageCompatibility;
+  // Make a shallow copy so we can safely modify compatibility for special cases
+  const statusStageCompatibility: Record<string, readonly string[]> = { ...config.statusStageCompatibility };
   const statusValues = statuses.map(entry => entry.value);
   const stageValues = stages.map(entry => entry.value);
+
+  // Ensure 'deleted' status allows any stage (deleted should not be restricted)
+  if (statusValues.includes('deleted')) {
+    statusStageCompatibility['deleted'] = stageValues;
+  }
+
   const stageStatusCompatibility = deriveStageStatusCompatibility(statusStageCompatibility, stageValues);
 
   const { labelsByValue: statusLabels, valuesByLabel: statusValuesByLabel } = buildLabelMaps(statuses);
