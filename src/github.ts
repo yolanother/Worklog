@@ -1,4 +1,7 @@
-import { execSync } from 'child_process';
+import { execSync, spawnSync, spawn } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { WorkItem, Comment, WorkItemStatus, WorkItemPriority } from './types.js';
 
 export interface GithubConfig {
@@ -30,6 +33,39 @@ const WORKLOG_COMMENT_MARKER_PREFIX = '<!-- worklog:comment=';
 const WORKLOG_COMMENT_MARKER_SUFFIX = ' -->';
 
 function runGh(command: string, input?: string): string {
+  // For potentially large paginated outputs, stream stdout to a temp file using spawnSync
+  // to avoid spawnSync/execSync ENOBUFS or buffer limitations in Node.
+  if (command.includes('--paginate')) {
+    const outPath = path.join(os.tmpdir(), `worklog-gh-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.out`);
+    const errPath = `${outPath}.err`;
+    // Open file descriptors for stdout/stderr
+    const outFd = fs.openSync(outPath, 'w');
+    const errFd = fs.openSync(errPath, 'w');
+    try {
+      const res = spawnSync('/bin/sh', ['-c', command], {
+        encoding: 'utf-8',
+        stdio: ['pipe', outFd, errFd],
+        input,
+      });
+      const stdout = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf-8').trim() : '';
+      const stderr = fs.existsSync(errPath) ? fs.readFileSync(errPath, 'utf-8').trim() : '';
+      if (res.error) {
+        const e = res.error as Error;
+        e.message = `${e.message}\n${stderr}`;
+        throw e;
+      }
+      if (res.status !== 0) {
+        throw new Error(stderr || `gh command failed with exit code ${res.status}`);
+      }
+      return stdout;
+    } finally {
+      try { fs.closeSync(outFd); } catch (_) {}
+      try { fs.closeSync(errFd); } catch (_) {}
+      try { fs.unlinkSync(outPath); } catch (_) {}
+      try { fs.unlinkSync(errPath); } catch (_) {}
+    }
+  }
+
   return execSync(command, {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -38,6 +74,36 @@ function runGh(command: string, input?: string): string {
 }
 
 function runGhDetailed(command: string, input?: string): { ok: boolean; stdout: string; stderr: string } {
+  // Use streaming approach for paginate commands to avoid buffer limits
+  if (command.includes('--paginate')) {
+    const outPath = path.join(os.tmpdir(), `worklog-gh-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.out`);
+    const errPath = `${outPath}.err`;
+    const outFd = fs.openSync(outPath, 'w');
+    const errFd = fs.openSync(errPath, 'w');
+    try {
+      const res = spawnSync('/bin/sh', ['-c', command], {
+        encoding: 'utf-8',
+        stdio: ['pipe', outFd, errFd],
+        input,
+      });
+      const stdout = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf-8').trim() : '';
+      const stderr = fs.existsSync(errPath) ? fs.readFileSync(errPath, 'utf-8').trim() : '';
+      if (!res || res.status !== 0) {
+        return { ok: false, stdout, stderr: stderr || `gh command failed with exit code ${res?.status ?? 'unknown'}` };
+      }
+      return { ok: true, stdout, stderr };
+    } catch (err: any) {
+      const stderr = err?.message || String(err);
+      const stdout = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf-8').trim() : '';
+      return { ok: false, stdout, stderr };
+    } finally {
+      try { fs.closeSync(outFd); } catch (_) {}
+      try { fs.closeSync(errFd); } catch (_) {}
+      try { fs.unlinkSync(outPath); } catch (_) {}
+      try { fs.unlinkSync(errPath); } catch (_) {}
+    }
+  }
+
   try {
     const stdout = execSync(command, {
       encoding: 'utf-8',
@@ -50,6 +116,86 @@ function runGhDetailed(command: string, input?: string): { ok: boolean; stdout: 
     const stderr = (error?.stderr ? String(error.stderr) : error?.message || '').trim();
     return { ok: false, stdout, stderr };
   }
+}
+
+// Async variants -----------------------------------------------------------
+function spawnCommand(command: string, input?: string, timeout = 120000): Promise<{ stdout: string; stderr: string; code: number | null; error?: Error }> {
+  return new Promise((resolve) => {
+    const child = spawn('/bin/sh', ['-c', command], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch (_) {}
+    }, timeout);
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ stdout: stdout.trim(), stderr: stderr.trim() || err.message, code: child.exitCode, error: err });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code });
+    });
+    if (input) {
+      try { child.stdin.write(input); } catch (_) {}
+    }
+    try { child.stdin.end(); } catch (_) {}
+  });
+}
+
+async function runGhAsync(command: string, input?: string): Promise<string> {
+  // For paginate commands prefer streaming via spawnCommand
+  const res = await spawnCommand(command, input);
+  if (res.error) throw res.error;
+  if (res.code !== 0) throw new Error(res.stderr || `gh command failed with exit code ${res.code}`);
+  return res.stdout.trim();
+}
+
+async function runGhDetailedAsync(command: string, input?: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  const res = await spawnCommand(command, input);
+  if (res.code !== 0) {
+    return { ok: false, stdout: res.stdout, stderr: res.stderr || `gh command failed with exit code ${res.code}` };
+  }
+  return { ok: true, stdout: res.stdout, stderr: res.stderr };
+}
+
+// JSON helpers with simple retry/backoff for rate limits
+async function runGhJsonDetailedAsync(command: string, input?: string, retries = 3): Promise<{ ok: boolean; data?: any; error?: string }> {
+  let attempt = 0;
+  let backoff = 500;
+  while (attempt <= retries) {
+    const res = await runGhDetailedAsync(command, input);
+    if (!res.ok) {
+      const stderr = res.stderr || '';
+      // simple detection of rate limit or 403s
+      if (/rate limit|403|API rate limit exceeded/i.test(stderr) && attempt < retries) {
+        await new Promise(r => setTimeout(r, backoff));
+        attempt += 1;
+        backoff *= 2;
+        continue;
+      }
+      return { ok: false, error: stderr || res.stdout || 'GraphQL request failed' };
+    }
+    try {
+      const data = JSON.parse(res.stdout);
+      if (Array.isArray(data?.errors) && data.errors.length > 0) {
+        const message = data.errors.map((entry: any) => entry?.message || String(entry)).join('; ');
+        return { ok: false, error: message || 'GraphQL request returned errors' };
+      }
+      return { ok: true, data };
+    } catch (err: any) {
+      return { ok: false, error: 'Invalid JSON response from GraphQL' };
+    }
+  }
+  return { ok: false, error: 'Max retries exceeded' };
+}
+
+async function runGhJsonAsync(command: string, input?: string): Promise<any> {
+  const output = await runGhAsync(command, input);
+  return JSON.parse(output);
 }
 
 function runGhSafe(command: string, input?: string): string | null {
@@ -307,6 +453,40 @@ export function getIssueHierarchy(config: GithubConfig, issueNumber: number): Is
   return { parentIssueNumber, childIssueNumbers };
 }
 
+// Async wrappers -----------------------------------------------------------
+export async function getIssueNodeIdAsync(config: GithubConfig, issueNumber: number): Promise<string> {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const query = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { id } } }`;
+  const output = await runGhJsonDetailedAsync(
+    `gh api graphql -f query=${quoteShellValue(query)} -f owner=${quoteShellValue(owner)} -f name=${quoteShellValue(name)} -F number=${issueNumber}`
+  );
+  if (!output.ok) {
+    throw new Error(output.error || 'Unable to query GitHub issue node ID');
+  }
+  const id = output.data?.data?.repository?.issue?.id;
+  if (!id) {
+    throw new Error(`Unable to resolve GitHub issue node ID for #${issueNumber}`);
+  }
+  return id;
+}
+
+export async function getIssueHierarchyAsync(config: GithubConfig, issueNumber: number): Promise<IssueHierarchy> {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const query = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { parent { number } subIssues(first: 100) { nodes { number } } } } }`;
+  const output = await runGhJsonDetailedAsync(
+    `gh api graphql -f query=${quoteShellValue(query)} -f owner=${quoteShellValue(owner)} -f name=${quoteShellValue(name)} -F number=${issueNumber}`
+  );
+  if (!output.ok) {
+    throw new Error(output.error || 'Unable to query issue hierarchy');
+  }
+  const issue = output.data?.data?.repository?.issue;
+  const parentIssueNumber = issue?.parent?.number ?? null;
+  const childIssueNumbers = Array.isArray(issue?.subIssues?.nodes)
+    ? issue.subIssues.nodes.map((node: any) => node?.number).filter((value: any) => typeof value === 'number')
+    : [];
+  return { parentIssueNumber, childIssueNumbers };
+}
+
 export function addSubIssueLink(
   config: GithubConfig,
   parentIssueNumber: number,
@@ -348,6 +528,49 @@ export function addSubIssueLinkResult(
 ): { ok: boolean; error?: string } {
   try {
     addSubIssueLink(config, parentIssueNumber, childIssueNumber, cache);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+export async function addSubIssueLinkAsync(
+  config: GithubConfig,
+  parentIssueNumber: number,
+  childIssueNumber: number,
+  cache?: Map<number, string>
+): Promise<void> {
+  const nodeCache = cache ?? new Map<number, string>();
+  const resolveNodeId = async (issueNumber: number) => {
+    const cached = nodeCache.get(issueNumber);
+    if (cached) return cached;
+    const nodeId = await getIssueNodeIdAsync(config, issueNumber);
+    nodeCache.set(issueNumber, nodeId);
+    return nodeId;
+  };
+  const parentNodeId = await resolveNodeId(parentIssueNumber);
+  const childNodeId = await resolveNodeId(childIssueNumber);
+  const mutation = `mutation($parent: ID!, $child: ID!) { addSubIssue(input: { issueId: $parent, subIssueId: $child }) { issue { id } subIssue { id } } }`;
+  const result = await runGhJsonDetailedAsync(
+    `gh api graphql -f query=${quoteShellValue(mutation)} -f parent=${quoteShellValue(parentNodeId)} -f child=${quoteShellValue(childNodeId)}`
+  );
+  if (!result.ok) {
+    throw new Error(result.error || `Failed to link #${childIssueNumber} as sub-issue of #${parentIssueNumber}`);
+  }
+  const mutationResult = result.data?.data?.addSubIssue;
+  if (!mutationResult?.subIssue?.id || !mutationResult?.issue?.id) {
+    throw new Error('addSubIssue returned no data (sub-issues may be disabled for this repo/org)');
+  }
+}
+
+export async function addSubIssueLinkResultAsync(
+  config: GithubConfig,
+  parentIssueNumber: number,
+  childIssueNumber: number,
+  cache?: Map<number, string>
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await addSubIssueLinkAsync(config, parentIssueNumber, childIssueNumber, cache);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
@@ -505,6 +728,13 @@ export function createGithubIssueComment(config: GithubConfig, issueNumber: numb
 export function updateGithubIssueComment(config: GithubConfig, commentId: number, body: string): GithubIssueComment {
   const { owner, name } = parseRepoSlug(config.repo);
   const command = `gh api -X PATCH repos/${owner}/${name}/issues/comments/${commentId} -f body=${JSON.stringify(body)}`;
+  const data = runGhJson(command);
+  return normalizeGithubIssueComment(data);
+}
+
+export function getGithubIssueComment(config: GithubConfig, commentId: number): GithubIssueComment {
+  const { owner, name } = parseRepoSlug(config.repo);
+  const command = `gh api repos/${owner}/${name}/issues/comments/${commentId} --json id,body,updatedAt,user`;
   const data = runGhJson(command);
   return normalizeGithubIssueComment(data);
 }

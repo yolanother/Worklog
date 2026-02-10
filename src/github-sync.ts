@@ -14,6 +14,8 @@ import {
   getIssueHierarchy,
   addSubIssueLink,
   addSubIssueLinkResult,
+  getIssueHierarchyAsync,
+  addSubIssueLinkResultAsync,
   buildWorklogCommentMarker,
   workItemToIssuePayload,
   createGithubIssue,
@@ -53,13 +55,15 @@ export interface GithubProgress {
   total: number;
 }
 
-export function upsertIssuesFromWorkItems(
+export async function upsertIssuesFromWorkItems(
   items: WorkItem[],
   comments: Comment[],
   config: GithubConfig,
   onProgress?: (progress: GithubProgress) => void,
-  onVerboseLog?: (message: string) => void
-): { updatedItems: WorkItem[]; result: GithubSyncResult; timing: GithubSyncTiming } {
+  onVerboseLog?: (message: string) => void,
+  // Optional callback to persist comment mapping changes (githubCommentId/UpdatedAt)
+  persistComment?: (comment: Comment) => void
+): Promise<{ updatedItems: WorkItem[]; result: GithubSyncResult; timing: GithubSyncTiming }> {
   const startTime = Date.now();
   const labelPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
   const issueItems = items.filter(item => item.status !== 'deleted');
@@ -164,21 +168,18 @@ export function upsertIssuesFromWorkItems(
     return latestCommentTime > issueUpdatedAt;
   };
 
-  const upsertGithubIssueComments = (
+    const upsertGithubIssueComments = (
     issueConfig: GithubConfig,
     issueNumber: number,
     itemComments: Comment[],
     existingComments: GithubIssueComment[]
   ): { created: number; updated: number; latestUpdatedAt: string | null } => {
+    // Build map of existing GH comments by worklog comment id (from markers)
     const byWorklogId = new Map<string, GithubIssueComment>();
     for (const ghComment of existingComments) {
       const markerId = extractWorklogCommentId(ghComment.body || undefined);
-      if (!markerId) {
-        continue;
-      }
-      if (!byWorklogId.has(markerId)) {
-        byWorklogId.set(markerId, ghComment);
-      }
+      if (!markerId) continue;
+      if (!byWorklogId.has(markerId)) byWorklogId.set(markerId, ghComment);
     }
 
     let created = 0;
@@ -189,15 +190,30 @@ export function upsertIssuesFromWorkItems(
       const body = buildGithubCommentBody(comment);
       const existing = byWorklogId.get(comment.id);
       if (existing) {
+        // If the GH comment exists, only update if body changed OR GH's updatedAt is newer than our recorded mapping
         const bodyMatch = (existing.body || '').trim() === body.trim();
         if (!bodyMatch) {
           const updatedComment = updateGithubIssueComment(issueConfig, existing.id, body);
+          // Persist mapping back to local comment
+          comment.githubCommentId = existing.id;
+          comment.githubCommentUpdatedAt = updatedComment.updatedAt;
+          if (persistComment) {
+            try { persistComment(comment); } catch (err) { if (onVerboseLog) onVerboseLog && onVerboseLog(`[persist] failed to save comment mapping for ${comment.id}: ${(err as Error).message}`); }
+          }
           updated += 1;
           latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, updatedComment.updatedAt);
         }
         continue;
       }
+
+      // No GH comment mapping found — create a new comment
       const createdComment = createGithubIssueComment(issueConfig, issueNumber, body);
+      // Persist mapping back to local comment so future runs can directly reference by ID
+      comment.githubCommentId = createdComment.id;
+      comment.githubCommentUpdatedAt = createdComment.updatedAt;
+      if (persistComment) {
+        try { persistComment(comment); } catch (err) { if (onVerboseLog) onVerboseLog && onVerboseLog(`[persist] failed to save comment mapping for ${comment.id}: ${(err as Error).message}`); }
+      }
       created += 1;
       latestUpdatedAt = maxIsoTimestamp(latestUpdatedAt, createdComment.updatedAt);
     }
@@ -315,11 +331,15 @@ export function upsertIssuesFromWorkItems(
   if (onVerboseLog) {
     onVerboseLog(`[hierarchy] ${pairs.length} parent-child pair(s) to verify`);
   }
-  for (let idx = 0; idx < pairs.length; idx += 1) {
+
+  // Concurrency: process hierarchy checks and linking with a bounded concurrency pool
+  const concurrency = Number(process.env.WL_GITHUB_CONCURRENCY || '6');
+
+  async function mapper(pair: string, idx: number) {
     if (onProgress) {
       onProgress({ phase: 'hierarchy', current: idx + 1, total: pairs.length || 1 });
     }
-    const [parentNumberRaw, childNumberRaw] = pairs[idx].split(':');
+    const [parentNumberRaw, childNumberRaw] = pair.split(':');
     const parentNumber = Number(parentNumberRaw);
     const childNumber = Number(childNumberRaw);
     try {
@@ -327,36 +347,32 @@ export function upsertIssuesFromWorkItems(
         onVerboseLog(`[hierarchy] ${idx + 1}/${pairs.length} checking ${parentNumber} -> ${childNumber}`);
       }
       const checkStart = Date.now();
-      const hierarchy = getIssueHierarchy(config, parentNumber);
+      const hierarchy = await (typeof (getIssueHierarchyAsync) === 'function' ? getIssueHierarchyAsync(config, parentNumber) : Promise.resolve(getIssueHierarchy(config, parentNumber)));
       timing.hierarchyCheckMs += Date.now() - checkStart;
       if (onVerboseLog) {
-        onVerboseLog(
-          `[hierarchy] fetched ${parentNumber} in ${Date.now() - checkStart}ms (children: ${hierarchy.childIssueNumbers.length})`
-        );
+        onVerboseLog(`[hierarchy] fetched ${parentNumber} in ${Date.now() - checkStart}ms (children: ${hierarchy.childIssueNumbers.length})`);
       }
       if (hierarchy.childIssueNumbers.includes(childNumber)) {
         linkedCount += 1;
         if (onVerboseLog) {
           onVerboseLog(`[hierarchy] already linked ${parentNumber} -> ${childNumber}`);
         }
-        continue;
+        return;
       }
       const linkStart = Date.now();
-      const linkResult = addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
+      const linkResult = typeof (addSubIssueLinkResultAsync) === 'function'
+        ? await addSubIssueLinkResultAsync(config, parentNumber, childNumber, nodeIdCache)
+        : addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
       timing.hierarchyLinkMs += Date.now() - linkStart;
       if (onVerboseLog) {
-        onVerboseLog(
-          `[hierarchy] link ${parentNumber} -> ${childNumber} ${linkResult.ok ? 'ok' : 'failed'} in ${
-            Date.now() - linkStart
-          }ms`
-        );
+        onVerboseLog(`[hierarchy] link ${parentNumber} -> ${childNumber} ${linkResult.ok ? 'ok' : 'failed'} in ${Date.now() - linkStart}ms`);
       }
       if (!linkResult.ok) {
         result.errors.push(`link ${parentNumber}->${childNumber}: ${linkResult.error || 'sub-issue link not created'}`);
-        continue;
+        return;
       }
       const verifyStart = Date.now();
-      const updatedHierarchy = getIssueHierarchy(config, parentNumber);
+      const updatedHierarchy = await (typeof (getIssueHierarchyAsync) === 'function' ? getIssueHierarchyAsync(config, parentNumber) : Promise.resolve(getIssueHierarchy(config, parentNumber)));
       timing.hierarchyVerifyMs += Date.now() - verifyStart;
       if (onVerboseLog) {
         onVerboseLog(`[hierarchy] verify ${parentNumber} in ${Date.now() - verifyStart}ms`);
@@ -366,13 +382,31 @@ export function upsertIssuesFromWorkItems(
         if (onVerboseLog) {
           onVerboseLog(`[hierarchy] verified ${parentNumber} -> ${childNumber}`);
         }
-        continue;
+        return;
       }
       result.errors.push(`link ${parentNumber}->${childNumber}: sub-issue link not created`);
     } catch (error) {
       result.errors.push(`link ${parentNumber}->${childNumber}: ${(error as Error).message}`);
     }
   }
+
+  // simple concurrent mapper
+  async function mapWithConcurrency(arr: string[], limit: number, fn: (v: string, i: number) => Promise<void>) {
+    const results: Promise<void>[] = [];
+    let i = 0;
+    async function worker() {
+      while (true) {
+        const idx = i++;
+        if (idx >= arr.length) return;
+        await fn(arr[idx], idx);
+      }
+    }
+    const workers = Math.min(limit, arr.length);
+    for (let w = 0; w < workers; w += 1) results.push(worker());
+    await Promise.all(results);
+  }
+
+  await mapWithConcurrency(pairs, concurrency, mapper);
 
   result.updated += linkedCount;
   timing.totalMs = Date.now() - startTime;

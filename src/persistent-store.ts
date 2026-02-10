@@ -166,9 +166,22 @@ export class SqlitePersistentStore {
         comment TEXT NOT NULL,
         createdAt TEXT NOT NULL,
         refs TEXT NOT NULL,
+        githubCommentId INTEGER,
+        githubCommentUpdatedAt TEXT,
         FOREIGN KEY (workItemId) REFERENCES workitems(id) ON DELETE CASCADE
       )
     `);
+
+    // Ensure existing databases get new comment columns added when upgrading from older schema
+    // (Non-destructive ALTERs only)
+    const commentCols = this.db.prepare(`PRAGMA table_info('comments')`).all() as any[];
+    const existingCommentCols = new Set(commentCols.map(c => String(c.name)));
+    if (!existingCommentCols.has('githubCommentId')) {
+      this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentId INTEGER`);
+    }
+    if (!existingCommentCols.has('githubCommentUpdatedAt')) {
+      this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentUpdatedAt TEXT`);
+    }
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS dependency_edges (
@@ -401,17 +414,19 @@ export class SqlitePersistentStore {
   saveComment(comment: Comment): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO comments 
-      (id, workItemId, author, comment, createdAt, refs)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (id, workItemId, author, comment, createdAt, refs, githubCommentId, githubCommentUpdatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     stmt.run(
       comment.id,
       comment.workItemId,
       comment.author,
       comment.comment,
       comment.createdAt,
-      JSON.stringify(comment.references)
+      JSON.stringify(comment.references),
+      comment.githubCommentId ?? null,
+      comment.githubCommentUpdatedAt || null
     );
   }
 
@@ -631,6 +646,8 @@ export class SqlitePersistentStore {
         comment: row.comment,
         createdAt: row.createdAt,
         references: JSON.parse(row.refs),
+        githubCommentId: row.githubCommentId ?? undefined,
+        githubCommentUpdatedAt: row.githubCommentUpdatedAt || undefined,
       };
     } catch (error) {
       console.error(`Error parsing comment ${row.id}:`, error);
