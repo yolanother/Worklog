@@ -17,8 +17,9 @@ export default function register(ctx: PluginContext): void {
   program
     .command('doctor')
     .description('Validate work items against status/stage config rules')
+    .option('--fix', 'Apply safe fixes and prompt for non-safe findings')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options: DoctorOptions) => {
+    .action(async (options: DoctorOptions & { fix?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const items = db.getAll();
@@ -32,10 +33,29 @@ export default function register(ctx: PluginContext): void {
       }
 
       const dependencyEdges = db.getAllDependencyEdges();
-      const findings = [
+      let findings = [
         ...validateStatusStageItems(items, rules),
         ...validateDependencyEdges(items, dependencyEdges),
       ];
+
+      // If --fix was provided, attempt to apply safe fixes and prompt per non-safe finding
+      if (options.fix) {
+        // Lazy import to avoid adding readline overhead in normal runs
+        const { applyDoctorFixes } = await import('../doctor/fix.js');
+        findings = await applyDoctorFixes(db, findings, (promptText: string) => {
+          // Default interactive prompt: ask y/N and return true only for explicit 'y' or 'yes'
+          /* eslint-disable no-console */
+          const readline = require('readline');
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          return new Promise<boolean>(resolve => {
+            rl.question(promptText + ' (y/N): ', answer => {
+              rl.close();
+              const a = (answer || '').trim().toLowerCase();
+              resolve(a === 'y' || a === 'yes');
+            });
+          });
+        });
+      }
 
       if (utils.isJsonMode()) {
         output.json(findings);
