@@ -229,7 +229,7 @@ export class DialogsComponent {
       // Do not set `height` here — use `bottom` in updateLayout so the
       // textarea expands to available space inside the dialog.
       input: true,
-      inputOnFocus: true,
+      inputOnFocus: false,
       vi: true,
       wrap: true,
       keys: true,

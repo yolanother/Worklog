@@ -210,6 +210,29 @@ export class TuiController {
     const updateDialogStageValues = rules.stageValues.filter(stage => stage !== '');
     const updateDialogPriorityValues = ['critical', 'high', 'medium', 'low'];
 
+    const endUpdateDialogCommentReading = () => {
+      try {
+        const widget = updateDialogComment as any;
+        if (typeof widget?.cancel === 'function') {
+          widget.cancel();
+        }
+        if (widget?._reading) {
+          widget._reading = false;
+        }
+      } catch (_) {}
+      try { (screen as any).grabKeys = false; } catch (_) {}
+      try { (screen as any).program?.hideCursor?.(); } catch (_) {}
+    };
+
+    const startUpdateDialogCommentReading = () => {
+      try {
+        const widget = updateDialogComment as any;
+        if (widget && typeof widget.readInput === 'function') {
+          widget.readInput();
+        }
+      } catch (_) {}
+    };
+
     const normalizeStatusValue = (value: string | undefined) => {
       if (!value) return value;
       const normalized = getStatusValueFromLabel(value, rules) ?? value;
@@ -363,10 +386,12 @@ export class TuiController {
         const fieldFocusHandler = () => {
           applyUpdateDialogFocusStyles(field);
           if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
+          if (field === updateDialogComment) startUpdateDialogCommentReading();
         };
         const fieldBlurHandler = () => {
           applyUpdateDialogFocusStyles(updateDialogFieldOrder[updateDialogFocusManager.getIndex()]);
           if (!updateDialog.hidden) applyStatusStageCompatibility(getSelectedItem());
+          if (field === updateDialogComment) endUpdateDialogCommentReading();
         };
         try { (field as any).__opencode_focus = fieldFocusHandler; (field as any).__opencode_blur = fieldBlurHandler; field.on('focus', fieldFocusHandler); field.on('blur', fieldBlurHandler); } catch (_) {}
       }
@@ -1758,6 +1783,7 @@ export class TuiController {
     }
 
     function closeUpdateDialog() {
+      endUpdateDialogCommentReading();
       updateDialog.hide();
       updateOverlay.hide();
       updateDialogItem = null;
