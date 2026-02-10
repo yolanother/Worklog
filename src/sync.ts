@@ -46,7 +46,11 @@ export interface GitTarget {
  * Escape a string for safe use in shell commands
  */
 function escapeShellArg(arg: string): string {
-  // Use single quotes and escape any single quotes within the string
+  if (process.platform === 'win32') {
+    // Windows cmd.exe uses double quotes; escape internal double quotes
+    return '"' + arg.replace(/"/g, '\\"') + '"';
+  }
+  // Unix: use single quotes and escape any single quotes within the string
   return "'" + arg.replace(/'/g, "'\\''") + "'";
 }
 
