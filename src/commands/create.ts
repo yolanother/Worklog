@@ -47,15 +47,16 @@ export default function register(ctx: PluginContext): void {
       }
 
       const config = utils.getConfig();
+      const requestedStage = options.stage !== undefined ? options.stage : 'idea';
       let normalizedStatus = (options.status || 'open') as WorkItemStatus;
-      let normalizedStage = options.stage || '';
+      let normalizedStage = requestedStage;
       if (canValidateStatusStage(config)) {
         let warnings: string[] = [];
         try {
           const validation = validateStatusStageInput(
             {
               status: options.status || 'open',
-              stage: options.stage || '',
+              stage: requestedStage,
             },
             config
           );
