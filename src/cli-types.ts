@@ -29,6 +29,8 @@ export interface CreateOptions {
   createdBy?: string;
   deletedBy?: string;
   deleteReason?: string;
+  /** Accepts true|false|yes|no to set needsProducerReview flag for the new item */
+  needsProducerReview?: string;
   prefix?: string;
 }
 
@@ -39,6 +41,8 @@ export interface ListOptions {
   tags?: string;
   assignee?: string;
   stage?: string;
+  /** 'true'|'false'|'yes'|'no' (string form from CLI); parsed to boolean by command */
+  needsProducerReview?: string;
   prefix?: string;
   number?: string;
 }
@@ -55,6 +59,8 @@ export interface UpdateOptions {
   tags?: string;
   assignee?: string;
   stage?: string;
+  /** Accepts true|false|yes|no to set needsProducerReview flag */
+  needsProducerReview?: string;
   risk?: string;
   effort?: string;
   issueType?: string;

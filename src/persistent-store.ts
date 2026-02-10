@@ -82,80 +82,58 @@ export class SqlitePersistentStore {
         createdBy TEXT NOT NULL,
         deletedBy TEXT NOT NULL,
         deleteReason TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        effort TEXT NOT NULL,
         githubIssueNumber INTEGER,
         githubIssueId INTEGER,
         githubIssueUpdatedAt TEXT
-      )
+        ,needsProducerReview INTEGER NOT NULL DEFAULT 0
+       )
     `);
 
-    // Minimal migration for existing databases: add missing columns.
-    // We keep this intentionally simple (no destructive ops), since this is a local repo DB.
+    // NOTE: Historically this method performed non-destructive schema migrations
+    // (ALTER TABLE ADD COLUMN ...) when opening an existing database. That caused
+    // silent schema changes on first-run after upgrading the CLI with no backup
+    // or audit trail. Migrations are now centralized in src/migrations and
+    // surfaced via `wl doctor upgrade` so operators may review and back up the
+    // database before applying changes. To preserve compatibility for new
+    // databases we still create the necessary tables; however, we no longer
+    // modify existing databases here.
+
+    // If the database is newly created (no schemaVersion metadata present) set
+    // the current schema version so the migration runner can detect pending
+    // migrations on existing DBs. We avoid altering existing databases here.
     const schemaVersionRaw = this.getMetadata('schemaVersion');
-    const existingVersion = schemaVersionRaw ? parseInt(schemaVersionRaw, 10) : 1;
-    if (existingVersion < 2) {
-      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-      const existingCols = new Set(cols.map(c => String(c.name)));
-      const maybeAdd = (name: string) => {
-        if (!existingCols.has(name)) {
-          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
-        }
-      };
-      maybeAdd('issueType');
-      maybeAdd('createdBy');
-      maybeAdd('deletedBy');
-      maybeAdd('deleteReason');
+    const isNewDb = !schemaVersionRaw;
+    if (isNewDb) {
+      this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
     }
 
-    if (existingVersion < 3) {
-      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-      const existingCols = new Set(cols.map(c => String(c.name)));
-      const maybeAddNullable = (name: string) => {
-        if (!existingCols.has(name)) {
-          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT`);
-        }
-      };
-      const maybeAddNullableInt = (name: string) => {
-        if (!existingCols.has(name)) {
-          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} INTEGER`);
-        }
-      };
-      maybeAddNullableInt('githubIssueNumber');
-      maybeAddNullableInt('githubIssueId');
-      maybeAddNullable('githubIssueUpdatedAt');
-    }
+    // Determine test environment early so we can suppress warnings and keep
+    // test-suite compatibility. Tests still use the legacy ALTER behavior via
+    // the runningInTest path below.
+    const runningInTest = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
 
-    if (existingVersion < 4) {
-      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-      const existingCols = new Set(cols.map(c => String(c.name)));
-      const maybeAdd = (name: string) => {
-        if (!existingCols.has(name)) {
-          this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
-        }
-      };
-      maybeAdd('risk');
-      maybeAdd('effort');
-    }
-
-    if (existingVersion < 5) {
-      const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-      const existingCols = new Set(cols.map(c => String(c.name)));
-      if (!existingCols.has('sortIndex')) {
-        this.db.exec('ALTER TABLE workitems ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0');
+    // If this is an existing database and we're NOT running under tests, emit
+    // a single non-fatal warning when the DB schemaVersion is older than the
+    // application SCHEMA_VERSION. Operators should run `wl doctor upgrade` to
+    // preview and apply migrations (backups are created by the migration
+    // runner). We intentionally do NOT alter the DB schema here.
+    if (!isNewDb && !runningInTest) {
+      const existingVersion = schemaVersionRaw ? parseInt(schemaVersionRaw, 10) : 1;
+      if (existingVersion < SCHEMA_VERSION) {
+        console.warn(
+          `Worklog: database at ${this.dbPath} has schemaVersion=${existingVersion} but the application expects schemaVersion=${SCHEMA_VERSION}. ` +
+          `No automatic schema changes were performed. Run 'wl doctor upgrade' (or see src/migrations) to preview and apply pending migrations.`
+        );
       }
     }
 
-    if (existingVersion < 6) {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS dependency_edges (
-          fromId TEXT NOT NULL,
-          toId TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          PRIMARY KEY (fromId, toId),
-          FOREIGN KEY (fromId) REFERENCES workitems(id) ON DELETE CASCADE,
-          FOREIGN KEY (toId) REFERENCES workitems(id) ON DELETE CASCADE
-        )
-      `);
-    }
+    // Legacy test-mode ALTER behavior removed. Tests should rely on the
+    // centralized migration runner (src/migrations) or explicitly create the
+    // expected schema during test setup. This avoids having a separate code
+    // path that silently alters databases and ensures production and tests
+    // share the same migration mechanism.
 
     // Create comments table
     this.db.exec(`
@@ -168,7 +146,7 @@ export class SqlitePersistentStore {
         refs TEXT NOT NULL,
         githubCommentId INTEGER,
         githubCommentUpdatedAt TEXT,
-        FOREIGN KEY (workItemId) REFERENCES workitems(id) ON DELETE CASCADE
+      FOREIGN KEY (workItemId) REFERENCES workitems(id) ON DELETE CASCADE
       )
     `);
 
@@ -206,18 +184,10 @@ export class SqlitePersistentStore {
       CREATE INDEX IF NOT EXISTS idx_dependency_edges_toId ON dependency_edges(toId);
     `);
 
-    // Set schema version if not exists
-    const versionStmt = this.db.prepare('SELECT value FROM metadata WHERE key = ?');
-    const versionRow = versionStmt.get('schemaVersion') as { value: string } | undefined;
-    
-    if (!versionRow) {
-      this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
-    } else {
-      const current = parseInt(versionRow.value, 10);
-      if (current < SCHEMA_VERSION) {
-        this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
-      }
-    }
+    // Existing databases retain their schemaVersion metadata. If an older
+    // schemaVersion is present we intentionally do not modify the DB here. The
+    // `wl doctor upgrade` workflow should be used to review and apply any
+    // required migrations (backups/pruning are handled there).
   }
 
   /**
@@ -264,8 +234,8 @@ export class SqlitePersistentStore {
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering DELETE (which would cascade and remove comments)
     const stmt = this.db.prepare(`
       INSERT INTO workitems
-      (id, title, description, status, priority, sortIndex, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, risk, effort, githubIssueNumber, githubIssueId, githubIssueUpdatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, description, status, priority, sortIndex, parentId, createdAt, updatedAt, tags, assignee, stage, issueType, createdBy, deletedBy, deleteReason, risk, effort, githubIssueNumber, githubIssueId, githubIssueUpdatedAt, needsProducerReview)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
@@ -286,7 +256,8 @@ export class SqlitePersistentStore {
         effort = excluded.effort,
         githubIssueNumber = excluded.githubIssueNumber,
         githubIssueId = excluded.githubIssueId,
-        githubIssueUpdatedAt = excluded.githubIssueUpdatedAt
+        githubIssueUpdatedAt = excluded.githubIssueUpdatedAt,
+        needsProducerReview = excluded.needsProducerReview
     `);
 
     stmt.run(
@@ -311,6 +282,7 @@ export class SqlitePersistentStore {
       item.githubIssueNumber ?? null,
       item.githubIssueId ?? null,
       item.githubIssueUpdatedAt || null
+      , item.needsProducerReview ? 1 : 0
     );
   }
 
@@ -603,6 +575,7 @@ export class SqlitePersistentStore {
         githubIssueNumber: row.githubIssueNumber ?? undefined,
         githubIssueId: row.githubIssueId ?? undefined,
         githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
+        needsProducerReview: Boolean(row.needsProducerReview)
       };
     } catch (error) {
       console.error(`Error parsing work item ${row.id}:`, error);
@@ -630,6 +603,7 @@ export class SqlitePersistentStore {
         githubIssueNumber: row.githubIssueNumber ?? undefined,
         githubIssueId: row.githubIssueId ?? undefined,
         githubIssueUpdatedAt: row.githubIssueUpdatedAt || undefined,
+        needsProducerReview: Boolean(row.needsProducerReview),
       };
     }
   }

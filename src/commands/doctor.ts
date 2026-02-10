@@ -6,6 +6,7 @@ import type { PluginContext } from '../plugin-types.js';
 import { loadStatusStageRules } from '../status-stage-rules.js';
 import { validateStatusStageItems } from '../doctor/status-stage-check.js';
 import { validateDependencyEdges } from '../doctor/dependency-check.js';
+import { listPendingMigrations, runMigrations } from '../migrations/index.js';
 
 interface DoctorOptions {
   prefix?: string;
@@ -14,12 +15,97 @@ interface DoctorOptions {
 export default function register(ctx: PluginContext): void {
   const { program, output, utils } = ctx;
 
-  program
+  const doctor = program
     .command('doctor')
     .description('Validate work items against status/stage config rules')
     .option('--fix', 'Apply safe fixes and prompt for non-safe findings')
+    .option('--prefix <prefix>', 'Override the default prefix');
+
+  doctor
+    .command('upgrade')
+    .description('Preview or apply pending database schema migrations')
+    .option('--dry-run', 'Preview pending migrations without applying them')
+    .option('--confirm', 'Apply pending migrations (non-interactive)')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action(async (options: DoctorOptions & { fix?: boolean }) => {
+    .action(async (opts: { dryRun?: boolean; confirm?: boolean; prefix?: string }) => {
+      // Migration upgrade subcommand
+      utils.requireInitialized();
+      try {
+        const pending = listPendingMigrations();
+        if (!pending || pending.length === 0) {
+          if (utils.isJsonMode()) {
+            output.json({ success: true, pending: [] });
+            return;
+          }
+          console.log('Doctor: no pending migrations. See docs/migrations.md for migration policy and guidance.');
+          return;
+        }
+
+        if (opts.dryRun) {
+          if (utils.isJsonMode()) {
+            output.json({ success: true, dryRun: true, pending });
+            return;
+          }
+          // Dry-run: list all pending migrations (no prompt, purely informational)
+          console.log('Pending migrations:');
+          pending.forEach(p => console.log(` - ${p.id}: ${p.description} (safe=${p.safe})`));
+          return;
+        }
+
+        // Not a dry-run: list safe migrations, print blank line, and ask to apply
+        const safeMigs = pending.filter(p => p.safe);
+        if (utils.isJsonMode()) {
+          output.json({ success: true, pending, safeMigrations: safeMigs });
+          return;
+        }
+        console.log('Pending safe migrations:');
+        safeMigs.forEach(p => console.log(` - ${p.id}: ${p.description}`));
+        console.log('');
+
+        // Confirm before applying unless --confirm provided
+        let proceed = Boolean(opts.confirm);
+        if (!proceed) {
+          // Prompt interactively
+          const readlineMod = await import('node:readline');
+          const answer = await new Promise<boolean>(resolve => {
+            const rl = readlineMod.createInterface({ input: process.stdin, output: process.stdout });
+            rl.question(`Apply ${pending.length} pending migration(s)? (y/N): `, (a: string) => {
+              rl.close();
+              const v = (a || '').trim().toLowerCase();
+              resolve(v === 'y' || v === 'yes');
+            });
+          });
+          proceed = answer;
+        }
+
+        if (!proceed) {
+          if (utils.isJsonMode()) output.json({ success: false, message: 'User declined to apply migrations' });
+          else console.log('Aborted: migrations not applied.');
+          return;
+        }
+
+        // Apply migrations
+        try {
+          const result = runMigrations({ dryRun: false, confirm: true, logger: { info: s => console.error(s), error: s => console.error(s) } });
+          if (utils.isJsonMode()) {
+            output.json({ success: true, applied: result.applied, backups: result.backups });
+            return;
+          }
+          console.log(`Applied migrations: ${result.applied.map(a => a.id).join(', ')}`);
+          if (result.backups && result.backups.length > 0) console.log(`Backups: ${result.backups.join(', ')}`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (utils.isJsonMode()) output.json({ success: false, error: message });
+          else console.error(`Migration failed: ${message}`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (utils.isJsonMode()) output.json({ success: false, error: message });
+        else console.error(`Doctor upgrade failed: ${message}`);
+      }
+    });
+
+  doctor.action(async (options: DoctorOptions & { fix?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const items = db.getAll();
@@ -56,6 +142,8 @@ export default function register(ctx: PluginContext): void {
         };
         findings = await applyDoctorFixes(db, findings, promptFn);
       }
+
+      // Human-readable output handled below
 
       if (utils.isJsonMode()) {
         output.json(findings);
