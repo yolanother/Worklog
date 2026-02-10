@@ -335,6 +335,8 @@ export async function upsertIssuesFromWorkItems(
   // Concurrency: process hierarchy checks and linking with a bounded concurrency pool
   const concurrency = Number(process.env.WL_GITHUB_CONCURRENCY || '6');
 
+  const hierarchyCache = new Map<number, { parentIssueNumber: number | null; childIssueNumbers: number[] }>();
+
   async function mapper(pair: string, idx: number) {
     if (onProgress) {
       onProgress({ phase: 'hierarchy', current: idx + 1, total: pairs.length || 1 });
@@ -342,53 +344,61 @@ export async function upsertIssuesFromWorkItems(
     const [parentNumberRaw, childNumberRaw] = pair.split(':');
     const parentNumber = Number(parentNumberRaw);
     const childNumber = Number(childNumberRaw);
-    try {
-      if (onVerboseLog) {
-        onVerboseLog(`[hierarchy] ${idx + 1}/${pairs.length} checking ${parentNumber} -> ${childNumber}`);
-      }
-      const checkStart = Date.now();
-      const hierarchy = await (typeof (getIssueHierarchyAsync) === 'function' ? getIssueHierarchyAsync(config, parentNumber) : Promise.resolve(getIssueHierarchy(config, parentNumber)));
-      timing.hierarchyCheckMs += Date.now() - checkStart;
-      if (onVerboseLog) {
-        onVerboseLog(`[hierarchy] fetched ${parentNumber} in ${Date.now() - checkStart}ms (children: ${hierarchy.childIssueNumbers.length})`);
-      }
-      if (hierarchy.childIssueNumbers.includes(childNumber)) {
-        linkedCount += 1;
+      try {
         if (onVerboseLog) {
-          onVerboseLog(`[hierarchy] already linked ${parentNumber} -> ${childNumber}`);
+          onVerboseLog(`[hierarchy] ${idx + 1}/${pairs.length} checking ${parentNumber} -> ${childNumber}`);
         }
-        return;
-      }
-      const linkStart = Date.now();
-      const linkResult = typeof (addSubIssueLinkResultAsync) === 'function'
-        ? await addSubIssueLinkResultAsync(config, parentNumber, childNumber, nodeIdCache)
-        : addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
-      timing.hierarchyLinkMs += Date.now() - linkStart;
-      if (onVerboseLog) {
-        onVerboseLog(`[hierarchy] link ${parentNumber} -> ${childNumber} ${linkResult.ok ? 'ok' : 'failed'} in ${Date.now() - linkStart}ms`);
-      }
-      if (!linkResult.ok) {
-        result.errors.push(`link ${parentNumber}->${childNumber}: ${linkResult.error || 'sub-issue link not created'}`);
-        return;
-      }
-      const verifyStart = Date.now();
-      const updatedHierarchy = await (typeof (getIssueHierarchyAsync) === 'function' ? getIssueHierarchyAsync(config, parentNumber) : Promise.resolve(getIssueHierarchy(config, parentNumber)));
-      timing.hierarchyVerifyMs += Date.now() - verifyStart;
-      if (onVerboseLog) {
-        onVerboseLog(`[hierarchy] verify ${parentNumber} in ${Date.now() - verifyStart}ms`);
-      }
-      if (updatedHierarchy.childIssueNumbers.includes(childNumber)) {
+
+        // Fetch hierarchy for the parent once and cache it. This reduces GraphQL calls
+        // so checks scale by number of parents, not parent-child pairs.
+        let hierarchy = hierarchyCache.get(parentNumber);
+        if (!hierarchy) {
+          const checkStart = Date.now();
+          hierarchy = await (typeof (getIssueHierarchyAsync) === 'function'
+            ? getIssueHierarchyAsync(config, parentNumber)
+            : Promise.resolve(getIssueHierarchy(config, parentNumber)));
+          timing.hierarchyCheckMs += Date.now() - checkStart;
+          hierarchyCache.set(parentNumber, hierarchy);
+          if (onVerboseLog) {
+            onVerboseLog(`[hierarchy] fetched ${parentNumber} in ${Date.now() - checkStart}ms (children: ${hierarchy.childIssueNumbers.length})`);
+          }
+        }
+
+        if (hierarchy.childIssueNumbers.includes(childNumber)) {
+          linkedCount += 1;
+          if (onVerboseLog) onVerboseLog(`[hierarchy] already linked ${parentNumber} -> ${childNumber}`);
+          return;
+        }
+
+        const linkStart = Date.now();
+        const linkResult = typeof (addSubIssueLinkResultAsync) === 'function'
+          ? await addSubIssueLinkResultAsync(config, parentNumber, childNumber, nodeIdCache)
+          : addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
+        timing.hierarchyLinkMs += Date.now() - linkStart;
+        if (onVerboseLog) onVerboseLog(`[hierarchy] link ${parentNumber} -> ${childNumber} ${linkResult.ok ? 'ok' : 'failed'} in ${Date.now() - linkStart}ms`);
+
+        if (!linkResult.ok) {
+          result.errors.push(`link ${parentNumber}->${childNumber}: ${linkResult.error || 'sub-issue link not created'}`);
+          return;
+        }
+
+        // Link mutation reported success — update cached hierarchy instead of
+        // re-fetching from GitHub. Treat this as verification to avoid redundant requests.
+        const cached = hierarchyCache.get(parentNumber);
+        if (cached) {
+          if (!cached.childIssueNumbers.includes(childNumber)) cached.childIssueNumbers.push(childNumber);
+        } else {
+          // In rare case cache was evicted between fetch and link, add a minimal entry.
+          hierarchyCache.set(parentNumber, { parentIssueNumber: null, childIssueNumbers: [childNumber] });
+        }
+
         linkedCount += 1;
-        if (onVerboseLog) {
-          onVerboseLog(`[hierarchy] verified ${parentNumber} -> ${childNumber}`);
-        }
+        if (onVerboseLog) onVerboseLog(`[hierarchy] verified ${parentNumber} -> ${childNumber} (cached)`);
         return;
+      } catch (error) {
+        result.errors.push(`link ${parentNumber}->${childNumber}: ${(error as Error).message}`);
       }
-      result.errors.push(`link ${parentNumber}->${childNumber}: sub-issue link not created`);
-    } catch (error) {
-      result.errors.push(`link ${parentNumber}->${childNumber}: ${(error as Error).message}`);
     }
-  }
 
   // simple concurrent mapper
   async function mapWithConcurrency(arr: string[], limit: number, fn: (v: string, i: number) => Promise<void>) {
