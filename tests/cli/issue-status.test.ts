@@ -275,6 +275,20 @@ describe('CLI Issue Status Tests', () => {
       expect(result.reason).toBeDefined();
       expect(typeof result.reason).toBe('string');
     });
+
+    it('should return unique items and note when fewer are available', async () => {
+      await execAsync(`tsx ${cliPath} create -t "Only task" -s open -p high`);
+
+      const { stdout } = await execAsync(`tsx ${cliPath} --json next -n 3`);
+
+      const result = JSON.parse(stdout);
+      expect(result.success).toBe(true);
+      expect(result.requested).toBe(3);
+      expect(result.count).toBe(1);
+      expect(result.note).toContain('Only 1 of 3 requested work item');
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].workItem).toBeTruthy();
+    });
   });
 
   describe('in-progress command', () => {
