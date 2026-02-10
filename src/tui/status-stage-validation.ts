@@ -26,6 +26,9 @@ export const getAllowedStatusesForStage = (
 ): readonly string[] => {
   if (stage === undefined) return [];
   const stageStatusRules = resolveStageStatusRules(rules);
+  // If a stage has no explicit reverse mapping but the 'deleted' status is configured
+  // to allow all stages, we should not surface 'deleted' here unless it's present
+  // in the derived stageStatus rules. Return the configured mapping as-is.
   return stageStatusRules[stage] ?? [];
 };
 
