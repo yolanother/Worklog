@@ -24,8 +24,8 @@ validation helpers and UI wiring.
     - in_progress
     - in_review
     - done
-  - Defaulting behavior on create/import: blank stage
-    - Source: src/database.ts (create) and src/jsonl.ts (import default)
+  - Defaulting behavior on create/import: idea for CLI create, blank stage on import
+    - Source: src/commands/create.ts (CLI default), src/jsonl.ts (import default)
 
 ## Compatibility Rules (Explicit)
 ### Status -> Allowed Stages

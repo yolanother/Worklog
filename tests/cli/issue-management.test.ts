@@ -32,6 +32,7 @@ describe('CLI Issue Management Tests', () => {
       expect(result.workItem.title).toBe('Test task');
       expect(result.workItem.status).toBe('open');
       expect(result.workItem.priority).toBe('medium');
+      expect(result.workItem.stage).toBe('idea');
     });
 
     it('should create a work item with all optional fields', async () => {
@@ -170,7 +171,7 @@ describe('CLI Issue Management Tests', () => {
       const shown = JSON.parse(showStdout);
       expect(shown.success).toBe(true);
       expect(shown.workItem.status).toBe('deleted');
-      expect(shown.workItem.stage).toBe('');
+      expect(shown.workItem.stage).toBe('idea');
     });
   });
 
