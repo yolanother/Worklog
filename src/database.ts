@@ -783,6 +783,7 @@ export class WorklogDatabase {
           for (const id of blockingIssues) {
             const blockingItem = this.get(id);
             if (blockingItem && blockingItem.status !== 'completed' && blockingItem.status !== 'deleted') {
+              if (excluded?.has(blockingItem.id)) continue;
               blockingPairs.push({ blocking: blockingItem, critical });
             }
           }
@@ -790,6 +791,7 @@ export class WorklogDatabase {
 
         const blockingChildren = this.getNonClosedChildren(critical.id);
         for (const child of blockingChildren) {
+          if (excluded?.has(child.id)) continue;
           blockingPairs.push({ blocking: child, critical });
         }
       }
@@ -864,7 +866,8 @@ export class WorklogDatabase {
         // Filter to find existing work items that match the blocking issue IDs
         const blockingItems = blockingIssues
           .map(id => this.get(id))
-          .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted');
+          .filter((item): item is WorkItem => item !== null && item.status !== 'completed' && item.status !== 'deleted')
+          .filter(item => !excluded?.has(item.id));
         
         if (blockingItems.length > 0) {
           // Apply filters to blocking items and select highest priority
@@ -890,11 +893,14 @@ export class WorklogDatabase {
     const directChildren = this.getChildren(selectedInProgress.id);
     const filteredChildren = this.applyFilters(directChildren, assignee, searchTerm).filter(
       item => item.status !== 'in-progress' && item.status !== 'completed' && item.status !== 'deleted'
-    );
+    ).filter(item => !excluded?.has(item.id));
 
     this.debug(`${debugPrefix} direct children=${directChildren.length} filtered children=${filteredChildren.length}`);
 
     if (filteredChildren.length === 0) {
+      if (excluded?.has(selectedInProgress.id)) {
+        return { workItem: null, reason: 'No available items after exclusions' };
+      }
       // No suitable direct children, return the in-progress item itself
       return {
         workItem: selectedInProgress,

@@ -34,28 +34,42 @@ export default function register(ctx: PluginContext): void {
         ? (db as any).findNextWorkItems(count, options.assignee, options.search, recencyPolicy, includeInReview) 
         : [db.findNextWorkItem(options.assignee, options.search, recencyPolicy, includeInReview)];
 
+      const availableResults = results.filter((result: any) => Boolean(result.workItem));
+      const missingCount = Math.max(0, count - availableResults.length);
+      const note = missingCount > 0
+        ? `Only ${availableResults.length} of ${count} requested work item(s) available.`
+        : '';
+
       if (utils.isJsonMode()) {
-        if (results.length === 1) {
+        if (count === 1) {
           const single = results[0];
           output.json({ success: true, workItem: single.workItem, reason: single.reason });
           return;
         }
 
-        output.json({ success: true, count: results.length, results });
+        output.json({
+          success: true,
+          count: availableResults.length,
+          requested: count,
+          results: availableResults,
+          ...(note ? { note } : {})
+        });
         return;
       }
 
-      if (!results || results.length === 0) {
+      if (!availableResults || availableResults.length === 0) {
         console.log('No work items found to work on.');
+        if (note) console.log(chalk.gray(`Note: ${note}`));
         return;
       }
 
       const chosenFormat = resolveFormat(program);
-      if (results.length === 1) {
-        const result = results[0];
+      if (availableResults.length === 1) {
+        const result = availableResults[0];
         if (!result.workItem) {
           console.log('No work items found to work on.');
           if (result.reason) console.log(`Reason: ${result.reason}`);
+          if (note) console.log(chalk.gray(`Note: ${note}`));
           return;
         }
 
@@ -69,12 +83,14 @@ export default function register(ctx: PluginContext): void {
         console.log(chalk.gray(reasonText));
         console.log('');
         console.log(`${chalk.gray('ID')}: ${chalk.gray(result.workItem.id)}`);
+        if (note) console.log(chalk.gray(`Note: ${note}`));
         return;
       }
 
-      console.log(`\nNext ${results.length} work item(s) to work on:`);
+      console.log(`\nNext ${availableResults.length} work item(s) to work on:`);
+      if (note) console.log(chalk.gray(`Note: ${note}`));
       console.log('===============================\n');
-      results.forEach((res: any, idx: number) => {
+      availableResults.forEach((res: any, idx: number) => {
         if (!res.workItem) {
           console.log(`${idx + 1}. (no item) - ${res.reason}`);
           return;
