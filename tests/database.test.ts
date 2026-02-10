@@ -484,6 +484,25 @@ describe('WorklogDatabase', () => {
       expect(allItems.find(i => i.id === 'TEST-001')).toBeDefined();
       expect(allItems.find(i => i.id === 'TEST-002')).toBeDefined();
     });
+
+    it('should record lastJsonlExportMtime in metadata after export', () => {
+      // Ensure initial state: remove jsonl if present
+      if (fs.existsSync(jsonlPath)) fs.unlinkSync(jsonlPath);
+
+      const dbWithExport = new WorklogDatabase('TEST', dbPath, jsonlPath, true, true);
+      dbWithExport.create({ title: 'Export test' });
+
+      // Read metadata directly from the underlying sqlite store
+      const store = dbWithExport['store'] as any; // access for testing
+      const mtimeStr = store.getMetadata('lastJsonlExportMtime');
+      expect(mtimeStr).toBeDefined();
+      const mtimeNum = Number(mtimeStr);
+      expect(Number.isFinite(mtimeNum)).toBe(true);
+
+      const fileStats = fs.statSync(jsonlPath);
+      // mtime recorded should equal file mtime (within 1ms)
+      expect(Math.abs(mtimeNum - fileStats.mtimeMs)).toBeLessThan(2);
+    });
   });
 
   describe('autoExport', () => {
