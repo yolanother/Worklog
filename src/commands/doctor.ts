@@ -87,7 +87,15 @@ export default function register(ctx: PluginContext): void {
       }
 
       // At the end, list findings that require manual intervention (no actionable proposedFix)
-      const manual = findings.filter(f => (f as any).context && (f as any).context.requiresManualFix);
+      const manual = findings.filter(f => {
+        const ctx = (f as any).context || {};
+        const proposed = f.proposedFix as any;
+        const hasActionableFix = proposed && typeof proposed === 'object' && (
+          Object.prototype.hasOwnProperty.call(proposed, 'status') ||
+          Object.prototype.hasOwnProperty.call(proposed, 'stage')
+        );
+        return !!ctx.requiresManualFix || !hasActionableFix;
+      });
       if (manual.length > 0) {
         // Group by finding type
         const byType = new Map<string, typeof manual>();
