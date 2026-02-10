@@ -836,7 +836,8 @@ export function createGithubIssue(config: GithubConfig, payload: { title: string
     issueNumber = parseInt(match[1], 10);
   }
   if (issueNumber !== null && payload.labels.length > 0) {
-    ensureGithubLabels(config, payload.labels);
+    // Ensure labels once per process to reduce API calls
+    ensureGithubLabelsOnce(config, payload.labels);
     runGh(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`);
   }
   if (issueNumber === null) {
@@ -881,6 +882,39 @@ export async function ensureGithubLabelsAsync(config: GithubConfig, labels: stri
   }
 }
 
+// Per-process cache to avoid repeatedly ensuring the same labels for the same repo
+const ensuredLabelsCache = new Map<string, Set<string>>();
+
+function ensureGithubLabelsOnce(config: GithubConfig, labels: string[]): void {
+  const unique = Array.from(new Set(labels.filter(label => label.trim() !== '')));
+  if (unique.length === 0) return;
+  const cacheKey = config.repo;
+  let cache = ensuredLabelsCache.get(cacheKey);
+  if (!cache) {
+    cache = new Set<string>();
+    ensuredLabelsCache.set(cacheKey, cache);
+  }
+  const missing = unique.filter(l => !cache!.has(l));
+  if (missing.length === 0) return;
+  ensureGithubLabels(config, missing);
+  for (const l of missing) cache.add(l);
+}
+
+async function ensureGithubLabelsOnceAsync(config: GithubConfig, labels: string[]): Promise<void> {
+  const unique = Array.from(new Set(labels.filter(label => label.trim() !== '')));
+  if (unique.length === 0) return;
+  const cacheKey = config.repo;
+  let cache = ensuredLabelsCache.get(cacheKey);
+  if (!cache) {
+    cache = new Set<string>();
+    ensuredLabelsCache.set(cacheKey, cache);
+  }
+  const missing = unique.filter(l => !cache!.has(l));
+  if (missing.length === 0) return;
+  await ensureGithubLabelsAsync(config, missing);
+  for (const l of missing) cache.add(l);
+}
+
 export async function createGithubIssueAsync(config: GithubConfig, payload: { title: string; body: string; labels: string[] }): Promise<GithubIssueRecord> {
   const command = `gh issue create --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
   const output = await runGhAsync(command, payload.body);
@@ -888,7 +922,8 @@ export async function createGithubIssueAsync(config: GithubConfig, payload: { ti
   const match = output.match(/\/(\d+)$/);
   if (match) issueNumber = parseInt(match[1], 10);
   if (issueNumber !== null && payload.labels.length > 0) {
-    await ensureGithubLabelsAsync(config, payload.labels);
+    // Ensure labels once per process to reduce API calls
+    await ensureGithubLabelsOnceAsync(config, payload.labels);
     try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`); } catch (_) {}
   }
   if (issueNumber === null) {
@@ -905,28 +940,51 @@ export async function updateGithubIssueAsync(
   issueNumber: number,
   payload: { title: string; body: string; labels: string[]; state: 'open' | 'closed' }
 ): Promise<GithubIssueRecord> {
-  const command = `gh issue edit ${issueNumber} --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
-  await runGhAsync(command, payload.body);
-
-  if (payload.state === 'closed') {
-    try { await runGhAsync(`gh issue close ${issueNumber} --repo ${config.repo}`); } catch (_) {}
-  } else {
-    try { await runGhAsync(`gh issue reopen ${issueNumber} --repo ${config.repo}`); } catch (_) {}
+  // Fetch current issue once and compute minimal set of operations
+  let current: GithubIssueRecord;
+  try {
+    current = await getGithubIssueAsync(config, issueNumber);
+  } catch {
+    current = getGithubIssue(config, issueNumber);
   }
 
+  const ops: Array<Promise<void>> = [];
+  const titleChanged = (current.title || '') !== (payload.title || '');
+  const bodyChanged = (current.body || '') !== (payload.body || '');
+  // Only edit title/body if something changed
+  if (titleChanged || bodyChanged) {
+    const command = `gh issue edit ${issueNumber} --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
+    ops.push(runGhAsync(command, payload.body).then(() => {}).catch(() => {}));
+  }
+
+  // State change: only close/reopen when different
+  if (payload.state === 'closed' && current.state !== 'closed') {
+    ops.push(runGhAsync(`gh issue close ${issueNumber} --repo ${config.repo}`).then(() => {}).catch(() => {}));
+  } else if (payload.state === 'open' && current.state === 'closed') {
+    ops.push(runGhAsync(`gh issue reopen ${issueNumber} --repo ${config.repo}`).then(() => {}).catch(() => {}));
+  }
+
+  // Labels: compute status labels to remove and labels to add
   if (payload.labels.length > 0) {
-    const normalizedPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
-    let current: GithubIssueRecord;
-    try { current = await getGithubIssueAsync(config, issueNumber); } catch { current = getGithubIssue(config, issueNumber); }
-    const statusLabelsToRemove = current.labels.filter(label => isStatusLabel(label, config.labelPrefix) && label !== (payload.labels.find(l => l.startsWith(`${normalizedPrefix}status:`)) || null));
+    const desiredSet = new Set(payload.labels);
+    const statusLabelsToRemove = current.labels.filter(label => isStatusLabel(label, config.labelPrefix) && !desiredSet.has(label));
     if (statusLabelsToRemove.length > 0) {
-      try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --remove-label ${JSON.stringify(statusLabelsToRemove.join(','))}`); } catch (_) {}
+      ops.push(runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --remove-label ${JSON.stringify(statusLabelsToRemove.join(','))}`).then(() => {}).catch(() => {}));
     }
 
-    await ensureGithubLabelsAsync(config, payload.labels);
-    try { await runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`); } catch (_) {}
+    // Compute labels that are not already present
+    const labelsToAdd = payload.labels.filter(l => !current.labels.includes(l));
+    if (labelsToAdd.length > 0) {
+      await ensureGithubLabelsOnceAsync(config, labelsToAdd);
+      ops.push(runGhAsync(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(labelsToAdd.join(','))}`).then(() => {}).catch(() => {}));
+    }
   }
 
+  // Execute operations (they may run in parallel)
+  if (ops.length > 0) await Promise.all(ops);
+
+  // If no ops ran, return current object, else fetch fresh state
+  if (ops.length === 0) return current;
   const parsed = await runGhJsonAsync(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
   return normalizeGithubIssue(parsed);
 }
@@ -965,29 +1023,40 @@ export function updateGithubIssue(
   issueNumber: number,
   payload: { title: string; body: string; labels: string[]; state: 'open' | 'closed' }
 ): GithubIssueRecord {
-  const command = `gh issue edit ${issueNumber} --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`;
-  runGh(command, payload.body);
+  // Fetch current issue once and compute minimal operations
+  const current = getGithubIssue(config, issueNumber);
+  const ops: (() => void)[] = [];
+  const titleChanged = (current.title || '') !== (payload.title || '');
+  const bodyChanged = (current.body || '') !== (payload.body || '');
+  if (titleChanged || bodyChanged) {
+    ops.push(() => runGh(`gh issue edit ${issueNumber} --repo ${config.repo} --title ${JSON.stringify(payload.title)} --body-file -`, payload.body));
+  }
 
-  if (payload.state === 'closed') {
-    runGh(`gh issue close ${issueNumber} --repo ${config.repo}`);
-  } else {
-    runGh(`gh issue reopen ${issueNumber} --repo ${config.repo}`);
+  if (payload.state === 'closed' && current.state !== 'closed') {
+    ops.push(() => runGh(`gh issue close ${issueNumber} --repo ${config.repo}`));
+  } else if (payload.state === 'open' && current.state === 'closed') {
+    ops.push(() => runGh(`gh issue reopen ${issueNumber} --repo ${config.repo}`));
   }
 
   if (payload.labels.length > 0) {
-    const normalizedPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
-    const desiredStatusLabel = payload.labels.find(label => label.startsWith(`${normalizedPrefix}status:`)) || null;
-    const current = getGithubIssue(config, issueNumber);
-    const statusLabelsToRemove = current.labels.filter(label => isStatusLabel(label, config.labelPrefix) && label !== desiredStatusLabel);
+    const desiredSet = new Set(payload.labels);
+    const statusLabelsToRemove = current.labels.filter(label => isStatusLabel(label, config.labelPrefix) && !desiredSet.has(label));
     if (statusLabelsToRemove.length > 0) {
-      runGhSafe(`gh issue edit ${issueNumber} --repo ${config.repo} --remove-label ${JSON.stringify(statusLabelsToRemove.join(','))}`);
+      ops.push(() => runGhSafe(`gh issue edit ${issueNumber} --repo ${config.repo} --remove-label ${JSON.stringify(statusLabelsToRemove.join(','))}`));
     }
 
-    ensureGithubLabels(config, payload.labels);
-    const labelsCommand = `gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(payload.labels.join(','))}`;
-    runGh(labelsCommand);
+    const labelsToAdd = payload.labels.filter(l => !current.labels.includes(l));
+    if (labelsToAdd.length > 0) {
+      ensureGithubLabelsOnce(config, labelsToAdd);
+      ops.push(() => runGh(`gh issue edit ${issueNumber} --repo ${config.repo} --add-label ${JSON.stringify(labelsToAdd.join(','))}`));
+    }
   }
 
+  for (const op of ops) {
+    try { op(); } catch (_) { /* ignore individual failures */ }
+  }
+
+  if (ops.length === 0) return current;
   const output = runGh(`gh issue view ${issueNumber} --repo ${config.repo} --json number,id,title,body,state,labels,updatedAt`);
   const parsed = JSON.parse(output) as any;
   return normalizeGithubIssue(parsed);
