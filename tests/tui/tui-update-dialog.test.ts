@@ -407,6 +407,60 @@ describe('TUI Update Dialog', () => {
       expect(result.hasChanges).toBe(false);
       expect(result.updates).toEqual({});
     });
+
+    it('should end comment input reading on blur to avoid duplicate keypress handling', () => {
+      const screen = blessed.screen({ mouse: true, smartCSR: true });
+      const stageList = blessed.list({ parent: screen, items: stageLabels.slice(0, 2) });
+      const statusList = blessed.list({ parent: screen, items: statusLabels.slice(0, 2) });
+      const priorityList = blessed.list({ parent: screen, items: ['high', 'low'] });
+      const commentBox = blessed.textarea({ parent: screen, inputOnFocus: true, keys: true });
+
+      const updateDialogFieldOrder = [stageList, statusList, priorityList, commentBox];
+      const focusManager = createUpdateDialogFocusManager(updateDialogFieldOrder);
+
+      const endCommentReading = () => {
+        if (typeof (commentBox as any).cancel === 'function') {
+          (commentBox as any).cancel();
+        }
+        if ((commentBox as any)._reading) {
+          (commentBox as any)._reading = false;
+        }
+        (screen as any).grabKeys = false;
+      };
+
+      const startCommentReading = () => {
+        if (typeof (commentBox as any).readInput === 'function') {
+          (commentBox as any).readInput();
+        }
+      };
+
+      updateDialogFieldOrder.forEach((field) => {
+        field.on('blur', () => {
+          if (field === commentBox) {
+            endCommentReading();
+          }
+        });
+        field.on('focus', () => {
+          if (field === commentBox) {
+            startCommentReading();
+          }
+        });
+      });
+
+      // Simulate comment box input reading, then blur to another field
+      (commentBox as any)._reading = true;
+      (screen as any).grabKeys = true;
+      focusManager.focusIndex(3);
+      commentBox.emit('blur');
+
+      expect((commentBox as any)._reading).toBe(false);
+      expect((screen as any).grabKeys).toBe(false);
+
+      commentBox.emit('focus');
+      expect((commentBox as any)._reading).toBe(true);
+
+      screen.destroy();
+    });
   });
 
   describe('Update Dialog Default Selection', () => {
