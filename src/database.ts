@@ -73,6 +73,13 @@ export class WorklogDatabase {
       return; // No JSONL file, nothing to refresh from
     }
 
+    if (!this.autoExport) {
+      const itemCount = this.store.countWorkItems();
+      if (itemCount > 0) {
+        return;
+      }
+    }
+
     const jsonlStats = fs.statSync(this.jsonlPath);
     const jsonlMtime = jsonlStats.mtimeMs;
 
@@ -369,6 +376,7 @@ export class WorklogDatabase {
 
     this.store.saveWorkItem(item);
     this.exportToJsonl();
+    this.refreshFromJsonlIfNewer();
     this.triggerAutoSync();
     return item;
   }
@@ -416,6 +424,7 @@ export class WorklogDatabase {
 
     this.store.saveWorkItem(updated);
     this.exportToJsonl();
+    this.refreshFromJsonlIfNewer();
     this.triggerAutoSync();
 
     if (previousStatus !== updated.status || previousStage !== updated.stage) {
@@ -460,6 +469,7 @@ export class WorklogDatabase {
    * List all work items
    */
   list(query?: WorkItemQuery): WorkItem[] {
+    this.refreshFromJsonlIfNewer();
     let items = this.store.getAllWorkItems();
 
       if (query) {
@@ -1095,10 +1105,12 @@ export class WorklogDatabase {
    * Get all work items as an array
    */
   getAll(): WorkItem[] {
+    this.refreshFromJsonlIfNewer();
     return this.store.getAllWorkItems();
   }
 
   getAllOrderedByHierarchySortIndex(): WorkItem[] {
+    this.refreshFromJsonlIfNewer();
     return this.store.getAllWorkItemsOrderedByHierarchySortIndex();
   }
 
@@ -1123,6 +1135,7 @@ export class WorklogDatabase {
       }
     }
     this.exportToJsonl();
+    this.refreshFromJsonlIfNewer();
     this.triggerAutoSync();
   }
 
@@ -1143,6 +1156,7 @@ export class WorklogDatabase {
 
     this.store.saveDependencyEdge(edge);
     this.exportToJsonl();
+    this.refreshFromJsonlIfNewer();
     this.triggerAutoSync();
     return edge;
   }
@@ -1155,6 +1169,7 @@ export class WorklogDatabase {
     const removed = this.store.deleteDependencyEdge(fromId, toId);
     if (removed) {
       this.exportToJsonl();
+      this.refreshFromJsonlIfNewer();
       this.triggerAutoSync();
     }
     return removed;
@@ -1327,6 +1342,7 @@ export class WorklogDatabase {
      this.store.saveComment(comment);
      this.touchWorkItemUpdatedAt(input.workItemId);
      this.exportToJsonl();
+     this.refreshFromJsonlIfNewer();
      this.triggerAutoSync();
      return comment;
   }
@@ -1372,6 +1388,7 @@ export class WorklogDatabase {
      this.store.saveComment(updated);
      this.touchWorkItemUpdatedAt(comment.workItemId);
      this.exportToJsonl();
+     this.refreshFromJsonlIfNewer();
      this.triggerAutoSync();
      return updated;
   }
@@ -1386,12 +1403,13 @@ export class WorklogDatabase {
        return false;
      }
      const result = this.store.deleteComment(id);
-     if (result) {
-       this.touchWorkItemUpdatedAt(comment.workItemId);
-       this.exportToJsonl();
-       this.triggerAutoSync();
-     }
-     return result;
+      if (result) {
+        this.touchWorkItemUpdatedAt(comment.workItemId);
+        this.exportToJsonl();
+        this.refreshFromJsonlIfNewer();
+        this.triggerAutoSync();
+      }
+      return result;
   }
 
   /**
@@ -1406,10 +1424,12 @@ export class WorklogDatabase {
    * Get all comments as an array
    */
   getAllComments(): Comment[] {
+    this.refreshFromJsonlIfNewer();
     return this.store.getAllComments();
   }
 
   getAllDependencyEdges(): DependencyEdge[] {
+    this.refreshFromJsonlIfNewer();
     return this.store.getAllDependencyEdges();
   }
 
@@ -1422,6 +1442,7 @@ export class WorklogDatabase {
       this.store.saveComment(comment);
     }
     this.exportToJsonl();
+    this.refreshFromJsonlIfNewer();
     this.triggerAutoSync();
   }
 
