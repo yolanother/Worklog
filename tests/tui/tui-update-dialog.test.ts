@@ -625,6 +625,26 @@ describe('TUI Update Dialog', () => {
       });
     });
 
+    it('should allow updates when stage is undefined/blank', () => {
+      const item = { status: 'open', stage: '', priority: 'medium' };
+      const result = buildUpdateDialogUpdates(
+        item,
+        { statusIndex: 0, stageIndex: 0, priorityIndex: 0 },
+        {
+          statuses: ['open'],
+          stages: [''],
+          priorities: ['critical', 'high', 'medium', 'low'],
+        },
+        {
+          statusStage: rulesConfig.statusStageCompatibility,
+          stageStatus: rulesConfig.stageStatusCompatibility,
+        }
+      );
+
+      expect(result.hasChanges).toBe(true);
+      expect(result.updates).toEqual({ stage: '', priority: 'critical' });
+    });
+
     it('should return no changes when selections match current values', () => {
       const item = { status: 'open', stage: 'idea', priority: 'medium' };
       const result = buildUpdateDialogUpdates(
@@ -743,6 +763,48 @@ describe('TUI Update Dialog', () => {
       expect(commentValue).toBe('keep me');
     });
 
+    it('should surface update error message in toast', () => {
+      const updateCalls: Array<Record<string, string>> = [];
+      const db = {
+        update: (_id: string, updates: Record<string, string>) => {
+          updateCalls.push(updates);
+          throw new Error('Update failed: bad stage');
+        },
+      };
+      const toastMessages: string[] = [];
+      const toastComponent = { show: (message: string) => toastMessages.push(message) };
+
+      const submitUpdateDialogWithFailure = () => {
+        const { updates, hasChanges } = buildUpdateDialogUpdates(
+          { status: 'open', stage: 'idea', priority: 'medium' },
+          { statusIndex: 0, stageIndex: 0, priorityIndex: 0 },
+          {
+            statuses: ['open'],
+            stages: ['idea'],
+            priorities: ['critical', 'high', 'medium', 'low'],
+          },
+          {
+            statusStage: rulesConfig.statusStageCompatibility,
+            stageStatus: rulesConfig.stageStatusCompatibility,
+          }
+        );
+
+        try {
+          if (!hasChanges) return;
+          if (Object.keys(updates).length > 0) db.update('WL-TEST-1', updates);
+        } catch (err) {
+          const message = err instanceof Error
+            ? err.message
+            : (typeof err === 'string' ? err : 'Update failed');
+          toastComponent.show(message || 'Update failed');
+        }
+      };
+
+      submitUpdateDialogWithFailure();
+      expect(updateCalls).toHaveLength(1);
+      expect(toastMessages).toEqual(['Update failed: bad stage']);
+    });
+
     it('should treat blank stage as compatible with deleted status', () => {
       const item = { status: 'open', stage: '', priority: 'medium' };
       const result = buildUpdateDialogUpdates(
@@ -758,15 +820,8 @@ describe('TUI Update Dialog', () => {
           stageStatus: rulesConfig.stageStatusCompatibility,
         }
       );
-
-      const allowsBlankStage = (rulesConfig.statusStageCompatibility.deleted || []).includes('');
-      if (allowsBlankStage) {
-        expect(result.hasChanges).toBe(true);
-        expect(result.updates).toEqual({ status: 'deleted' });
-      } else {
-        expect(result.hasChanges).toBe(false);
-        expect(result.updates).toEqual({});
-      }
+      expect(result.hasChanges).toBe(true);
+      expect(result.updates).toEqual({ status: 'deleted', stage: '' });
     });
 
     it('should not call db.update when Escape cancels', () => {

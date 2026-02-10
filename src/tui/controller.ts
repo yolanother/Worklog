@@ -2917,7 +2917,10 @@ export class TuiController {
         showToast('Updated');
         refreshFromDatabase(Math.max(0, (list.selected as number) - 0));
       } catch (err) {
-        showToast('Update failed');
+        const message = err instanceof Error
+          ? err.message
+          : (typeof err === 'string' ? err : 'Update failed');
+        showToast(message || 'Update failed');
       }
 
       closeUpdateDialog();
