@@ -43,13 +43,16 @@ export function buildUpdateDialogUpdates(
   const nextStatus = resolveSelection(values.statuses, selections.statusIndex);
   const nextStage = resolveSelection(values.stages, selections.stageIndex);
   const nextPriority = resolveSelection(values.priorities, selections.priorityIndex);
+  const compatibilityStage = nextStage === '' && item.stage === '' ? undefined : nextStage;
 
-  if (!isStatusStageCompatible(nextStatus, nextStage, rules)) {
+  if (!isStatusStageCompatible(nextStatus, compatibilityStage, rules)) {
     return { updates: {}, hasChanges: false };
   }
 
   if (nextStatus && nextStatus !== item.status) updates.status = nextStatus;
-  if (nextStage && nextStage !== item.stage) updates.stage = nextStage;
+  if (nextStage !== undefined && (nextStage === '' || nextStage !== item.stage)) {
+    updates.stage = nextStage;
+  }
   if (nextPriority && nextPriority !== item.priority) updates.priority = nextPriority;
 
   // Handle optional comment field. The UI may provide a multiline textbox
