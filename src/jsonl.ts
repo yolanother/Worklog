@@ -90,7 +90,11 @@ export function exportToJsonl(
   
   // Add comments
   sortedComments.forEach(comment => {
-    lines.push(stableStringify({ type: 'comment', data: comment }));
+    // Ensure comment includes the new optional GitHub mapping fields when present
+    const outComment = { ...comment } as any;
+    if (outComment.githubCommentId === undefined) delete outComment.githubCommentId;
+    if (outComment.githubCommentUpdatedAt === undefined) delete outComment.githubCommentUpdatedAt;
+    lines.push(stableStringify({ type: 'comment', data: outComment }));
   });
   
   // Ensure directory exists
@@ -196,7 +200,11 @@ export function importFromJsonlContent(content: string): { items: WorkItem[], co
         if (comment.comment) {
           comment.comment = stripWorklogMarkers(comment.comment);
         }
-        comments.push(comment);
+        // Preserve optional GitHub mapping fields when present in JSONL
+        const normalized: any = { ...comment };
+        if (normalized.githubCommentId === undefined) normalized.githubCommentId = undefined;
+        if (normalized.githubCommentUpdatedAt === undefined) normalized.githubCommentUpdatedAt = undefined;
+        comments.push(normalized as Comment);
       } else {
         // Handle old format (no type field) - assume it's a work item
         console.warn(`Warning: Found entry without type field, assuming it's a work item. Consider migrating to the new format.`);

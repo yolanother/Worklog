@@ -65,9 +65,11 @@ export function createStatusStageRules(
 
   const statuses = config.statuses;
   const stages = config.stages;
-  const statusStageCompatibility = config.statusStageCompatibility;
+  // Make a shallow copy so we can safely use it without mutating input
+  const statusStageCompatibility: Record<string, readonly string[]> = { ...config.statusStageCompatibility };
   const statusValues = statuses.map(entry => entry.value);
   const stageValues = stages.map(entry => entry.value);
+
   const stageStatusCompatibility = deriveStageStatusCompatibility(statusStageCompatibility, stageValues);
 
   const { labelsByValue: statusLabels, valuesByLabel: statusValuesByLabel } = buildLabelMaps(statuses);

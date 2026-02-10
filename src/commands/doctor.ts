@@ -17,8 +17,9 @@ export default function register(ctx: PluginContext): void {
   program
     .command('doctor')
     .description('Validate work items against status/stage config rules')
+    .option('--fix', 'Apply safe fixes and prompt for non-safe findings')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options: DoctorOptions) => {
+    .action(async (options: DoctorOptions & { fix?: boolean }) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const items = db.getAll();
@@ -32,10 +33,29 @@ export default function register(ctx: PluginContext): void {
       }
 
       const dependencyEdges = db.getAllDependencyEdges();
-      const findings = [
+      let findings = [
         ...validateStatusStageItems(items, rules),
         ...validateDependencyEdges(items, dependencyEdges),
       ];
+
+      // If --fix was provided, attempt to apply safe fixes and prompt per non-safe finding
+      if (options.fix) {
+        // Lazy import to avoid adding readline overhead in normal runs
+        const { applyDoctorFixes } = await import('../doctor/fix.js');
+        // Import the Node readline module dynamically (avoid `require` which is not available in ESM runtime)
+        const readlineMod = await import('node:readline');
+        const promptFn = (promptText: string) => {
+          const rl = readlineMod.createInterface({ input: process.stdin, output: process.stdout });
+          return new Promise<boolean>(resolve => {
+            rl.question(promptText + ' (y/N): ', (answer: string) => {
+              rl.close();
+              const a = (answer || '').trim().toLowerCase();
+              resolve(a === 'y' || a === 'yes');
+            });
+          });
+        };
+        findings = await applyDoctorFixes(db, findings, promptFn);
+      }
 
       if (utils.isJsonMode()) {
         output.json(findings);
@@ -62,6 +82,55 @@ export default function register(ctx: PluginContext): void {
           console.log(`  - ${finding.message}`);
           if (finding.proposedFix) {
             console.log(`    Suggested: ${JSON.stringify(finding.proposedFix)}`);
+          }
+        }
+      }
+
+      // At the end, list findings that require manual intervention (no actionable proposedFix)
+      const manual = findings.filter(f => {
+        const ctx = (f as any).context || {};
+        const proposed = f.proposedFix as any;
+        const hasActionableFix = proposed && typeof proposed === 'object' && (
+          Object.prototype.hasOwnProperty.call(proposed, 'status') ||
+          Object.prototype.hasOwnProperty.call(proposed, 'stage')
+        );
+        return !!ctx.requiresManualFix || !hasActionableFix;
+      });
+      if (manual.length > 0) {
+        // Group by finding type
+        const byType = new Map<string, typeof manual>();
+        for (const f of manual) {
+          const list = byType.get(f.type) || [];
+          list.push(f);
+          byType.set(f.type, list);
+        }
+
+        console.log('\nManual fixes required (grouped by type):');
+        for (const [type, group] of byType.entries()) {
+          console.log(`\nType: ${type}`);
+          for (const f of group) {
+            // Show basic message
+            let line = `  - ${f.itemId}: ${f.message}`;
+            // Include suggested allowed values if available
+            const proposed = f.proposedFix as any;
+            const ctx = (f as any).context || {};
+            const suggestions: string[] = [];
+            if (proposed) {
+              if (proposed.allowedStages) suggestions.push(`allowedStages=${JSON.stringify(proposed.allowedStages)}`);
+              if (proposed.allowedStatuses) suggestions.push(`allowedStatuses=${JSON.stringify(proposed.allowedStatuses)}`);
+              if (proposed.stage) suggestions.push(`proposedStage=${String(proposed.stage)}`);
+              if (proposed.status) suggestions.push(`proposedStatus=${String(proposed.status)}`);
+            }
+            // Also check context for same keys
+            if (ctx.allowedStages && !suggestions.some(s => s.startsWith('allowedStages='))) {
+              suggestions.push(`allowedStages=${JSON.stringify(ctx.allowedStages)}`);
+            }
+            if (ctx.allowedStatuses && !suggestions.some(s => s.startsWith('allowedStatuses='))) {
+              suggestions.push(`allowedStatuses=${JSON.stringify(ctx.allowedStatuses)}`);
+            }
+
+            if (suggestions.length > 0) line += ` (${suggestions.join('; ')})`;
+            console.log(line);
           }
         }
       }

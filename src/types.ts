@@ -143,6 +143,9 @@ export interface Comment {
   comment: string;
   createdAt: string;
   references: string[];
+  // Optional GitHub mapping: ID of the GitHub issue comment and last-updated timestamp
+  githubCommentId?: number;
+  githubCommentUpdatedAt?: string;
 }
 
 /**
@@ -163,6 +166,8 @@ export interface CreateCommentInput {
   author: string;
   comment: string;
   references?: string[];
+  githubCommentId?: number;
+  githubCommentUpdatedAt?: string;
 }
 
 /**
@@ -172,6 +177,8 @@ export interface UpdateCommentInput {
   author?: string;
   comment?: string;
   references?: string[];
+  githubCommentId?: number | null;
+  githubCommentUpdatedAt?: string | null;
 }
 
 /**

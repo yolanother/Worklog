@@ -41,7 +41,7 @@ export default function register(ctx: PluginContext): void {
     .option('--repo <owner/name>', 'GitHub repo (owner/name)')
     .option('--label-prefix <prefix>', 'Label prefix for Worklog labels (default: wl:)')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options) => {
+    .action(async (options) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const isJsonMode = utils.isJsonMode();
@@ -90,12 +90,17 @@ export default function register(ctx: PluginContext): void {
         const verboseLog = isVerbose && !isJsonMode
           ? (message: string) => console.log(message)
           : undefined;
-        const { updatedItems, result, timing } = upsertIssuesFromWorkItems(
+        const { updatedItems, result, timing } = await upsertIssuesFromWorkItems(
           items,
           comments,
           githubConfig,
           renderProgress,
-          verboseLog
+          verboseLog,
+          // persistComment - write back github mapping to DB
+          (comment) => db.updateComment(comment.id, {
+            githubCommentId: comment.githubCommentId ?? null,
+            githubCommentUpdatedAt: comment.githubCommentUpdatedAt ?? null,
+          })
         );
         if (updatedItems.length > 0) {
           db.import(updatedItems);
@@ -154,7 +159,7 @@ export default function register(ctx: PluginContext): void {
     .option('--since <iso>', 'Only import issues updated since ISO timestamp')
     .option('--create-new', 'Create new work items for issues without markers')
     .option('--prefix <prefix>', 'Override the default prefix')
-    .action((options) => {
+    .action(async (options) => {
       utils.requireInitialized();
       const db = utils.getDatabase(options.prefix);
       const isJsonMode = utils.isJsonMode();
@@ -211,7 +216,7 @@ export default function register(ctx: PluginContext): void {
         }
 
         if (createNew && createdItems.length > 0) {
-          const { updatedItems: markedItems } = upsertIssuesFromWorkItems(mergedItems, db.getAllComments(), githubConfig, renderProgress);
+          const { updatedItems: markedItems } = await upsertIssuesFromWorkItems(mergedItems, db.getAllComments(), githubConfig, renderProgress);
           if (markedItems.length > 0) {
             db.import(markedItems);
           }

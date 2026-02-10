@@ -1308,6 +1308,9 @@ export class WorklogDatabase {
       comment: input.comment,
       createdAt: now,
       references: input.references || [],
+      // Normalize nullable inputs: treat null as undefined
+      githubCommentId: input.githubCommentId == null ? undefined : input.githubCommentId,
+      githubCommentUpdatedAt: input.githubCommentUpdatedAt == null ? undefined : input.githubCommentUpdatedAt,
     };
 
     // Debug: log creation intent before saving (only when not silent)
@@ -1340,13 +1343,26 @@ export class WorklogDatabase {
       return null;
     }
 
-    const updated: Comment = {
+    let updatedAny: any = {
       ...comment,
       ...input,
-      id: comment.id, // Prevent ID changes
-      workItemId: comment.workItemId, // Prevent workItemId changes
-      createdAt: comment.createdAt, // Prevent createdAt changes
     };
+
+    // Normalize nullable github mapping fields: convert null -> undefined
+    if (updatedAny.githubCommentId == null) {
+      updatedAny.githubCommentId = undefined;
+    }
+    if (updatedAny.githubCommentUpdatedAt == null) {
+      updatedAny.githubCommentUpdatedAt = undefined;
+    }
+
+    // Prevent changing immutable fields
+    const updated: Comment = {
+      ...updatedAny,
+      id: comment.id,
+      workItemId: comment.workItemId,
+      createdAt: comment.createdAt,
+    } as Comment;
 
      this.store.saveComment(updated);
      this.touchWorkItemUpdatedAt(comment.workItemId);
