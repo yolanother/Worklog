@@ -31,6 +31,7 @@ import {
   loadStatusStageRules,
 } from '../status-stage-rules.js';
 import { OpencodeClient, type OpencodeServerStatus } from './opencode-client.js';
+import ChordHandler from './chords.js';
 
 type Item = WorkItem;
 
@@ -505,11 +506,97 @@ export class TuiController {
     const opencodeSend = opencodeUi.sendButton;
     const opencodeCancel = opencodeUi.cancelButton;
 
-    // Attach widget-level ctrl-w pending handlers now that opencodeText exists.
-    try {
-      [list, detail, updateDialogStageOptions, updateDialogStatusOptions, updateDialogPriorityOptions, updateDialogComment, opencodeText]
-        .forEach((w) => attachCtrlWPendingHandler(w as any));
-    } catch (_) {}
+    // Create ChordHandler and register Ctrl-W sequences now that opencodeText exists.
+    // We preserve the small suppression flags used elsewhere (suppressNextP, lastCtrlWKeyHandled)
+    // and provide the same timeout semantics as the legacy implementation.
+    const chordHandler = new ChordHandler({ timeoutMs: 2000 });
+    const chordDebug = !!process.env.TUI_CHORD_DEBUG;
+
+    // Short-lived suppression helpers
+    const clearCtrlWPending = () => {
+      // Clear any pending state held by the chord handler (leader+wait)
+      try { chordHandler.reset(); } catch (_) {}
+    };
+
+    // Register Ctrl-W chord handlers
+    if (chordDebug) console.error('[tui] registering ctrl-w chord handlers');
+    chordHandler.register(['C-w', 'w'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      clearCtrlWPending();
+      cycleFocus(1);
+      screen.render();
+    });
+
+    chordHandler.register(['C-w', 'p'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      clearCtrlWPending();
+      focusPaneByIndex(lastPaneFocusIndex);
+      screen.render();
+      // Suppress the next plain 'p' handler briefly to avoid duplicate activation
+      suppressNextP = true;
+      if (suppressNextPTimeout) clearTimeout(suppressNextPTimeout);
+      suppressNextPTimeout = setTimeout(() => { suppressNextP = false; suppressNextPTimeout = null; }, 100);
+    });
+
+    chordHandler.register(['C-w', 'h'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      clearCtrlWPending();
+      const current = getActivePaneIndex();
+      focusPaneByIndex(current - 1);
+      screen.render();
+    });
+
+    chordHandler.register(['C-w', 'l'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      clearCtrlWPending();
+      const current = getActivePaneIndex();
+      focusPaneByIndex(current + 1);
+      screen.render();
+    });
+
+    chordHandler.register(['C-w', 'j'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      if (opencodeDialog.hidden) return;
+      if (!opencodePane || (opencodePane as any).hidden) return;
+      clearCtrlWPending();
+      // Focus the input textarea
+      (opencodeText as Pane).focus?.();
+      syncFocusFromScreen();
+      screen.render();
+      // Suppress widget-level typing for a short moment so the 'j' doesn't also insert
+      lastCtrlWKeyHandled = true;
+      if (lastCtrlWKeyHandledTimeout) clearTimeout(lastCtrlWKeyHandledTimeout);
+      lastCtrlWKeyHandledTimeout = setTimeout(() => { lastCtrlWKeyHandled = false; lastCtrlWKeyHandledTimeout = null; }, 100);
+    });
+
+    chordHandler.register(['C-w', 'k'], () => {
+      if (helpMenu.isVisible()) return;
+      if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
+      if (opencodeDialog.hidden) return;
+      if (!opencodePane || (opencodePane as any).hidden) return;
+      clearCtrlWPending();
+      (opencodePane as Pane).focus?.();
+      syncFocusFromScreen();
+      screen.render();
+      lastCtrlWKeyHandled = true;
+      if (lastCtrlWKeyHandledTimeout) clearTimeout(lastCtrlWKeyHandledTimeout);
+      lastCtrlWKeyHandledTimeout = setTimeout(() => { lastCtrlWKeyHandled = false; lastCtrlWKeyHandledTimeout = null; }, 100);
+    });
+
+    // Debug helpers: log raw key events when debugging is enabled
+    if (chordDebug) {
+      try {
+        const origOn = screen.on.bind(screen);
+        screen.on('keypress', (_ch: any, key: any) => {
+          try { console.error(`[tui] raw keypress: ch='${String(_ch)}' key=${JSON.stringify(key)}`); } catch (_) {}
+        });
+      } catch (_) {}
+    }
 
     const setBorderFocusStyle = (element: Pane | undefined | null, focused: boolean) => {
       if (!element || !element.style) return;
@@ -601,105 +688,10 @@ export class TuiController {
       setOpencodeBorderFocusStyle(pane === opencodeDialog);
     };
 
-     let ctrlWPending = false;
-     let ctrlWTimeout: ReturnType<typeof setTimeout> | null = null;
-     let lastCtrlWTime = 0;
-     let suppressNextP = false;  // Flag to suppress 'p' handler after Ctrl-W p
-     let suppressNextPTimeout: ReturnType<typeof setTimeout> | null = null;
-     let lastCtrlWKeyHandled = false;  // Flag to suppress widget key handling after Ctrl-W command
-     let lastCtrlWKeyHandledTimeout: ReturnType<typeof setTimeout> | null = null;
-     
-      const setCtrlWPending = () => {
-        debugLog(`Setting ctrlWPending = true (timestamp: ${Date.now()})`);
-        ctrlWPending = true;
-        lastCtrlWTime = Date.now();
-        if (ctrlWTimeout) clearTimeout(ctrlWTimeout);
-        ctrlWTimeout = setTimeout(() => {
-          debugLog(`Clearing ctrlWPending (timeout)`);
-          ctrlWPending = false;
-          ctrlWTimeout = null;
-        }, 2000);  // Increased to 2 seconds
-      };
-
-      const handleCtrlWCommand = (name?: string) => {
-        debugLog(`handleCtrlWCommand(name="${name}")`);
-        if (!name) return false;
-        if (helpMenu.isVisible()) return false;
-        if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return false;
-        if (name === 'w') {
-          debugLog(`Handling Ctrl-W w (cycleFocus)`);
-          cycleFocus(1);
-          screen.render();
-          return true;
-        }
-        if (name === 'p') {
-          debugLog(`Handling Ctrl-W p (previous pane)`);
-          focusPaneByIndex(lastPaneFocusIndex);
-          screen.render();
-          return true;
-        }
-         if (name === 'h') {
-           debugLog(`Handling Ctrl-W h (focus left with wrap)`);
-           const current = getActivePaneIndex();
-           focusPaneByIndex(current - 1);  // Cycle backward (wraps around)
-           screen.render();
-           return true;
-         }
-         if (name === 'l') {
-           debugLog(`Handling Ctrl-W l (focus right with wrap)`);
-           const current = getActivePaneIndex();
-           focusPaneByIndex(current + 1);  // Cycle forward (wraps around)
-           screen.render();
-           return true;
-         }
-         if (name === 'k') {
-           debugLog(`Handling Ctrl-W k (focus up/opencodePane)`);
-            if (opencodeDialog.hidden) return false;
-            if (!opencodePane || opencodePane.hidden) return false;
-            (opencodePane as Pane).focus?.();
-            syncFocusFromScreen();
-            screen.render();
-            return true;
-         }
-          if (name === 'j') {
-            debugLog(`Handling Ctrl-W j (focus down/opencodeText)`);
-             if (opencodeDialog.hidden) return false;
-             if (!opencodePane || opencodePane.hidden) return false;
-             (opencodeText as Pane).focus?.();
-             syncFocusFromScreen();
-             screen.render();
-             return true;
-          }
-        debugLog(`handleCtrlWCommand: unrecognized key "${name}"`);
-        return false;
-      };
-
-      const handleCtrlWPendingKey = (name?: string) => {
-        debugLog(`handleCtrlWPendingKey(name="${name}", ctrlWPending=${ctrlWPending})`);
-        if (!ctrlWPending) {
-          debugLog(`ctrlWPending is false, ignoring key`);
-          return false;
-        }
-        ctrlWPending = false;
-        return handleCtrlWCommand(name);
-      };
-
-    const attachCtrlWPendingHandler = (widget: Pane | undefined | null) => {
-        if (!widget || typeof widget.on !== 'function') return;
-        // Attach a named handler so we can remove it later if the widget is destroyed
-        const handler = (...args: unknown[]) => {
-          const key = args[1] as KeyInfo | undefined;
-          debugLog(`Widget keypress handler fired: key.name="${(key as any)?.name}", key.ctrl=${(key as any)?.ctrl}`);
-          if (handleCtrlWPendingKey((key as any)?.name)) {
-            debugLog(`Widget handler: handleCtrlWPendingKey returned true, consuming event`);
-            return false;
-          }
-        };
-        try {
-          (widget as any).__opencode_ctrlw = handler;
-          widget.on('keypress', handler);
-        } catch (_) {}
-      };
+      let suppressNextP = false;  // Flag to suppress 'p' handler after Ctrl-W p
+      let suppressNextPTimeout: ReturnType<typeof setTimeout> | null = null;
+      let lastCtrlWKeyHandled = false;  // Flag to suppress widget key handling after Ctrl-W command
+      let lastCtrlWKeyHandledTimeout: ReturnType<typeof setTimeout> | null = null;
 
 
 
@@ -944,9 +936,10 @@ export class TuiController {
           return false;  // Consume the event
         }
 
-        // ALSO check if we're in the middle of a Ctrl-W sequence
-        if (ctrlWPending && ['j', 'k'].includes(_key?.name)) {
-          debugLog(`opencodeText: ctrlWPending is true and key is j/k - consuming event to prevent typing`);
+        // ALSO check if a chord prefix (e.g. Ctrl-W) is pending — if so, consume
+        // the follow-up j/k so it isn't inserted into the textarea.
+        if (chordHandler.isPending() && ['j', 'k'].includes(_key?.name)) {
+          debugLog(`opencodeText: chordHandler is pending and key is ${_key?.name} - consuming event`);
           return false;
         }
 
@@ -2492,10 +2485,7 @@ export class TuiController {
       // Stop the OpenCode server if we started it
       opencodeClient.stopServer();
       // Clear pending timers to avoid keeping the process alive
-      if (ctrlWTimeout) {
-        try { clearTimeout(ctrlWTimeout); } catch (_) {}
-        ctrlWTimeout = null;
-      }
+      try { chordHandler.reset(); } catch (_) {}
       if (refreshTimer) {
         try { clearTimeout(refreshTimer); } catch (_) {}
         refreshTimer = null;
@@ -2583,62 +2573,52 @@ export class TuiController {
        else closeHelp();
      });
 
-      // Raw keypress handler for Ctrl-W sequences
-      // This fires BEFORE screen.key() handlers and gives us lower-level control
+      // Raw keypress handler feeds into chord handler. If the chord system
+      // consumes the event, stop further processing.
       screen.on('keypress', (_ch: any, key: any) => {
         debugLog(`Raw keypress: ch="${_ch}", key.name="${key?.name}", key.ctrl=${key?.ctrl}, key.meta=${key?.meta}`);
-        
-        // Only process hjklwp when ctrlWPending is true
-        if (ctrlWPending && ['h', 'j', 'k', 'l', 'w', 'p'].includes(key?.name)) {
-          debugLog(`Raw handler: ctrlWPending is true and key is hjklwp, handling Ctrl-W command`);
-          if (handleCtrlWCommand(key?.name)) {
-            debugLog(`Raw handler: command handled, returning true to suppress further processing`);
-            ctrlWPending = false;
-            if (ctrlWTimeout) {
-              clearTimeout(ctrlWTimeout);
-              ctrlWTimeout = null;
-            }
-            // Set flag to suppress widget-level key handling
-            lastCtrlWKeyHandled = true;
-            if (lastCtrlWKeyHandledTimeout) clearTimeout(lastCtrlWKeyHandledTimeout);
-            lastCtrlWKeyHandledTimeout = setTimeout(() => { lastCtrlWKeyHandled = false; }, 100);
-            
-            // Set suppressNextP if we just handled Ctrl-W p
-            if (key?.name === 'p') {
-              suppressNextP = true;
-              if (suppressNextPTimeout) clearTimeout(suppressNextPTimeout);
-              suppressNextPTimeout = setTimeout(() => { suppressNextP = false; }, 100);
-            }
-            return false;  // Consume the event
+        try {
+          if (chordHandler.feed(key as KeyInfo)) {
+            debugLog(`ChordHandler consumed key event`);
+            return false;
           }
-        }
-      });
-
-      // Vim-style window navigation with Ctrl-W sequence
-      screen.key(['C-w'], (_ch: any, key: any) => {
-        debugLog(`Screen handler for Ctrl-W fired (key.ctrl=${key?.ctrl})`);
-        if (helpMenu.isVisible()) return;
-        if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
-        debugLog(`Setting ctrlWPending and waiting for follow-up key`);
-        setCtrlWPending();
-      });
-
-      screen.key(['h', 'j', 'k', 'l', 'w', 'p'], (_ch: any, key: any) => {
-        debugLog(`Screen handler for hjklwp fired, key.name="${key?.name}", key.ctrl=${key?.ctrl}, ctrlWPending=${ctrlWPending}`);
-        
-        // Skip this handler if it's a Ctrl- modifier key (those go to Ctrl-W handler)
-        if (key?.ctrl) {
-          debugLog(`Skipping: key has ctrl modifier, letting Ctrl- handler deal with it`);
-          return;
+        } catch (err) {
+          debugLog(`ChordHandler.feed threw: ${(err as any)?.message ?? String(err)}`);
         }
         
-        if (helpMenu.isVisible()) return;
-        if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
-        
-        const result = handleCtrlWPendingKey(key?.name);
-        debugLog(`handleCtrlWPendingKey returned ${result}`);
-        return result;
+        // No legacy pending-state fallback: chordHandler.feed handles all
+        // Ctrl-W prefixes and their follow-ups. If chordHandler didn't
+        // consume the event we fall through to normal key handlers.
       });
+
+        // Keep lightweight screen.key wrappers so tests and some widget-level
+        // handlers that register via screen.key still see a handler. These
+        // simply forward to the chordHandler so both the raw keypress path
+        // and the older key-based registration behave the same in tests.
+        try {
+          screen.key(['C-w'], (_ch: any, key: any) => {
+            try {
+              if (chordHandler.feed(key as KeyInfo)) {
+                debugLog(`screen.key C-w -> chord consumed`);
+                return false;
+              }
+            } catch (err) { debugLog(`C-w wrapper error: ${String(err)}`); }
+          });
+        } catch (_) {}
+
+        try {
+          screen.key(['h', 'j', 'k', 'l', 'w', 'p'], (_ch: any, key: any) => {
+            // If the key had a ctrl modifier, let the Ctrl handler deal with it
+            if (key?.ctrl) return;
+            try {
+              if (chordHandler.feed(key as KeyInfo)) {
+                debugLog(`screen.key ${String(key?.name)} -> chord consumed`);
+                return false;
+              }
+            } catch (err) { debugLog(`hjklwp wrapper error: ${String(err)}`); }
+            // Not consumed by chord system — fall through to normal handlers
+          });
+        } catch (_) {}
 
 
     // Open opencode prompt dialog (shortcut O)
