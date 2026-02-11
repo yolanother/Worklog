@@ -54,6 +54,13 @@ export class ChordHandler {
     }
   }
 
+  // Return whether a chord prefix is currently pending (leader pressed,
+  // waiting for follow-up). Tests and controller use this to guard widget
+  // behaviour while a chord is in-flight.
+  isPending(): boolean {
+    return this.pending.length > 0 || this.timer !== null || this.pendingHandler !== null;
+  }
+
   private scheduleClear(): void {
     if (this.timer) clearTimeout(this.timer as any);
     this.timer = setTimeout(() => {
@@ -109,7 +116,18 @@ export class ChordHandler {
       return true;
     }
 
-    // Partial match — consume event so caller can avoid treating it as ordinary keypress
+    // Partial match — there are children below this node but no handler at
+    // this exact node. We should defer/remember the pending prefix and also
+    // schedule a timeout to clear it (leader timeout). Without this the
+    // pending state would persist indefinitely which prevents normal
+    // behaviour and suppresses follow-up keys.
+    if (childCount > 0) {
+      this.pendingHandler = null;
+      this.scheduleClear();
+      return true;
+    }
+
+    // Fallback: consume the event so caller can avoid treating it as ordinary keypress
     return true;
   }
 }
