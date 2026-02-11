@@ -273,20 +273,31 @@ function ensureGithubLabels(config: GithubConfig, labels: string[]): void {
   }
 
   const { owner, name } = parseRepoSlug(config.repo);
-  const existingRaw = runGhSafe(`gh api repos/${owner}/${name}/labels --paginate`);
-  const existing = new Set<string>();
-  if (existingRaw) {
-    try {
-      const parsed = JSON.parse(existingRaw) as Array<{ name?: string }>;
-      for (const entry of parsed) {
-        if (entry.name) {
-          existing.add(entry.name);
+  // Load existing labels once per process for this repo and reuse it.
+  let existing = existingLabelsCache.get(config.repo);
+  if (existing === undefined && !existingLabelsCache.has(config.repo)) {
+    // Not fetched yet for this process - attempt to fetch and cache result.
+    const existingRaw = runGhSafe(`gh api repos/${owner}/${name}/labels --paginate`);
+    if (existingRaw) {
+      const parsedSet = new Set<string>();
+      try {
+        const parsed = JSON.parse(existingRaw) as Array<{ name?: string }>;
+        for (const entry of parsed) {
+          if (entry.name) parsedSet.add(entry.name);
         }
+      } catch {
+        // If parsing fails, fall back to an empty set but mark as fetched so we don't refetch.
       }
-    } catch {
-      // Ignore parse errors and attempt creation below.
+      existingLabelsCache.set(config.repo, parsedSet);
+      existing = parsedSet;
+    } else {
+      // Mark as fetched but empty to avoid repeated failing API calls.
+      existingLabelsCache.set(config.repo, new Set<string>());
+      existing = existingLabelsCache.get(config.repo)!;
     }
   }
+  // Ensure we have a Set to consult
+  if (!existing) existing = new Set<string>();
 
   for (const label of unique) {
     if (existing.has(label)) {
@@ -296,10 +307,13 @@ function ensureGithubLabels(config: GithubConfig, labels: string[]): void {
     const createCommand = `gh api -X POST repos/${owner}/${name}/labels -f name=${JSON.stringify(label)} -f color=${JSON.stringify(color)}`;
     const result = runGhSafe(createCommand);
     if (result !== null) {
+      // Update cached set so subsequent calls in this process know the label exists.
+      try { existing.add(label); } catch (_) {}
       continue;
     }
     const fallbackCommand = `gh issue label create ${JSON.stringify(label)} --repo ${config.repo} --color ${color}`;
     runGhSafe(fallbackCommand);
+    try { existing.add(label); } catch (_) {}
   }
 }
 
@@ -858,23 +872,38 @@ export async function ensureGithubLabelsAsync(config: GithubConfig, labels: stri
   if (unique.length === 0) return;
   const { owner, name } = parseRepoSlug(config.repo);
   try {
-    const existingRaw = await runGhJsonAsync(`gh api repos/${owner}/${name}/labels --paginate`);
-    const existing = new Set<string>();
-    if (existingRaw) {
-      for (const entry of existingRaw) {
-        if (entry?.name) existing.add(entry.name);
+    // Reuse per-process cache if available, otherwise fetch once and cache.
+    let existing = existingLabelsCache.get(config.repo);
+    if (existing === undefined && !existingLabelsCache.has(config.repo)) {
+      try {
+        const existingRaw = await runGhJsonAsync(`gh api repos/${owner}/${name}/labels --paginate`);
+        const parsedSet = new Set<string>();
+        if (existingRaw) {
+          for (const entry of existingRaw) {
+            if (entry?.name) parsedSet.add(entry.name);
+          }
+        }
+        existingLabelsCache.set(config.repo, parsedSet);
+        existing = parsedSet;
+      } catch {
+        // If fetch fails, cache an empty set to avoid repeated attempts.
+        existingLabelsCache.set(config.repo, new Set<string>());
+        existing = existingLabelsCache.get(config.repo)!;
       }
     }
+    if (!existing) existing = new Set<string>();
+
     for (const label of unique) {
       if (existing.has(label)) continue;
       const color = labelColor(label);
       const createCommand = `gh api -X POST repos/${owner}/${name}/labels -f name=${JSON.stringify(label)} -f color=${JSON.stringify(color)}`;
       try {
         await runGhAsync(createCommand);
+        existing.add(label);
         continue;
       } catch {
         const fallbackCommand = `gh issue label create ${JSON.stringify(label)} --repo ${config.repo} --color ${color}`;
-        try { await runGhAsync(fallbackCommand); } catch (_) { /* ignore */ }
+        try { await runGhAsync(fallbackCommand); existing.add(label); } catch (_) { /* ignore */ }
       }
     }
   } catch {
@@ -884,6 +913,9 @@ export async function ensureGithubLabelsAsync(config: GithubConfig, labels: stri
 
 // Per-process cache to avoid repeatedly ensuring the same labels for the same repo
 const ensuredLabelsCache = new Map<string, Set<string>>();
+// Cache of existing repo labels fetched from GitHub. Keyed by repo (owner/name).
+// When populated it avoids calling the labels API repeatedly during a single process run.
+const existingLabelsCache: Map<string, Set<string> | undefined> = new Map();
 
 function ensureGithubLabelsOnce(config: GithubConfig, labels: string[]): void {
   const unique = Array.from(new Set(labels.filter(label => label.trim() !== '')));
