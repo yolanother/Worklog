@@ -76,6 +76,10 @@ export class ChordHandler {
   // Feed a key event. Returns true if the chord-system consumed the event
   feed(key: KeyInfo | string): boolean {
     const k = normalizeKey(key);
+    const dbg = !!process.env.TUI_CHORD_DEBUG;
+    if (dbg) {
+      try { console.error(`[chords] feed key=${JSON.stringify(key)} -> normalized='${k}', pending=${JSON.stringify(this.pending)}, timer=${this.timer ? 'set' : 'null'}`); } catch (_) {}
+    }
     // if there is an in-flight pending short-handler timer, cancel it
     if (this.timer) {
       clearTimeout(this.timer as any);
@@ -93,8 +97,25 @@ export class ChordHandler {
       node = node.get(p) as Map<string, any>;
     }
 
-    if (!matched) {
+  if (!matched) {
+      // No prefix matches — this can happen when the same physical key
+      // event is delivered twice (we observe both a raw keypress and a
+      // wrapper-delivered key). If the repeated key is identical to the
+      // previous pending key (e.g. duplicate leader events like C-w), we
+      // should consume the duplicate instead of resetting the pending
+      // state. This avoids cycles where a duplicate leader clears the
+      // pending state and prevents the intended follow-up key from
+      // matching.
+      const lp = this.pending[this.pending.length - 1];
+      const lastIsSameAsNew = nextPending.length > 1 && nextPending[nextPending.length - 1] === nextPending[nextPending.length - 2];
+      if (lastIsSameAsNew) {
+        if (dbg) try { console.error(`[chords] duplicate key '${k}' ignored (pending=${JSON.stringify(this.pending)})`); } catch (_) {}
+        // Consume the duplicate event but keep pending as-is.
+        return true;
+      }
+
       // No prefix matches — reset pending and return false (not consumed)
+      if (dbg) try { console.error(`[chords] no match for '${k}' with pending=${JSON.stringify(this.pending)}`); } catch (_) {}
       this.reset();
       return false;
     }
@@ -108,10 +129,12 @@ export class ChordHandler {
       if (childCount > 0) {
         this.pendingHandler = (node as any).__handler as Handler;
         this.scheduleClear();
+        if (dbg) try { console.error(`[chords] matched handler at '${this.pending.join(',')}' deferred (has children)`); } catch (_) {}
         return true;
       }
       // no children: invoke immediately
       try { (node as any).__handler(); } catch (_) {}
+      if (dbg) try { console.error(`[chords] matched handler at '${this.pending.join(',')}' invoked immediately`); } catch (_) {}
       this.reset();
       return true;
     }
@@ -124,10 +147,12 @@ export class ChordHandler {
     if (childCount > 0) {
       this.pendingHandler = null;
       this.scheduleClear();
+      if (dbg) try { console.error(`[chords] partial match for '${this.pending.join(',')}', scheduled clear`); } catch (_) {}
       return true;
     }
 
     // Fallback: consume the event so caller can avoid treating it as ordinary keypress
+    if (dbg) try { console.error(`[chords] fallback consume for '${k}'`); } catch (_) {}
     return true;
   }
 }

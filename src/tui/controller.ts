@@ -510,6 +510,7 @@ export class TuiController {
     // We preserve the small suppression flags used elsewhere (suppressNextP, lastCtrlWKeyHandled)
     // and provide the same timeout semantics as the legacy implementation.
     const chordHandler = new ChordHandler({ timeoutMs: 2000 });
+    const chordDebug = !!process.env.TUI_CHORD_DEBUG;
 
     // Short-lived suppression helpers
     const clearCtrlWPending = () => {
@@ -518,6 +519,7 @@ export class TuiController {
     };
 
     // Register Ctrl-W chord handlers
+    if (chordDebug) console.error('[tui] registering ctrl-w chord handlers');
     chordHandler.register(['C-w', 'w'], () => {
       if (helpMenu.isVisible()) return;
       if (!detailModal.hidden || !nextDialog.hidden || !closeDialog.hidden || !updateDialog.hidden) return;
@@ -585,6 +587,16 @@ export class TuiController {
       if (lastCtrlWKeyHandledTimeout) clearTimeout(lastCtrlWKeyHandledTimeout);
       lastCtrlWKeyHandledTimeout = setTimeout(() => { lastCtrlWKeyHandled = false; lastCtrlWKeyHandledTimeout = null; }, 100);
     });
+
+    // Debug helpers: log raw key events when debugging is enabled
+    if (chordDebug) {
+      try {
+        const origOn = screen.on.bind(screen);
+        screen.on('keypress', (_ch: any, key: any) => {
+          try { console.error(`[tui] raw keypress: ch='${String(_ch)}' key=${JSON.stringify(key)}`); } catch (_) {}
+        });
+      } catch (_) {}
+    }
 
     const setBorderFocusStyle = (element: Pane | undefined | null, focused: boolean) => {
       if (!element || !element.style) return;
