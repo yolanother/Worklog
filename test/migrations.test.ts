@@ -20,6 +20,7 @@ describe('migrations runner', () => {
       for (const f of fs.readdirSync(tmpDir)) {
         const p = path.join(tmpDir, f);
         if (fs.lstatSync(p).isDirectory()) {
+          // remove backups dir recursively
           for (const bf of fs.readdirSync(p)) fs.unlinkSync(path.join(p, bf));
           fs.rmdirSync(p);
         } else {
