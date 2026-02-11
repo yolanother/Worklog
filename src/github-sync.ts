@@ -34,6 +34,7 @@ import {
   normalizeGithubLabelPrefix,
   issueToWorkItemFields,
 } from './github.js';
+import { increment, snapshot, diff } from './github-metrics.js';
 import { mergeWorkItems } from './sync.js';
 
 export interface GithubSyncResult {
@@ -71,6 +72,7 @@ export async function upsertIssuesFromWorkItems(
   persistComment?: (comment: Comment) => void
 ): Promise<{ updatedItems: WorkItem[]; result: GithubSyncResult; timing: GithubSyncTiming }> {
   const startTime = Date.now();
+  const beforeMetrics = snapshot();
   const labelPrefix = normalizeGithubLabelPrefix(config.labelPrefix);
   const issueItems = items.filter(item => item.status !== 'deleted');
   const linkedPairs = new Set<string>();
@@ -236,6 +238,7 @@ export async function upsertIssuesFromWorkItems(
     }
     const itemComments = byItemId.get(item.id) || [];
     const shouldSyncComments = commentNeedsSync(item, itemComments);
+    increment('items.processed');
     if (
       item.githubIssueNumber &&
       item.githubIssueUpdatedAt &&
@@ -263,9 +266,11 @@ export async function upsertIssuesFromWorkItems(
           onVerboseLog(`[upsert] ${item.githubIssueNumber ? 'update' : 'create'} ${item.id}`);
         }
         if (item.githubIssueNumber) {
+          increment('api.issue.update');
           issue = await updateGithubIssueAsync(config, item.githubIssueNumber, payload);
           result.updated += 1;
         } else {
+          increment('api.issue.create');
           issue = await createGithubIssueAsync(config, {
             title: payload.title,
             body: payload.body,
@@ -286,11 +291,14 @@ export async function upsertIssuesFromWorkItems(
       const shouldSyncCommentsNow = itemComments.length > 0 && (shouldSyncComments || shouldUpdateIssue);
       if (shouldSyncCommentsNow && issueNumber) {
         const commentListStart = Date.now();
+        increment('api.comment.list');
         const existingComments = await listGithubIssueCommentsAsync(config, issueNumber);
         timing.commentListMs += Date.now() - commentListStart;
         const commentUpsertStart = Date.now();
         const commentSummary = await upsertGithubIssueCommentsAsync(config, issueNumber, itemComments, existingComments);
         timing.commentUpsertMs += Date.now() - commentUpsertStart;
+        increment('api.comment.create', commentSummary.created || 0);
+        increment('api.comment.update', commentSummary.updated || 0);
         result.commentsCreated = (result.commentsCreated || 0) + commentSummary.created;
         result.commentsUpdated = (result.commentsUpdated || 0) + commentSummary.updated;
         issueUpdatedAt = maxIsoTimestamp(issueUpdatedAt, commentSummary.latestUpdatedAt);
@@ -336,6 +344,7 @@ export async function upsertIssuesFromWorkItems(
         // If the GH comment exists, only update if body changed OR GH's updatedAt is newer than our recorded mapping
         const bodyMatch = (existing.body || '').trim() === body.trim();
         if (!bodyMatch) {
+          increment('api.comment.update');
           const updatedComment = await updateGithubIssueCommentAsync(issueConfig, existing.id, body);
           // Persist mapping back to local comment
           comment.githubCommentId = existing.id;
@@ -350,7 +359,8 @@ export async function upsertIssuesFromWorkItems(
       }
 
       // No GH comment mapping found — create a new comment
-      const createdComment = await createGithubIssueCommentAsync(issueConfig, issueNumber, body);
+       increment('api.comment.create');
+       const createdComment = await createGithubIssueCommentAsync(issueConfig, issueNumber, body);
       // Persist mapping back to local comment so future runs can directly reference by ID
       comment.githubCommentId = createdComment.id;
       comment.githubCommentUpdatedAt = createdComment.updatedAt;
@@ -433,6 +443,7 @@ export async function upsertIssuesFromWorkItems(
         let hierarchy = hierarchyCache.get(parentNumber);
         if (!hierarchy) {
           const checkStart = Date.now();
+          increment('api.hierarchy.fetch');
           hierarchy = await (typeof (getIssueHierarchyAsync) === 'function'
             ? getIssueHierarchyAsync(config, parentNumber)
             : Promise.resolve(getIssueHierarchy(config, parentNumber)));
@@ -450,6 +461,7 @@ export async function upsertIssuesFromWorkItems(
         }
 
         const linkStart = Date.now();
+        increment('api.hierarchy.link');
         const linkResult = typeof (addSubIssueLinkResultAsync) === 'function'
           ? await addSubIssueLinkResultAsync(config, parentNumber, childNumber, nodeIdCache)
           : addSubIssueLinkResult(config, parentNumber, childNumber, nodeIdCache);
@@ -499,6 +511,11 @@ export async function upsertIssuesFromWorkItems(
 
   result.updated += linkedCount;
   timing.totalMs = Date.now() - startTime;
+  const afterMetrics = snapshot();
+  const metricDiff = diff(beforeMetrics, afterMetrics);
+  // Attach some metric deltas to timing via a custom field by exposing
+  // additional properties on timing so callers (CLI) can log them.
+  (timing as any).__metrics = metricDiff;
   return { updatedItems, result, timing };
 }
 
