@@ -110,100 +110,18 @@ export class SqlitePersistentStore {
       this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
     }
 
-    // Determine test environment early so we can suppress warnings and keep
-    // test-suite compatibility. Tests still use the legacy ALTER behavior via
-    // the runningInTest path below.
+    // Determine test environment early so we can suppress operator-facing
+    // warnings during automated test runs. Tests MUST create the expected
+    // schema via the migration runner (`src/migrations`) or test setup; the
+    // persistent store will not modify existing databases in any environment.
     const runningInTest = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
 
-    // For test environments we preserve the previous behavior and apply
-    // non-destructive ALTERs so the test-suite (which creates DBs programmatically)
-    // continues to operate without requiring a manual migration step. In
-    // production the migration runner should be used instead. In non-test
-    // environments we emit a best-effort warning (non-fatal) when an existing
-    // DB has an older schemaVersion so operators can run `wl doctor upgrade`.
-    if (runningInTest && !isNewDb) {
-      const existingVersion = schemaVersionRaw ? parseInt(schemaVersionRaw, 10) : 1;
-      if (existingVersion < 2) {
-        const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-        const existingCols = new Set(cols.map(c => String(c.name)));
-        const maybeAdd = (name: string) => {
-          if (!existingCols.has(name)) {
-            this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
-          }
-        };
-        maybeAdd('issueType');
-        maybeAdd('createdBy');
-        maybeAdd('deletedBy');
-        maybeAdd('deleteReason');
-      }
-
-      if (existingVersion < 3) {
-        const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-        const existingCols = new Set(cols.map(c => String(c.name)));
-        const maybeAddNullable = (name: string) => {
-          if (!existingCols.has(name)) {
-            this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT`);
-          }
-        };
-        const maybeAddNullableInt = (name: string) => {
-          if (!existingCols.has(name)) {
-            this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} INTEGER`);
-          }
-        };
-        maybeAddNullableInt('githubIssueNumber');
-        maybeAddNullableInt('githubIssueId');
-        maybeAddNullable('githubIssueUpdatedAt');
-        if (!existingCols.has('needsProducerReview')) {
-          this.db.exec(`ALTER TABLE workitems ADD COLUMN needsProducerReview INTEGER NOT NULL DEFAULT 0`);
-        }
-      }
-
-      if (existingVersion < 4) {
-        const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-        const existingCols = new Set(cols.map(c => String(c.name)));
-        const maybeAdd = (name: string) => {
-          if (!existingCols.has(name)) {
-            this.db.exec(`ALTER TABLE workitems ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
-          }
-        };
-        maybeAdd('risk');
-        maybeAdd('effort');
-      }
-
-      if (existingVersion < 5) {
-        const cols = this.db.prepare(`PRAGMA table_info('workitems')`).all() as any[];
-        const existingCols = new Set(cols.map(c => String(c.name)));
-        if (!existingCols.has('sortIndex')) {
-          this.db.exec('ALTER TABLE workitems ADD COLUMN sortIndex INTEGER NOT NULL DEFAULT 0');
-        }
-      }
-
-      if (existingVersion < 6) {
-        this.db.exec(`
-          CREATE TABLE IF NOT EXISTS dependency_edges (
-            fromId TEXT NOT NULL,
-            toId TEXT NOT NULL,
-            createdAt TEXT NOT NULL,
-            PRIMARY KEY (fromId, toId),
-            FOREIGN KEY (fromId) REFERENCES workitems(id) ON DELETE CASCADE,
-            FOREIGN KEY (toId) REFERENCES workitems(id) ON DELETE CASCADE
-          )
-        `);
-      }
-
-      // Ensure comment columns are present for tests
-      const commentCols = this.db.prepare(`PRAGMA table_info('comments')`).all() as any[];
-      const existingCommentCols = new Set(commentCols.map(c => String(c.name)));
-      if (!existingCommentCols.has('githubCommentId')) {
-        this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentId INTEGER`);
-      }
-      if (!existingCommentCols.has('githubCommentUpdatedAt')) {
-        this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentUpdatedAt TEXT`);
-      }
-
-      // Bump schemaVersion metadata for test runs so tests see the expected version
-      this.setMetadata('schemaVersion', SCHEMA_VERSION.toString());
-    } else if (!isNewDb && !runningInTest) {
+    // For all environments we avoid performing non-destructive ALTERs here.
+    // If the DB is older than the current schema, emit a non-fatal warning for
+    // interactive operators but do not change schema silently. In test runs we
+    // suppress the warning so test output remains clean — tests should run the
+    // migration runner or create schema as part of setup.
+    if (!isNewDb) {
       const existingVersion = schemaVersionRaw ? parseInt(schemaVersionRaw, 10) : 1;
       if (existingVersion < SCHEMA_VERSION) {
         // Try to include the pending migration ids to help operators run the
@@ -211,22 +129,24 @@ export class SqlitePersistentStore {
         // perform any schema changes here — migrations are centralized in
         // src/migrations and must be applied via `wl doctor upgrade` so that
         // operators can preview and back up their DB first.
-        let pendingMsg = "see 'wl doctor upgrade' to list and apply pending migrations";
-        try {
-          const pending = listPendingMigrations(this.dbPath);
-          if (pending && pending.length > 0) {
-            const ids = pending.map(p => p.id).join(', ');
-            pendingMsg = `pending migrations: ${ids}. Run 'wl doctor upgrade --dry-run' to preview and '--confirm' to apply`;
+        if (!runningInTest) {
+          let pendingMsg = "see 'wl doctor upgrade' to list and apply pending migrations";
+          try {
+            const pending = listPendingMigrations(this.dbPath);
+            if (pending && pending.length > 0) {
+              const ids = pending.map(p => p.id).join(', ');
+              pendingMsg = `pending migrations: ${ids}. Run 'wl doctor upgrade --dry-run' to preview and '--confirm' to apply`;
+            }
+          } catch (err) {
+            // Best-effort: if listing migrations fails do not throw — emit the
+            // warning without the migration list so opening the DB still works.
           }
-        } catch (err) {
-          // Best-effort: if listing migrations fails do not throw — emit the
-          // warning without the migration list so opening the DB still works.
-        }
 
-        console.warn(
-          `Worklog: database at ${this.dbPath} has schemaVersion=${existingVersion} but the application expects schemaVersion=${SCHEMA_VERSION}. ` +
-          `No automatic schema changes were performed. ${pendingMsg} (migrations live in src/migrations)`
-        );
+          console.warn(
+            `Worklog: database at ${this.dbPath} has schemaVersion=${existingVersion} but the application expects schemaVersion=${SCHEMA_VERSION}. ` +
+            `No automatic schema changes were performed. ${pendingMsg} (migrations live in src/migrations)`
+          );
+        }
       }
     }
 
@@ -245,16 +165,9 @@ export class SqlitePersistentStore {
       )
     `);
 
-    // Ensure existing databases get new comment columns added when upgrading from older schema
-    // (Non-destructive ALTERs only)
-    const commentCols = this.db.prepare(`PRAGMA table_info('comments')`).all() as any[];
-    const existingCommentCols = new Set(commentCols.map(c => String(c.name)));
-    if (!existingCommentCols.has('githubCommentId')) {
-      this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentId INTEGER`);
-    }
-    if (!existingCommentCols.has('githubCommentUpdatedAt')) {
-      this.db.exec(`ALTER TABLE comments ADD COLUMN githubCommentUpdatedAt TEXT`);
-    }
+    // Note: Do not perform ALTERs to existing databases here. The CREATE TABLE
+    // above includes the latest comment columns for newly created DBs; upgrades
+    // must be performed via the migration runner (`wl doctor upgrade`).
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS dependency_edges (
