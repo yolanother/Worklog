@@ -116,6 +116,10 @@ export default function register(ctx: PluginContext): void {
         }
         logLine(`Timing totalMs=${timing.totalMs} upsertMs=${timing.upsertMs} commentListMs=${timing.commentListMs} commentUpsertMs=${timing.commentUpsertMs}`);
         logLine(`Timing hierarchyCheckMs=${timing.hierarchyCheckMs} hierarchyLinkMs=${timing.hierarchyLinkMs} hierarchyVerifyMs=${timing.hierarchyVerifyMs}`);
+        // If metrics were recorded, log them as well
+        const metrics = (timing as any).__metrics || {};
+        const metricPairs = Object.keys(metrics).map(k => `${k}=${metrics[k]}`);
+        if (metricPairs.length > 0) logLine(`Metrics ${metricPairs.join(' ')}`);
 
         if (isJsonMode) {
           output.json({ success: true, ...result, repo: githubConfig.repo });
@@ -132,16 +136,24 @@ export default function register(ctx: PluginContext): void {
             console.log(`  Errors: ${result.errors.length}`);
             console.log('  Hint: re-run with --json to view error details');
           }
-          if (isVerbose) {
-            console.log('  Timing breakdown:');
-            console.log(`    Total: ${(timing.totalMs / 1000).toFixed(2)}s`);
-            console.log(`    Issue upserts: ${(timing.upsertMs / 1000).toFixed(2)}s`);
-            console.log(`    Comment list: ${(timing.commentListMs / 1000).toFixed(2)}s`);
-            console.log(`    Comment upserts: ${(timing.commentUpsertMs / 1000).toFixed(2)}s`);
-            console.log(`    Hierarchy check: ${(timing.hierarchyCheckMs / 1000).toFixed(2)}s`);
-            console.log(`    Hierarchy link: ${(timing.hierarchyLinkMs / 1000).toFixed(2)}s`);
-            console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);
-          }
+            if (isVerbose) {
+              console.log('  Timing breakdown:');
+              console.log(`    Total: ${(timing.totalMs / 1000).toFixed(2)}s`);
+              console.log(`    Issue upserts: ${(timing.upsertMs / 1000).toFixed(2)}s`);
+              console.log(`    Comment list: ${(timing.commentListMs / 1000).toFixed(2)}s`);
+              console.log(`    Comment upserts: ${(timing.commentUpsertMs / 1000).toFixed(2)}s`);
+              console.log(`    Hierarchy check: ${(timing.hierarchyCheckMs / 1000).toFixed(2)}s`);
+              console.log(`    Hierarchy link: ${(timing.hierarchyLinkMs / 1000).toFixed(2)}s`);
+              console.log(`    Hierarchy verify: ${(timing.hierarchyVerifyMs / 1000).toFixed(2)}s`);
+              // Display metric counts
+              const metrics = (timing as any).__metrics || {};
+              if (Object.keys(metrics).length > 0) {
+                console.log('  API call counts:');
+                for (const key of Object.keys(metrics)) {
+                  console.log(`    ${key}: ${metrics[key]}`);
+                }
+              }
+            }
         }
         logLine(`--- github push end ${new Date().toISOString()} ---`);
       } catch (error) {
