@@ -392,7 +392,9 @@ case "$1" in
       branch=${!#}
       # strip quotes
       branch=$(echo "$branch" | sed "s/^'//;s/'$//")
-      if [ -n "$branch" ]; then
+      # Skip if the last arg looks like a refspec (contains ':') or is a forced
+      # refspec (starts with '+'). Those are handled above in the refspec loop.
+      if [ -n "$branch" ] && ! echo "$branch" | grep -q ':' >/dev/null 2>&1 && ! echo "$branch" | grep -q '^+' >/dev/null 2>&1; then
         dst=.git/refs/remotes/origin/${branch#refs/}
         dstdir=$(dirname "$dst")
         mkdir -p "$dstdir" 2>/dev/null || true
@@ -411,6 +413,8 @@ case "$1" in
             fi
           fi
         fi
+      else
+        log "skipping branch-tracking creation for branch-like-arg=$branch (likely a refspec)"
       fi
     fi
     exit 0
