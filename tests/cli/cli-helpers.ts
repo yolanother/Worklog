@@ -7,7 +7,31 @@ import { cleanupTempDir, createTempDir } from '../test-utils.js';
 import { exportToJsonl } from '../../src/jsonl.js';
 import type { WorkItem, Comment, WorkItemPriority, WorkItemStatus } from '../../src/types.js';
 
-export const execAsync = promisify(childProcess.exec);
+// Wrapper around child_process.exec that injects a test-local mock `git`
+// binary found at `tests/cli/mock-bin` by prefixing PATH. This allows tests
+// to run fast without invoking the real `git` executable while preserving
+// the same `exec` behaviour (returns { stdout, stderr }).
+const _exec = promisify(childProcess.exec);
+export async function execAsync(command: string, options?: childProcess.ExecOptions & { timeout?: number }): Promise<{ stdout: string; stderr: string }> {
+  const env = { ...process.env } as Record<string, string | undefined>;
+  try {
+    const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const mockBin = path.join(projectRoot, 'tests', 'cli', 'mock-bin');
+    if (fs.existsSync(mockBin)) {
+      env.PATH = `${mockBin}:${env.PATH || ''}`;
+    }
+  } catch (e) {
+    // ignore; fall back to process.env
+  }
+
+  const execOptions = { ...(options || {}), env } as childProcess.ExecOptions;
+  // reuse promisified exec
+  // child_process.exec may return Buffer for stdout/stderr; normalize to string
+  const result = await _exec(command, execOptions as any);
+  const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : (result as any).stdout?.toString('utf-8') ?? '';
+  const stderr = typeof (result as any).stderr === 'string' ? (result as any).stderr : (result as any).stderr?.toString('utf-8') ?? '';
+  return { stdout, stderr };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,10 +45,23 @@ export async function execWithInput(
   options?: childProcess.ExecOptions
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return await new Promise((resolve, reject) => {
+    // Ensure the mocked PATH is passed to spawned children so tests that use
+    // spawn (with shell) pick up the tests/cli/mock-bin git mock as well.
+    const env = { ...(options?.env || process.env) } as Record<string, string | undefined>;
+    try {
+      const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+      const mockBin = path.join(projectRoot, 'tests', 'cli', 'mock-bin');
+      if (fs.existsSync(mockBin)) {
+        env.PATH = `${mockBin}${path.delimiter}${env.PATH || ''}`;
+      }
+    } catch (e) {
+      // ignore
+    }
+
     const child = childProcess.spawn(command, {
       shell: true,
       cwd: options?.cwd,
-      env: options?.env,
+      env,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
