@@ -139,7 +139,7 @@ Worklog uses a **dual-storage model** to combine the benefits of persistent data
 
 2. **JSONL Export** (`.worklog/worklog-data.jsonl`)
    - Git-friendly text format (one JSON object per line)
-   - Automatically exported on every write operation
+   - Automatically exported and backed up to Git (in a Ref branch) on every push
    - Used for collaboration via Git (pull/push)
    - Located in `.worklog/worklog-data.jsonl` (not committed to Git)
 
