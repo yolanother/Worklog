@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { _testOnly_getRemoteTrackingRef, getRemoteDataFileContent } from '../src/sync.js'
+import { _testOnly_getRemoteTrackingRef, getRemoteDataFileContent } from '../../src/sync.js'
 
 describe('git mock fetch/show roundtrip', () => {
   it('getRemoteTrackingRef matches expectations', () => {
