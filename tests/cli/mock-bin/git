@@ -395,6 +395,20 @@ case "$1" in
         dstdir=$(dirname "$dst")
         mkdir -p "$dstdir" 2>/dev/null || true
         echo "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391" > "$dst" 2>/dev/null || true
+        # Also populate a fetch_store entry keyed by the remote-tracking ref so
+        # later `git show refs/remotes/origin/<branch>:path` can read the remote files.
+        fetchStoreDirBranch=.git/fetch_store/refs/remotes/origin/${branch#refs/}
+        mkdir -p "$fetchStoreDirBranch" 2>/dev/null || true
+        if [ -n "$remotePath" ]; then
+          if [ -d "$remotePath/.worklog" ]; then
+            cp -r "$remotePath/.worklog/"* "$fetchStoreDirBranch/" 2>/dev/null || true
+          else
+            found=$(find "$remotePath" -type d -name ".worklog" 2>/dev/null | head -n1 || true)
+            if [ -n "$found" ]; then
+              cp -r "$found/"* "$fetchStoreDirBranch/" 2>/dev/null || true
+            fi
+          fi
+        fi
       fi
     fi
     exit 0
