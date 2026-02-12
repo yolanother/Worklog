@@ -27,9 +27,11 @@ if [ "$#" -gt 0 ]; then
   fi
 fi
 
-# Minimal logging: record only errors to the temp log to aid debugging when tests fail.
-# Avoid verbose per-invocation logging to reduce CI noise.
-: # INVOKE log suppressed in CI
+# Minimal logging: enabled when WORKLOG_GIT_MOCK_DEBUG=1. Default is quiet.
+# Set WORKLOG_GIT_MOCK_DEBUG=1 in your environment to produce /tmp/worklog-mock.log entries.
+DEBUG=${WORKLOG_GIT_MOCK_DEBUG:-0}
+log() { if [ "$DEBUG" = "1" ]; then echo "[mock-git] $*" >> /tmp/worklog-mock.log 2>/dev/null || true; fi }
+log "INVOKE: $PWD -- $*"
 
 case "$1" in
   rev-parse)
@@ -173,7 +175,7 @@ case "$1" in
     # try to resolve the remote directory recorded in .git/remote_origin and cat the file from there.
     if echo "$refpart" | grep -q "origin" >/dev/null 2>&1 && [ -f .git/remote_origin ]; then
       remoteDir=$(cat .git/remote_origin 2>/dev/null || true)
-        :
+      log "SHOW requested ref=$refpart path=$pathpart cwd=$(pwd) remoteDir=$remoteDir"
       if [ -n "$remoteDir" ]; then
         # try direct path
         if [ -f "$remoteDir/$pathpart" ]; then
@@ -198,7 +200,7 @@ case "$1" in
     # created during `git fetch` (we populate .git/fetch_store/<ref>/... when fetching).
     if echo "$refpart" | grep -q "^refs/" >/dev/null 2>&1; then
       fetchdir=".git/fetch_store/${refpart}"
-      :
+      log "SHOW refs requested ref=$refpart path=$pathpart fetchdir=$fetchdir cwd=$(pwd)"
       if [ -n "$pathpart" ] && [ -f "$fetchdir/$pathpart" ]; then
         cat "$fetchdir/$pathpart"
         exit 0
@@ -288,7 +290,7 @@ case "$1" in
     exit 2
     ;;
   fetch)
-    :
+    log "FETCH invoked cwd=$(pwd) args=${@:2}"
     # Support fetch with explicit refspecs. Examples:
     # git fetch origin +refs/worklog/data:refs/worklog/remotes/origin/worklog/data
     # We will create the destination ref file under .git/refs/... so show-ref
@@ -342,10 +344,10 @@ case "$1" in
           dstpath=.git/${dst}
           dstdir=$(dirname "$dstpath")
           mkdir -p "$dstdir" 2>/dev/null || true
-          # write dummy sha
-          echo "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391" > "$dstpath" 2>/dev/null || true
-           :
-           # If we have a mapped remotePath and it contains a .worklog entry,
+           # write dummy sha
+           echo "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391" > "$dstpath" 2>/dev/null || true
+           log "fetch created dstpath=$dstpath (remotePath=$remotePath)"
+            # If we have a mapped remotePath and it contains a .worklog entry,
            # copy the remote file(s) referenced by src into a local fetch store
            # so that subsequent `git show <dst>:<path>` can read from it.
            fetchStoreDir=.git/fetch_store/${dst}
@@ -353,18 +355,18 @@ case "$1" in
            if [ -n "$remotePath" ]; then
              # prefer remotePath/.worklog but also try remotePath itself
              if [ -d "$remotePath/.worklog" ]; then
-               cp -r "$remotePath/.worklog/"* "$fetchStoreDir/" 2>/dev/null || true
-                :
+                cp -r "$remotePath/.worklog/"* "$fetchStoreDir/" 2>/dev/null || true
+                log "copied remote .worklog into $fetchStoreDir from $remotePath/.worklog"
              elif [ -d "$remotePath" ] && [ -d "$remotePath/.worklog" ]; then
-               cp -r "$remotePath/.worklog/"* "$fetchStoreDir/" 2>/dev/null || true
-                :
+                cp -r "$remotePath/.worklog/"* "$fetchStoreDir/" 2>/dev/null || true
+                log "copied remote .worklog into $fetchStoreDir from $remotePath"
              else
                # As a fallback, if remotePath is a file repo root, attempt to find any .worklog under it
                if [ -d "$remotePath" ]; then
                  found=$(find "$remotePath" -type d -name ".worklog" 2>/dev/null | head -n1 || true)
                  if [ -n "$found" ]; then
-                   cp -r "$found/"* "$fetchStoreDir/" 2>/dev/null || true
-                    :
+                    cp -r "$found/"* "$fetchStoreDir/" 2>/dev/null || true
+                    log "copied remote .worklog from discovered $found into $fetchStoreDir"
                  fi
                fi
              fi
@@ -381,8 +383,8 @@ case "$1" in
       likelyDst="refs/worklog/remotes/${remoteName}/worklog/data"
       fetchStoreDirLikely=.git/fetch_store/${likelyDst}
       mkdir -p "$fetchStoreDirLikely" 2>/dev/null || true
-      cp -r "$remotePath/.worklog/"* "$fetchStoreDirLikely/" 2>/dev/null || true
-       :
+       cp -r "$remotePath/.worklog/"* "$fetchStoreDirLikely/" 2>/dev/null || true
+       log "heuristic copied remote .worklog into $fetchStoreDirLikely"
     fi
     # For simple fetch <remote> <branch>, create refs/remotes/<remote>/<branch>
     if [ $# -ge 2 ]; then
@@ -451,13 +453,13 @@ case "$1" in
       for arg in "$@"; do remote="$arg"; done
     fi
     if [ -n "$remote" ]; then
-      # debug log for pushes
-      :
+      # debug log for pushes (gated by WORKLOG_GIT_MOCK_DEBUG)
+      log "PUSH from $(pwd) to $remote"
       # ensure remote directory exists
       mkdir -p "$remote"
       # copy .worklog if present
       if [ -d ".worklog" ]; then
-        :
+        log "copying .worklog to $remote/.worklog"
         mkdir -p "$remote/.worklog"
         cp -r .worklog/* "$remote/.worklog/" 2>/dev/null || true
       fi
