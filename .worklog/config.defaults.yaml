@@ -31,7 +31,7 @@ stages:
     label: Done
 statusStageCompatibility:
   open: [idea, intake_complete, plan_complete, in_progress]
-  in-progress: [in_progress]
+  in-progress: [intake_complete, plan_complete, in_progress]
   blocked: [idea, intake_complete, plan_complete]
   completed: [in_review, done]
   deleted: [idea, intake_complete, plan_complete, done]
