@@ -16,6 +16,17 @@ npm run test:coverage
 
 # Run TUI tests only (CI/headless)
 npm run test:tui
+
+# Generate per-test timings
+You can generate a JSON report of per-test timings which helps identify slow tests to refactor or move to integration-only runs:
+
+```bash
+# Run the timings collector (writes test-timings.json at repo root)
+npm run test:timings
+
+# Open test-timings.json for the slowest tests and candidates to move
+cat test-timings.json | jq '.rows | sort_by(-.durationMs) | .[0:20]'
+```
 ```
 
 ## Test Organization
