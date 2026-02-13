@@ -1,4 +1,5 @@
 import blessed from 'blessed';
+import { KEY_ESCAPE, KEY_CS } from '../constants.js';
 import type {
   BlessedBox,
   BlessedFactory,
@@ -124,7 +125,7 @@ export class ModalDialogsComponent {
         resolve(idx);
       });
 
-      dialog.key(['escape'], () => {
+      dialog.key(KEY_ESCAPE, () => {
         cleanup();
         resolve(cancelIndex);
       });
@@ -224,13 +225,13 @@ export class ModalDialogsComponent {
 
       // Submit: Enter, Ctrl-S, or click [Apply]
       textbox.on('submit', (val: string) => { safeResolve(val ?? options.initial); });
-      textbox.key(['C-s'], () => { safeResolve(getValue()); });
+      textbox.key(KEY_CS, () => { safeResolve(getValue()); });
       confirmBtn.on('click', () => { safeResolve(getValue()); });
 
       // Cancel: Escape or click [Cancel] or click overlay
       textbox.on('cancel', () => { safeResolve(''); });
       cancelBtn.on('click', () => { safeResolve(''); });
-      dialog.key(['escape'], () => { safeResolve(''); });
+      dialog.key(KEY_ESCAPE, () => { safeResolve(''); });
       overlay.on('click', () => { safeResolve(''); });
 
       overlay.setFront();
@@ -304,7 +305,7 @@ export class ModalDialogsComponent {
 
       cancelBtn.on('click', () => { cleanup(); resolve(false); });
       input.on('submit', (val: string) => { cleanup(); resolve((val || '').trim() === options.confirmText); });
-      dialog.key(['escape'], () => { cleanup(); resolve(false); });
+      dialog.key(KEY_ESCAPE, () => { cleanup(); resolve(false); });
       overlay.on('click', () => { cleanup(); resolve(false); });
 
       overlay.setFront();
