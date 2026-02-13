@@ -1,5 +1,6 @@
 import blessed from 'blessed';
 import type { BlessedBox, BlessedFactory, BlessedScreen } from '../types.js';
+import { DEFAULT_SHORTCUTS } from '../constants.js';
 
 export interface HelpMenuOptions {
   parent: BlessedScreen;
@@ -84,7 +85,7 @@ export class HelpMenuComponent {
     });
 
     // Set default shortcuts if not provided
-    const shortcuts = options.shortcuts || this.getDefaultShortcuts();
+    const shortcuts = options.shortcuts || DEFAULT_SHORTCUTS;
     this.updateContent(shortcuts);
 
     // Setup event handlers

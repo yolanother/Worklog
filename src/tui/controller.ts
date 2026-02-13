@@ -32,6 +32,7 @@ import {
 } from '../status-stage-rules.js';
 import { OpencodeClient, type OpencodeServerStatus } from './opencode-client.js';
 import ChordHandler from './chords.js';
+import { AVAILABLE_COMMANDS, DEFAULT_SHORTCUTS, MIN_INPUT_HEIGHT, MAX_INPUT_LINES, FOOTER_HEIGHT, OPENCODE_SERVER_PORT } from './constants.js';
 
 type Item = WorkItem;
 
@@ -695,37 +696,7 @@ export class TuiController {
 
 
 
-    // Command autocomplete support
-    const AVAILABLE_COMMANDS = [
-      '/help',
-      '/clear',
-      '/save',
-      '/export',
-      '/import',
-      '/test',
-      '/build',
-      '/run',
-      '/debug',
-      '/search',
-      '/replace',
-      '/refactor',
-      '/explain',
-      '/review',
-      '/commit',
-      '/push',
-      '/pull',
-      '/status',
-      '/diff',
-      '/log',
-      '/branch',
-      '/merge',
-      '/rebase',
-      '/checkout',
-      '/stash',
-      '/tag',
-      '/reset',
-      '/revert'
-    ];
+    // Command autocomplete support moved to src/tui/constants.ts
 
     // Autocomplete state
     let currentSuggestion = '';
@@ -906,9 +877,7 @@ export class TuiController {
         const input = commandLine.toLowerCase();
         
         // Find the best matching command
-        const matches = AVAILABLE_COMMANDS.filter(cmd => 
-          cmd.toLowerCase().startsWith(input)
-        );
+        const matches = AVAILABLE_COMMANDS.filter(cmd => cmd.toLowerCase().startsWith(input));
         
         if (matches.length > 0 && matches[0] !== input) {
           currentSuggestion = matches[0];
@@ -1076,9 +1045,7 @@ export class TuiController {
     // Active opencode pane/process tracking
     let opencodePane: any = null;
 
-    const MIN_INPUT_HEIGHT = 3;  // Minimum height for input dialog (single line + borders)
-    const MAX_INPUT_LINES = 7;   // Maximum visible lines of input text
-    const FOOTER_HEIGHT = 1;
+    // Layout constants moved to src/tui/constants.ts
     const availableHeight = () => Math.max(10, (screen.height as number) - FOOTER_HEIGHT);
     const inputMaxHeight = () => Math.min(MAX_INPUT_LINES + 2, Math.floor(availableHeight() * 0.3)); // +2 for borders
     const paneHeight = () => Math.max(6, Math.floor(availableHeight() * 0.5));
@@ -1209,8 +1176,7 @@ export class TuiController {
       screen.render();
     }
 
-    // OpenCode server management
-    const OPENCODE_SERVER_PORT = parseInt(process.env.OPENCODE_SERVER_PORT || '9999', 10);
+    // OpenCode server management (port defined in src/tui/constants.ts)
 
     function updateServerStatus(status: OpencodeServerStatus, port: number) {
       let statusText = '';
