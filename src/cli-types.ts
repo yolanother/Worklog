@@ -61,6 +61,8 @@ export interface UpdateOptions {
   stage?: string;
   /** Accepts true|false|yes|no to set needsProducerReview flag */
   needsProducerReview?: string;
+  /** Accepts true|false|yes|no to set or clear do-not-delegate tag */
+  doNotDelegate?: string;
   risk?: string;
   effort?: string;
   issueType?: string;
