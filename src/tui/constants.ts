@@ -114,6 +114,44 @@ export const DEFAULT_SHORTCUTS = [
   },
 ];
 
+// Key binding constants used by screen.key and for documentation.
+// Keep these as arrays to remain compatible with blessed's API.
+export const KEY_NAV_RIGHT = ['right', 'enter'];
+export const KEY_NAV_LEFT = ['left'];
+export const KEY_TOGGLE_EXPAND = ['space'];
+export const KEY_QUIT = ['q', 'C-c'];
+export const KEY_ESCAPE = ['escape'];
+export const KEY_TOGGLE_HELP = ['?'];
+export const KEY_CHORD_PREFIX = ['C-w'];
+export const KEY_CHORD_FOLLOWUPS = ['h', 'j', 'k', 'l', 'w', 'p'];
+export const KEY_OPEN_OPENCODE = ['o', 'O'];
+export const KEY_OPEN_SEARCH = ['/'];
+
+// Additional key constants for widget-level handlers and dialogs
+export const KEY_TAB = ['tab', 'C-i'];
+export const KEY_SHIFT_TAB = ['S-tab', 'C-S-i'];
+export const KEY_LEFT_SINGLE = ['left'];
+export const KEY_RIGHT_SINGLE = ['right'];
+export const KEY_CS = ['C-s'];
+export const KEY_ENTER = ['enter'];
+export const KEY_LINEFEED = ['linefeed', 'C-j'];
+export const KEY_J = ['j'];
+export const KEY_K = ['k'];
+export const KEY_COPY_ID = ['c', 'C'];
+export const KEY_PARENT_PREVIEW = ['p', 'P'];
+export const KEY_CLOSE_ITEM = ['x', 'X'];
+export const KEY_UPDATE_ITEM = ['u', 'U'];
+export const KEY_REFRESH = ['r', 'R'];
+export const KEY_FIND_NEXT = ['n', 'N'];
+export const KEY_FILTER_IN_PROGRESS = ['i', 'I'];
+export const KEY_FILTER_OPEN = ['a', 'A'];
+export const KEY_FILTER_BLOCKED = ['b', 'B'];
+
+// Composite keys often used in help menu / close handlers
+export const KEY_MENU_CLOSE = ['escape', 'q'];
+
+
+
 // Layout / behavior constants used by the TUI. Centralizing these makes it
 // easier to tweak layout across platforms.
 export const MIN_INPUT_HEIGHT = 3; // Minimum height for input dialog (single line + borders)

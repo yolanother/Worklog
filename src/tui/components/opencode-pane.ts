@@ -1,4 +1,5 @@
 import blessed from 'blessed';
+import { KEY_ESCAPE } from '../constants.js';
 import type { BlessedBox, BlessedFactory, BlessedScreen, BlessedTextarea, BlessedText } from '../types.js';
 
 export interface OpencodePaneComponentOptions {
@@ -151,7 +152,7 @@ export class OpencodePaneComponent {
       // Attach escape handler but tag it so we can remove it on destroy
       const escHandler = options.onEscape;
       (this.responsePane as any).__opencode_esc = escHandler;
-      this.responsePane.key(['escape'], escHandler);
+      this.responsePane.key(KEY_ESCAPE, escHandler);
     }
 
     this.responsePane.show();
