@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { TuiController } from '../../src/tui/controller.js';
 import { createTuiTestContext } from '../test-utils.js';
 
