@@ -84,6 +84,15 @@ export function createTuiTestContext() {
     db: {
       get: (id: string) => items.get(id),
     },
+    requireInitialized: () => {},
+    getDatabase: (prefix?: string) => ({
+      list: (query?: any) => Array.from(items.values()),
+      getPrefix: () => undefined,
+      getCommentsForWorkItem: (id: string) => [],
+      update: () => ({}),
+      createComment: () => ({}),
+      get: (id: string) => items.get(id),
+    }),
   } as any;
 
   const toast = {
