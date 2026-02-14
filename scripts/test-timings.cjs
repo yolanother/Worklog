@@ -14,10 +14,21 @@ proc.stdout.on('data', (c) => { stdout += c.toString() })
 
 proc.on('close', (code) => {
   try {
+    // Strip ANSI / control sequences that some tests (TUI) emit to stdout
+    const cleaned = stdout.replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, '')
     let json = null
-    try { json = JSON.parse(stdout) } catch (e) {
-      const idx = stdout.lastIndexOf('{')
-      if (idx !== -1) json = JSON.parse(stdout.slice(idx))
+    try { json = JSON.parse(cleaned) } catch (e) {
+      // Fallback: extract substring between first '{' and last '}' to handle
+      // log noise surrounding the JSON output from some tests.
+      const first = cleaned.indexOf('{')
+      const last = cleaned.lastIndexOf('}')
+      if (first !== -1 && last !== -1 && last > first) {
+        const sub = cleaned.slice(first, last + 1)
+        json = JSON.parse(sub)
+      } else {
+        const idx = cleaned.lastIndexOf('{')
+        if (idx !== -1) json = JSON.parse(cleaned.slice(idx))
+      }
     }
 
     const tests = (json && (json.tests || json.results || json.testResults)) || []

@@ -103,7 +103,7 @@ export class TuiController {
     const pathImpl = this.deps.path ?? path;
     const resolveWorklogDirImpl = this.deps.resolveWorklogDir ?? resolveWorklogDir;
     const createPersistenceImpl = this.deps.createPersistence ?? createPersistence;
-    const createLayoutImpl = this.deps.createLayout ?? createLayout;
+    const createLayoutImpl = this.deps.createLayout ?? (this.ctx as any).createLayout ?? createLayout;
     const OpencodeClientImpl = this.deps.OpencodeClient ?? OpencodeClient;
 
     utils.requireInitialized();
@@ -1209,6 +1209,17 @@ export class TuiController {
       screen.render();
     }
 
+    // showToast is defined here so tests can intercept via ctx.toast.
+    const showToast = (message: string) => {
+      try {
+        if (toastComponent && typeof toastComponent.show === 'function') toastComponent.show(message);
+      } catch (_) {}
+      try {
+        // also notify any toast helper attached to the controller ctx (tests use this)
+        (this as any).ctx?.toast?.show?.(message);
+      } catch (_) {}
+    };
+
     const opencodeClient = new OpencodeClientImpl({
       port: OPENCODE_SERVER_PORT,
       log: debugLog,
@@ -1996,9 +2007,7 @@ export class TuiController {
       }
     }
 
-    function showToast(message: string) {
-      toastComponent.show(message);
-    }
+    // (showToast already defined above)
 
     let nextWorkItem: Item | null = null;
     let nextWorkItemReason = '';

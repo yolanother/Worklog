@@ -89,8 +89,14 @@ export function createTuiTestContext() {
       list: (query?: any) => Array.from(items.values()),
       getPrefix: () => undefined,
       getCommentsForWorkItem: (id: string) => [],
-      update: () => ({}),
-      createComment: () => ({}),
+      update: (id: string, updates: any) => {
+        const cur = items.get(id);
+        if (!cur) return false;
+        const next = Object.assign({}, cur, updates);
+        items.set(id, next);
+        return true;
+      },
+      createComment: (_: any) => ({}),
       get: (id: string) => items.get(id),
     }),
   } as any;
@@ -105,32 +111,34 @@ export function createTuiTestContext() {
   const makeBox = () => {
     let _content = '';
     let _items: string[] = [];
-    let selected = 0;
-    return {
+    const obj: any = {
       hidden: true,
       width: 0,
       height: 0,
-      show: () => { this.hidden = false; },
-      hide: () => { this.hidden = true; },
-      focus: () => {},
-      setFront: () => {},
-      setContent: (s: string) => { _content = s; },
-      getContent: () => _content,
-      setScroll: (_n: number) => {},
-      setScrollPerc: (_n: number) => {},
-      pushLine: (_s: string) => {},
-      setItems: (next: string[]) => { _items = next.slice(); },
-      select: (idx: number) => { selected = idx; },
-      getItem: (idx: number) => { const v = _items[idx]; return v ? { getContent: () => v } : undefined; },
-      on: (_ev: string, _cb?: any) => {},
-      key: (_keys: any, _cb?: any) => {},
-      setLabel: (_s: string) => {},
-      clearValue: () => {},
-      setValue: (_v: string) => {},
-      destroy: () => {},
-      removeAllListeners: () => {},
-      removeListener: (_ev: string, _cb?: any) => {},
-    } as any;
+      selected: 0,
+      childBase: 0,
+    };
+    obj.show = () => { obj.hidden = false; };
+    obj.hide = () => { obj.hidden = true; };
+    obj.focus = () => { screen.focused = obj; };
+    obj.setFront = () => {};
+    obj.setContent = (s: string) => { _content = s; };
+    obj.getContent = () => _content;
+    obj.setScroll = (_n: number) => {};
+    obj.setScrollPerc = (_n: number) => {};
+    obj.pushLine = (_s: string) => {};
+    obj.setItems = (next: string[]) => { _items = next.slice(); };
+    obj.select = (idx: number) => { obj.selected = idx; };
+    obj.getItem = (idx: number) => { const v = _items[idx]; return v ? { getContent: () => v } : undefined; };
+    obj.on = (_ev: string, _cb?: any) => {};
+    obj.key = (_keys: any, _cb?: any) => {};
+    obj.setLabel = (_s: string) => {};
+    obj.clearValue = () => {};
+    obj.setValue = (_v: string) => {};
+    obj.destroy = () => {};
+    obj.removeAllListeners = () => {};
+    obj.removeListener = (_ev: string, _cb?: any) => {};
+    return obj as any;
   };
 
   // Simple screen that allows registering keypress handlers and
@@ -142,8 +150,8 @@ export function createTuiTestContext() {
     focused: null,
     render: () => {},
     destroy: () => {},
-    key: () => {},
     on: (ev: string, cb: (...args: any[]) => void) => { if (ev === 'keypress') keyHandlers.push(cb); },
+    key: (keys: any, cb: (...args: any[]) => void) => { keyHandlers.push(cb); },
     emit: (ev: string, ch: any, key: any) => { if (ev === 'keypress') keyHandlers.forEach(h => { try { h(ch, key); } catch (_) {} }); },
   };
 
