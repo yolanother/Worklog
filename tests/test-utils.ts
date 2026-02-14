@@ -102,7 +102,36 @@ export function createTuiTestContext() {
   } as any;
 
   // Minimal box/screen factories used by the layout mocks
-  const makeBox = () => ({ hidden: true, show: () => {}, hide: () => {}, focus: () => {}, setFront: () => {}, setContent: () => {}, setItems: () => {}, select: () => {}, getItem: () => undefined, on: () => {}, key: () => {}, setLabel: () => {}, width: 0, height: 0 });
+  const makeBox = () => {
+    let _content = '';
+    let _items: string[] = [];
+    let selected = 0;
+    return {
+      hidden: true,
+      width: 0,
+      height: 0,
+      show: () => { this.hidden = false; },
+      hide: () => { this.hidden = true; },
+      focus: () => {},
+      setFront: () => {},
+      setContent: (s: string) => { _content = s; },
+      getContent: () => _content,
+      setScroll: (_n: number) => {},
+      setScrollPerc: (_n: number) => {},
+      pushLine: (_s: string) => {},
+      setItems: (next: string[]) => { _items = next.slice(); },
+      select: (idx: number) => { selected = idx; },
+      getItem: (idx: number) => { const v = _items[idx]; return v ? { getContent: () => v } : undefined; },
+      on: (_ev: string, _cb?: any) => {},
+      key: (_keys: any, _cb?: any) => {},
+      setLabel: (_s: string) => {},
+      clearValue: () => {},
+      setValue: (_v: string) => {},
+      destroy: () => {},
+      removeAllListeners: () => {},
+      removeListener: (_ev: string, _cb?: any) => {},
+    } as any;
+  };
 
   // Simple screen that allows registering keypress handlers and
   // exposing `emit('keypress', ch, key)` to simulate key events.
