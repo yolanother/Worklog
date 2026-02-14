@@ -125,6 +125,7 @@ export function createTuiTestContext() {
     list: (_opts?: any) => makeBox(),
     textarea: (_opts?: any) => makeBox(),
     button: (_opts?: any) => makeBox(),
+    text: (_opts?: any) => makeBox(),
   };
 
   const layout = {
