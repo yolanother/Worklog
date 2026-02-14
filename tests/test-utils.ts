@@ -102,9 +102,9 @@ export function createTuiTestContext() {
   } as any;
 
   // Minimal box/screen factories used by the layout mocks
-  const makeBox = () => ({ hidden: true, show: () => {}, hide: () => {}, focus: () => {}, setFront: () => {}, setContent: () => {}, setItems: () => {}, select: () => {}, getItem: () => undefined, on: () => {}, key: () => {}, setLabel: () => {} });
+  const makeBox = () => ({ hidden: true, show: () => {}, hide: () => {}, focus: () => {}, setFront: () => {}, setContent: () => {}, setItems: () => {}, select: () => {}, getItem: () => undefined, on: () => {}, key: () => {}, setLabel: () => {}, width: 0, height: 0 });
 
-  // Simple screen that allows registering a single keypress handler and
+  // Simple screen that allows registering keypress handlers and
   // exposing `emit('keypress', ch, key)` to simulate key events.
   const keyHandlers: Array<(...args: any[]) => void> = [];
   const screen: any = {
@@ -116,6 +116,15 @@ export function createTuiTestContext() {
     key: () => {},
     on: (ev: string, cb: (...args: any[]) => void) => { if (ev === 'keypress') keyHandlers.push(cb); },
     emit: (ev: string, ch: any, key: any) => { if (ev === 'keypress') keyHandlers.forEach(h => { try { h(ch, key); } catch (_) {} }); },
+  };
+
+  // Minimal blessed-compatible factory used by createLayout
+  const blessedImpl: any = {
+    screen: (_opts?: any) => screen,
+    box: (_opts?: any) => makeBox(),
+    list: (_opts?: any) => makeBox(),
+    textarea: (_opts?: any) => makeBox(),
+    button: (_opts?: any) => makeBox(),
   };
 
   const layout = {
@@ -140,7 +149,7 @@ export function createTuiTestContext() {
     program,
     utils,
     toast,
-    blessed: {},
+    blessed: blessedImpl,
     screen,
     createLayout: () => layout,
   } as any;
