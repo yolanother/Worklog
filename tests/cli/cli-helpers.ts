@@ -2,6 +2,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import { runInProcess } from './cli-inproc.js';
 import { fileURLToPath } from 'url';
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
 import { exportToJsonl } from '../../src/jsonl.js';
@@ -25,7 +26,26 @@ export async function execAsync(command: string, options?: childProcess.ExecOpti
   }
 
   const execOptions = { ...(options || {}), env } as childProcess.ExecOptions;
-  // reuse promisified exec
+  // If the command invokes the local CLI via `tsx <cliPath>` run it in-process
+  try {
+    const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const cliPath = path.join(projectRoot, 'src', 'cli.ts');
+    const isLocalCli = command.trim().startsWith('tsx') && command.includes(cliPath);
+    if (isLocalCli) {
+      const originalCwd = process.cwd();
+      try {
+        if (options?.cwd) process.chdir(options.cwd as string);
+        const res = await runInProcess(command);
+        return { stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
+      } finally {
+        try { process.chdir(originalCwd); } catch (_) {}
+      }
+    }
+  } catch (e) {
+    // fall back to spawning if in-process runner fails
+  }
+
+  // reuse promisified exec for other commands
   // child_process.exec may return Buffer for stdout/stderr; normalize to string
   const result = await _exec(command, execOptions as any);
   const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : (result as any).stdout?.toString('utf-8') ?? '';
