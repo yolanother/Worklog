@@ -2,11 +2,11 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import { runInProcess } from './cli-inproc.js';
 import { fileURLToPath } from 'url';
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
 import { exportToJsonl } from '../../src/jsonl.js';
 import type { WorkItem, Comment, WorkItemPriority, WorkItemStatus } from '../../src/types.js';
+import { runInProcess } from './cli-inproc.js';
 
 // Wrapper around child_process.exec that injects a test-local mock `git`
 // binary found at `tests/cli/mock-bin` by prefixing PATH. This allows tests
