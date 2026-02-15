@@ -143,16 +143,36 @@ export function createTuiTestContext() {
 
   // Simple screen that allows registering keypress handlers and
   // exposing `emit('keypress', ch, key)` to simulate key events.
-  const keyHandlers: Array<(...args: any[]) => void> = [];
+  const rawKeyHandlers: Array<(...args: any[]) => void> = [];
+  const keyBindings: Array<{ keys: string[]; handler: (...args: any[]) => void }> = [];
+
   const screen: any = {
     height: 40,
     width: 100,
     focused: null,
     render: () => {},
     destroy: () => {},
-    on: (ev: string, cb: (...args: any[]) => void) => { if (ev === 'keypress') keyHandlers.push(cb); },
-    key: (keys: any, cb: (...args: any[]) => void) => { keyHandlers.push(cb); },
-    emit: (ev: string, ch: any, key: any) => { if (ev === 'keypress') keyHandlers.forEach(h => { try { h(ch, key); } catch (_) {} }); },
+    // raw keypress listeners
+    on: (ev: string, cb: (...args: any[]) => void) => { if (ev === 'keypress') rawKeyHandlers.push(cb); },
+    // register a key binding (blessed semantics expect this)
+    key: (keys: any, cb: (...args: any[]) => void) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      const normalized = list.map((k: any) => String(k).toLowerCase());
+      keyBindings.push({ keys: normalized, handler: cb });
+    },
+    // emit a raw keypress: invoke raw handlers and matching key bindings
+    emit: (ev: string, ch: any, key: any) => {
+      if (ev !== 'keypress') return;
+      // call raw listeners
+      rawKeyHandlers.forEach(h => { try { h(ch, key); } catch (_) {} });
+      // call bindings that match the key name (case-insensitive)
+      const name = (key && key.name) ? String(key.name).toLowerCase() : String(key || '').toLowerCase();
+      keyBindings.forEach(({ keys, handler }) => {
+        try {
+          if (keys.includes(name)) handler(ch, key);
+        } catch (_) {}
+      });
+    },
   };
 
   // Minimal blessed-compatible factory used by createLayout
@@ -167,8 +187,9 @@ export function createTuiTestContext() {
 
   const layout = {
     screen,
-    listComponent: { getList: () => makeBox(), getFooter: () => makeBox() },
-    detailComponent: { getDetail: () => makeBox(), getCopyIdButton: () => makeBox() },
+    // Use consistent instances so focus/selected are shared
+    listComponent: { getList: (() => { const b = makeBox(); return () => b; })(), getFooter: (() => { const b = makeBox(); return () => b; })() },
+    detailComponent: { getDetail: (() => { const b = makeBox(); return () => b; })(), getCopyIdButton: (() => { const b = makeBox(); return () => b; })() },
     toastComponent: { show: (m: string) => toast.show(m) },
     overlaysComponent: { detailOverlay: makeBox(), closeOverlay: makeBox(), updateOverlay: makeBox() },
     dialogsComponent: {
@@ -181,14 +202,76 @@ export function createTuiTestContext() {
     nextDialog: { overlay: makeBox(), dialog: makeBox(), close: makeBox(), text: makeBox(), options: makeBox() },
   };
 
-  const program = { opts: () => ({ verbose: false }) } as any;
+  const program = { opts: () => ({ verbose: false, format: undefined }) } as any;
 
+  // Minimal command registry so CLI command modules can register commands
+  // and tests can invoke them via `ctx.runCli([...])`.
+  program._commands = new Map();
+  program.command = (spec: string) => {
+    const name = String(spec).split(' ')[0];
+    const builder: any = {
+      description: (_d: string) => builder,
+      option: (_opt: string, _desc?: string) => builder,
+      action: (fn: (...args: any[]) => any) => {
+        program._commands.set(name, fn);
+        return builder;
+      }
+    };
+    return builder;
+  };
+
+  // Simple runner that invokes a registered command handler with a
+  // parsed `options` object. Supports long-form flags like
+  // `--do-not-delegate true` and converts kebab-case to camelCase to
+  // match commander behaviour in the real code.
+  function kebabToCamel(s: string) {
+    return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  }
+
+  async function runCli(args: string[]): Promise<any> {
+    const cmd = args[0];
+    const id = args[1];
+    const rest = args.slice(2);
+    const handler = program._commands.get(cmd);
+    if (!handler) throw new Error(`Command not registered: ${cmd}`);
+    const options: Record<string, any> = {};
+    for (let i = 0; i < rest.length; i++) {
+      const token = rest[i];
+      if (!token) continue;
+      if (token.startsWith('--')) {
+        const key = kebabToCamel(token.replace(/^--+/, ''));
+        const next = rest[i + 1];
+        if (next !== undefined && !String(next).startsWith('-')) {
+          options[key] = next;
+          i++;
+        } else {
+          options[key] = true;
+        }
+      } else if (token.startsWith('-')) {
+        // ignore short flags for tests (not needed currently)
+      }
+    }
+
+    return await Promise.resolve(handler(id, options));
+  }
+
+  // Expose a tiny CLI test context built on top of the TUI helpers so
+  // tests that register commands can run them in-process.
   return {
     program,
-    utils,
+    utils: Object.assign({}, utils, {
+      // Commander-like helpers used by CLI commands under test
+      normalizeCliId: (id: string, _prefix?: string) => id,
+      getConfig: () => ({}),
+      isJsonMode: () => false,
+      db: {
+        get: (id: string) => items.get(id),
+      }
+    }),
     toast,
     blessed: blessedImpl,
     screen,
     createLayout: () => layout,
+    runCli,
   } as any;
 }

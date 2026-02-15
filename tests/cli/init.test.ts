@@ -10,6 +10,7 @@ import {
   writeConfig,
   writeInitSemaphore
 } from './cli-helpers.js';
+import { initRepo, initBareRepo } from './git-helpers.js';
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
 
 describe('CLI Init Tests', () => {
@@ -135,14 +136,9 @@ describe('CLI Init Tests', () => {
     const cloneRepo = createTempDir();
 
     try {
-      await execAsync('git init', { cwd: sourceRepo });
-      await execAsync('git config user.email "test@example.com"', { cwd: sourceRepo });
-      await execAsync('git config user.name "Test User"', { cwd: sourceRepo });
-      fs.writeFileSync(path.join(sourceRepo, 'README.md'), 'seed repo', 'utf-8');
-      await execAsync('git add README.md', { cwd: sourceRepo });
-      await execAsync('git commit -m "init"', { cwd: sourceRepo });
+      await initRepo(sourceRepo);
 
-      await execAsync('git init --bare', { cwd: remoteRepo });
+      await initBareRepo(remoteRepo);
       await execAsync(`git remote add origin ${remoteRepo}`, { cwd: sourceRepo });
       await execAsync('git push -u origin HEAD', { cwd: sourceRepo });
 

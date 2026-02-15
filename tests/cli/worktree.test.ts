@@ -5,6 +5,7 @@ import {
   cliPath,
   execAsync,
 } from './cli-helpers.js';
+import { initRepo, initBareRepo, addWorktree } from './git-helpers.js';
 import { cleanupTempDir, createTempDir } from '../test-utils.js';
 
 describe('Git Worktree Support', () => {
@@ -12,12 +13,8 @@ describe('Git Worktree Support', () => {
     const tempDir = createTempDir();
     try {
       // Initialize a git repo
-      await execAsync('git init', { cwd: tempDir });
-      await execAsync('git config user.email "test@example.com"', { cwd: tempDir });
-      await execAsync('git config user.name "Test User"', { cwd: tempDir });
-      fs.writeFileSync(path.join(tempDir, 'README.md'), 'test repo', 'utf-8');
-      await execAsync('git add README.md', { cwd: tempDir });
-      await execAsync('git commit -m "init"', { cwd: tempDir });
+      // Initialize repo with a fast empty commit
+      await initRepo(tempDir);
 
       // Initialize worklog in the main repo
       await execAsync(
@@ -38,12 +35,7 @@ describe('Git Worktree Support', () => {
     const tempDir = createTempDir();
     try {
       // Initialize a git repo
-      await execAsync('git init', { cwd: tempDir });
-      await execAsync('git config user.email "test@example.com"', { cwd: tempDir });
-      await execAsync('git config user.name "Test User"', { cwd: tempDir });
-      fs.writeFileSync(path.join(tempDir, 'README.md'), 'test repo', 'utf-8');
-      await execAsync('git add README.md', { cwd: tempDir });
-      await execAsync('git commit -m "init"', { cwd: tempDir });
+      await initRepo(tempDir);
 
       // Initialize worklog in the main repo
       await execAsync(
@@ -82,12 +74,7 @@ describe('Git Worktree Support', () => {
     const tempDir = createTempDir();
     try {
       // Initialize a git repo
-      await execAsync('git init', { cwd: tempDir });
-      await execAsync('git config user.email "test@example.com"', { cwd: tempDir });
-      await execAsync('git config user.name "Test User"', { cwd: tempDir });
-      fs.writeFileSync(path.join(tempDir, 'README.md'), 'test repo', 'utf-8');
-      await execAsync('git add README.md', { cwd: tempDir });
-      await execAsync('git commit -m "init"', { cwd: tempDir });
+      await initRepo(tempDir);
 
       // Initialize worklog in the main repo
       await execAsync(
@@ -147,12 +134,7 @@ describe('Git Worktree Support', () => {
     const tempDir = createTempDir();
     try {
       // Initialize a git repo
-      await execAsync('git init', { cwd: tempDir });
-      await execAsync('git config user.email "test@example.com"', { cwd: tempDir });
-      await execAsync('git config user.name "Test User"', { cwd: tempDir });
-      fs.writeFileSync(path.join(tempDir, 'README.md'), 'test repo', 'utf-8');
-      await execAsync('git add README.md', { cwd: tempDir });
-      await execAsync('git commit -m "init"', { cwd: tempDir });
+      await initRepo(tempDir);
 
       // Initialize worklog in the main repo
       await execAsync(
