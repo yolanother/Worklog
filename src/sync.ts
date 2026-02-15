@@ -15,10 +15,20 @@ const execAsync = promisify(childProcess.exec);
 // Use spawn to stream the output when reading remote content.
 async function execGitCaptureStdout(args: string[], options?: { cwd?: string }): Promise<string> {
   return await new Promise((resolve, reject) => {
-    const child = childProcess.spawn('git', args, {
-      cwd: options?.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // On Windows, shell: true is required so spawn can resolve .cmd/.bat
+    // wrappers. Pass args as a single command string to avoid the
+    // DEP0190 deprecation warning about unescaped args with shell=true.
+    const useShell = process.platform === 'win32';
+    const child = useShell
+      ? childProcess.spawn(`git ${args.map(a => escapeShellArg(a)).join(' ')}`, [], {
+          cwd: options?.cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true,
+        })
+      : childProcess.spawn('git', args, {
+          cwd: options?.cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
     let out = '';
     let err = '';
     child.stdout.setEncoding('utf8');

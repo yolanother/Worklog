@@ -23,7 +23,7 @@ export function cleanupTempDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     return;
   }
-  const maxRetries = process.platform === 'win32' ? 3 : 0;
+  const maxRetries = process.platform === 'win32' ? 5 : 0;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -31,7 +31,8 @@ export function cleanupTempDir(dir: string): void {
     } catch (err: any) {
       if (attempt < maxRetries && (err.code === 'EPERM' || err.code === 'EBUSY')) {
         // brief spin-wait to let the OS release the file lock
-        const until = Date.now() + 100;
+        const delay = 200 * (attempt + 1);
+        const until = Date.now() + delay;
         while (Date.now() < until) { /* wait */ }
         continue;
       }
