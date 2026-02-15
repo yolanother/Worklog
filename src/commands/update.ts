@@ -31,6 +31,7 @@ export default function register(ctx: PluginContext): void {
     .option('--deleted-by <deletedBy>', 'New deleted by (interoperability field)')
     .option('--delete-reason <deleteReason>', 'New delete reason (interoperability field)')
     .option('--needs-producer-review <true|false>', 'Set needsProducerReview flag (true|false|yes|no)')
+    .option('--do-not-delegate <true|false>', 'Set or clear the do-not-delegate tag (true|false|yes|no)')
     .option('--prefix <prefix>', 'Override the default prefix')
     .action(async (id: string, options: UpdateOptions) => {
       utils.requireInitialized();
@@ -104,6 +105,28 @@ export default function register(ctx: PluginContext): void {
           output.error(`Invalid value for --needs-producer-review: ${options.needsProducerReview}`, { success: false, error: 'invalid-arg' });
           process.exit(1);
         }
+      }
+      if (options.doNotDelegate !== undefined) {
+        const raw = String(options.doNotDelegate).toLowerCase();
+        const truthy = ['true', 'yes', '1'];
+        const falsy = ['false', 'no', '0'];
+        if (!truthy.includes(raw) && !falsy.includes(raw)) {
+          output.error(`Invalid value for --do-not-delegate: ${options.doNotDelegate}`, { success: false, error: 'invalid-arg' });
+          process.exit(1);
+        }
+        const current = db.get(normalizedId);
+        if (!current) {
+          output.error(`Work item not found: ${normalizedId}`, { success: false, error: `Work item not found: ${normalizedId}` });
+          process.exit(1);
+        }
+        const baseTags: string[] = updates.tags !== undefined ? updates.tags : (current.tags || []);
+        let newTags: string[];
+        if (truthy.includes(raw)) {
+          newTags = Array.from(new Set([...baseTags, 'do-not-delegate']));
+        } else {
+          newTags = baseTags.filter(t => t !== 'do-not-delegate');
+        }
+        updates.tags = newTags;
       }
       
       const item = db.update(normalizedId, updates);
