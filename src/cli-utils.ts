@@ -4,7 +4,7 @@
 
 import type { Command } from 'commander';
 import { WorklogDatabase } from './database.js';
-import { loadConfig, isInitialized, getDefaultPrefix } from './config.js';
+import { loadConfig, loadConfigRelaxed, isInitialized, getDefaultPrefix } from './config.js';
 import { getDefaultDataPath } from './jsonl.js';
 import type { PluginContext } from './plugin-types.js';
 
@@ -66,7 +66,7 @@ export function createRequireInitialized(program: Command) {
  * Get database instance with optional prefix override
  */
 export function getDatabase(prefix?: string, program?: Command): WorklogDatabase {
-  const config = loadConfig();
+  const config = loadConfigRelaxed();
   const effectivePrefix = prefix || config?.prefix || getDefaultPrefix();
   const dataPath = getDefaultDataPath();
   
