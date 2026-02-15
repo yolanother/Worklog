@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import registerUpdate from '../../src/commands/update.js';
 import { createTestContext } from '../test-utils.js';
 

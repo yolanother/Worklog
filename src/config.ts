@@ -158,6 +158,62 @@ export function loadConfig(): WorklogConfig | null {
   return config;
 }
 
+/**
+ * Load configuration without enforcing status/stage sections.
+ * Useful for CLI paths that only need core fields like prefix.
+ */
+export function loadConfigRelaxed(): WorklogConfig | null {
+  let config: WorklogConfig | null = null;
+
+  // First, load defaults if they exist
+  const defaultsPath = getConfigDefaultsPath();
+  if (fs.existsSync(defaultsPath)) {
+    try {
+      const content = fs.readFileSync(defaultsPath, 'utf-8');
+      config = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
+    } catch (error) {
+      console.error('Error loading config defaults:', error);
+      console.error('Continuing without defaults...');
+    }
+  }
+
+  // Then, load user config and merge with defaults
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const userConfig = yaml.load(content, { schema: yaml.CORE_SCHEMA }) as WorklogConfig;
+
+      // Merge user config over defaults
+      config = config ? { ...config, ...userConfig } : userConfig;
+    } catch (error) {
+      console.error('Error loading config:', error);
+      return null;
+    }
+  }
+
+  if (!config) {
+    return null;
+  }
+
+  if (!config || typeof config !== 'object') {
+    console.error('Invalid config: must be an object');
+    return null;
+  }
+
+  if (!config.projectName || typeof config.projectName !== 'string') {
+    console.error('Invalid config: projectName must be a string');
+    return null;
+  }
+
+  if (!config.prefix || typeof config.prefix !== 'string') {
+    console.error('Invalid config: prefix must be a string');
+    return null;
+  }
+
+  return config;
+}
+
 function validateStatusStageConfig(config: WorklogConfig): string | null {
   const statuses = config.statuses;
   if (!Array.isArray(statuses) || statuses.length === 0) {

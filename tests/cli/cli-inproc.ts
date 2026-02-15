@@ -63,7 +63,7 @@ function splitShellArgs(cmd: string): string[] {
   return res;
 }
 
-export async function runInProcess(commandLine: string): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+export async function runInProcess(commandLine: string, timeoutMs: number = 15000): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   // Extract args after the CLI path
   const tokens = splitShellArgs(commandLine);
   // find index of the script path (ends with src/cli.ts)
@@ -76,19 +76,108 @@ export async function runInProcess(commandLine: string): Promise<{ stdout: strin
   const origStdoutWrite = process.stdout.write;
   const origStderrWrite = process.stderr.write;
   const origExit = process.exit;
-  process.stdout.write = ((chunk: any, _enc?: any, cb?: any) => { out.push(String(chunk)); if (cb) cb(); return true; }) as any;
-  process.stderr.write = ((chunk: any, _enc?: any, cb?: any) => { err.push(String(chunk)); if (cb) cb(); return true; }) as any;
+  const origConsoleLog = console.log;
+  const origConsoleError = console.error;
+  const origConsoleWarn = console.warn;
+  const origConsoleInfo = console.info;
+  const origArgv = process.argv;
+  const argv = ['node', 'worklog', ...args];
+  process.argv = argv;
+  process.stdout.write = ((chunk: any, enc?: any, cb?: any) => {
+    try {
+      out.push(typeof chunk === 'string' ? chunk : chunk?.toString(enc || 'utf8') || String(chunk));
+    } catch (e) {
+      out.push(String(chunk));
+    }
+    if (typeof cb === 'function') cb();
+    return true;
+  }) as any;
+  process.stderr.write = ((chunk: any, enc?: any, cb?: any) => {
+    try {
+      err.push(typeof chunk === 'string' ? chunk : chunk?.toString(enc || 'utf8') || String(chunk));
+    } catch (e) {
+      err.push(String(chunk));
+    }
+    if (typeof cb === 'function') cb();
+    return true;
+  }) as any;
   process.exit = ((code?: number) => { throw new Error(`__INPROC_EXIT__:${code ?? 0}`); }) as any;
+  console.log = ((...args: any[]) => { out.push(`${args.map(a => String(a)).join(' ')}\n`); }) as any;
+  console.error = ((...args: any[]) => { err.push(`${args.map(a => String(a)).join(' ')}\n`); }) as any;
+  console.warn = ((...args: any[]) => { err.push(`${args.map(a => String(a)).join(' ')}\n`); }) as any;
+  console.info = ((...args: any[]) => { out.push(`${args.map(a => String(a)).join(' ')}\n`); }) as any;
 
   try {
     const program = new Command();
+    // Configure global options to match src/cli.ts so --json/--verbose/etc are recognized
+    program
+      .name('worklog')
+      .description('In-process test runner for Worklog')
+      .version('0.0.0')
+      .option('--json', 'Output in JSON format (machine-readable)')
+      .option('--verbose', 'Show verbose output including debug messages')
+      .option('-F, --format <format>', 'Human display format (choices: concise|normal|full|raw)')
+      .option('-w, --watch [seconds]', 'Rerun the command every N seconds (default: 5)');
+
     const ctx = createPluginContext(program);
     // Register built-in commands
     for (const r of builtInCommands) r(ctx);
 
+     // Instrument command lifecycle so we can see which command starts/completes
+     // when running in-process. Use origStderrWrite so test runner sees progress
+     // even if process.stderr.write is captured.
+     // Track the most recent action (name + opts) so timeouts can report what was running
+     let lastActionName: string | null = null;
+     let lastActionOpts: any = {};
+     try {
+       program.hook('preAction', (thisCommand: any, actionCommand: any) => {
+        const name = actionCommand?.name?.() || thisCommand.name?.() || (thisCommand._name ?? '(unknown)');
+        const opts = typeof actionCommand?.opts === 'function' ? actionCommand.opts() : (thisCommand.opts ? thisCommand.opts() : {});
+        lastActionName = name;
+        lastActionOpts = opts || {};
+      });
+      program.hook('postAction', (thisCommand: any, actionCommand: any) => {
+        const name = actionCommand?.name?.() || thisCommand.name?.() || (thisCommand._name ?? '(unknown)');
+        // clear last action after completion
+        lastActionName = null;
+        lastActionOpts = {};
+      });
+    } catch (e) {
+      // commander may throw for unsupported hook API versions; ignore instrumentation
+    }
+
     // Run command
     try {
-      program.parse(['node', 'worklog', ...args], { from: 'user' });
+      // Provide a full argv (node + script) and parse from 'node' so commander
+      // treats the following entries as process argv (matching subprocess behaviour).
+      const start = Date.now();
+
+      // Run parse with a timeout so a hung command can be diagnosed instead of
+      // silently blocking the test runner. Timeout is conservative (15s).
+      try {
+        await Promise.race([
+          program.parseAsync(argv, { from: 'node' }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('__INPROC_PARSE_TIMEOUT__')), timeoutMs)),
+        ]);
+      } catch (e: any) {
+        if (e && e.message === '__INPROC_PARSE_TIMEOUT__') {
+          // Dump diagnostics to original stderr so they appear in test logs immediately
+          try {
+            origStderrWrite?.call(process.stderr, `INPROC_DEBUG: PARSE_TIMEOUT after ${timeoutMs}ms\n`);
+            origStderrWrite?.call(process.stderr, `INPROC_DEBUG: captured stdout:\n${out.join('')}\n`);
+            origStderrWrite?.call(process.stderr, `INPROC_DEBUG: captured stderr:\n${err.join('')}\n`);
+            origStderrWrite?.call(process.stderr, `INPROC_DEBUG: program.opts=${JSON.stringify(program.opts())}\n`);
+            origStderrWrite?.call(process.stderr, `INPROC_DEBUG: lastActionName=${String(lastActionName)} lastActionOpts=${JSON.stringify(lastActionOpts)}\n`);
+          } catch (inner) {
+            // ignore
+          }
+          err.push(`PARSE_TIMEOUT:${timeoutMs}`);
+          return { stdout: out.join(''), stderr: err.join(''), exitCode: 124 };
+        }
+        throw e;
+      }
+
+      const end = Date.now();
       return { stdout: out.join(''), stderr: err.join(''), exitCode: 0 };
     } catch (e: any) {
       if (e && typeof e.message === 'string' && e.message.startsWith('__INPROC_EXIT__')) {
@@ -101,5 +190,10 @@ export async function runInProcess(commandLine: string): Promise<{ stdout: strin
     process.stdout.write = origStdoutWrite;
     process.stderr.write = origStderrWrite;
     process.exit = origExit;
+    console.log = origConsoleLog;
+    console.error = origConsoleError;
+    console.warn = origConsoleWarn;
+    console.info = origConsoleInfo;
+    process.argv = origArgv;
   }
 }

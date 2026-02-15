@@ -275,3 +275,6 @@ export function createTuiTestContext() {
     runCli,
   } as any;
 }
+
+// Back-compat alias for CLI command tests.
+export const createTestContext = createTuiTestContext;
