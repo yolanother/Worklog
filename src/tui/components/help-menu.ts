@@ -100,83 +100,9 @@ export class HelpMenuComponent {
     return this;
   }
 
-  private getDefaultShortcuts() {
-    return [
-      {
-        category: 'Navigation',
-        items: [
-          { keys: 'Up/Down, j/k', description: 'Move selection' },
-          { keys: 'PageUp/PageDown, Home/End', description: 'Jump' },
-        ],
-      },
-      {
-        category: 'Tree',
-        items: [
-          { keys: 'Right/Enter', description: 'Expand node' },
-          { keys: 'Left', description: 'Collapse node / parent' },
-          { keys: 'Space', description: 'Toggle expand/collapse' },
-        ],
-      },
-      {
-        category: 'Focus',
-        items: [
-          { keys: 'Ctrl+W, Ctrl+W', description: 'Cycle focus panes' },
-          { keys: 'Ctrl+W, h/l', description: 'Focus list/details' },
-          { keys: 'Ctrl+W, k/j', description: 'OpenCode response/input' },
-          { keys: 'Ctrl+W, p', description: 'Previous pane' },
-        ],
-      },
-      {
-        category: 'Filters',
-        items: [
-          { keys: '/', description: 'Search/Filter' },
-          { keys: 'I', description: 'Show in-progress only' },
-          { keys: 'A', description: 'Show open items' },
-          { keys: 'B', description: 'Show blocked only' },
-        ],
-      },
-      {
-        category: 'Refresh',
-        items: [
-          { keys: 'R', description: 'Reload items from database' },
-        ],
-      },
-      {
-        category: 'Clipboard',
-        items: [
-          { keys: 'C', description: 'Copy selected item ID' },
-        ],
-      },
-      {
-        category: 'Preview',
-        items: [
-          { keys: 'P', description: 'Open parent in modal' },
-        ],
-      },
-      {
-        category: 'Actions',
-        items: [
-          { keys: 'O', description: 'Open OpenCode prompt' },
-          { keys: 'N', description: 'Find next work item' },
-          { keys: 'N (dialog)', description: 'Next recommendation' },
-          { keys: 'X', description: 'Close selected item' },
-          { keys: 'U', description: 'Update selected item' },
-        ],
-      },
-      {
-        category: 'Help',
-        items: [
-          { keys: '?', description: 'Toggle this help' },
-        ],
-      },
-      {
-        category: 'Exit',
-        items: [
-          { keys: 'q, Esc, Ctrl-C', description: 'Quit' },
-        ],
-      },
-    ];
-  }
+  // Default shortcuts are defined in src/tui/constants.ts and provided via
+  // the `DEFAULT_SHORTCUTS` import. The previous local copy was removed to
+  // avoid duplication and keep documentation/behavior centralized.
 
   private updateContent(shortcuts: HelpMenuOptions['shortcuts']) {
     if (!shortcuts) return;

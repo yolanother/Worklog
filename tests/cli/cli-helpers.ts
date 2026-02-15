@@ -60,6 +60,7 @@ export async function execAsync(command: string, options?: childProcess.ExecOpti
     // fall back to spawning if in-process runner fails
   }
 
+  // reuse promisified exec for other commands
   // child_process.exec may return Buffer for stdout/stderr; normalize to string
   const result = await _exec(command, execOptions as any);
   const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : (result as any).stdout?.toString('utf-8') ?? '';

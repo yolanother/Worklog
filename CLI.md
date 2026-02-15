@@ -69,6 +69,13 @@ wl update WL-ABC123 -s in-progress -a "bob"
 wl update WL-ABC123 --risk High --effort XS
 ```
 
+New: toggle the do-not-delegate tag (prevents automation from auto-assigning the item):
+
+```sh
+wl update WL-ABC123 --do-not-delegate true   # add tag
+wl update WL-ABC123 --do-not-delegate false  # remove tag
+```
+
 ### `delete` [options] <id>
 
 Delete a work item (hard delete): this removes the work item row from the local database. Any comments attached to the work item are cascade-deleted by the database. If you prefer to mark an item as deleted without removing it, use `wl update <id> -s deleted` to set the `deleted` status.

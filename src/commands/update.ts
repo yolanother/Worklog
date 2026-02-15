@@ -107,6 +107,7 @@ export default function register(ctx: PluginContext): void {
         }
       }
       if (options.doNotDelegate !== undefined) {
+        // Parse boolean-like strings and apply tag add/remove idempotently.
         const raw = String(options.doNotDelegate).toLowerCase();
         const truthy = ['true', 'yes', '1'];
         const falsy = ['false', 'no', '0'];

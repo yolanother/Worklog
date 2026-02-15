@@ -32,9 +32,9 @@ import {
 } from '../status-stage-rules.js';
 import { OpencodeClient, type OpencodeServerStatus } from './opencode-client.js';
 import ChordHandler from './chords.js';
-import { AVAILABLE_COMMANDS, DEFAULT_SHORTCUTS, MIN_INPUT_HEIGHT, MAX_INPUT_LINES, FOOTER_HEIGHT, OPENCODE_SERVER_PORT,
+  import { AVAILABLE_COMMANDS, MIN_INPUT_HEIGHT, MAX_INPUT_LINES, FOOTER_HEIGHT, OPENCODE_SERVER_PORT,
   KEY_NAV_RIGHT, KEY_NAV_LEFT, KEY_TOGGLE_EXPAND, KEY_QUIT, KEY_ESCAPE, KEY_TOGGLE_HELP, KEY_CHORD_PREFIX, KEY_CHORD_FOLLOWUPS, KEY_OPEN_OPENCODE, KEY_OPEN_SEARCH,
-  KEY_TAB, KEY_SHIFT_TAB, KEY_LEFT_SINGLE, KEY_RIGHT_SINGLE, KEY_CS, KEY_ENTER, KEY_LINEFEED, KEY_J, KEY_K, KEY_COPY_ID, KEY_PARENT_PREVIEW, KEY_CLOSE_ITEM, KEY_UPDATE_ITEM, KEY_REFRESH, KEY_FIND_NEXT, KEY_FILTER_IN_PROGRESS, KEY_FILTER_OPEN, KEY_FILTER_BLOCKED, KEY_MENU_CLOSE } from './constants.js';
+  KEY_TAB, KEY_SHIFT_TAB, KEY_LEFT_SINGLE, KEY_RIGHT_SINGLE, KEY_CS, KEY_ENTER, KEY_LINEFEED, KEY_J, KEY_K, KEY_COPY_ID, KEY_PARENT_PREVIEW, KEY_CLOSE_ITEM, KEY_UPDATE_ITEM, KEY_REFRESH, KEY_FIND_NEXT, KEY_FILTER_IN_PROGRESS, KEY_FILTER_OPEN, KEY_FILTER_BLOCKED, KEY_MENU_CLOSE, KEY_TOGGLE_DO_NOT_DELEGATE } from './constants.js';
 
 type Item = WorkItem;
 
@@ -103,7 +103,7 @@ export class TuiController {
     const pathImpl = this.deps.path ?? path;
     const resolveWorklogDirImpl = this.deps.resolveWorklogDir ?? resolveWorklogDir;
     const createPersistenceImpl = this.deps.createPersistence ?? createPersistence;
-    const createLayoutImpl = this.deps.createLayout ?? createLayout;
+    const createLayoutImpl = this.deps.createLayout ?? (this.ctx as any).createLayout ?? createLayout;
     const OpencodeClientImpl = this.deps.OpencodeClient ?? OpencodeClient;
 
     utils.requireInitialized();
@@ -1209,6 +1209,17 @@ export class TuiController {
       screen.render();
     }
 
+    // showToast is defined here so tests can intercept via ctx.toast.
+    const showToast = (message: string) => {
+      try {
+        if (toastComponent && typeof toastComponent.show === 'function') toastComponent.show(message);
+      } catch (_) {}
+      try {
+        // also notify any toast helper attached to the controller ctx (tests use this)
+        (this as any).ctx?.toast?.show?.(message);
+      } catch (_) {}
+    };
+
     const opencodeClient = new OpencodeClientImpl({
       port: OPENCODE_SERVER_PORT,
       log: debugLog,
@@ -1391,8 +1402,9 @@ export class TuiController {
       const lines = visible.map(n => {
         const indent = '  '.repeat(n.depth);
         const marker = n.hasChildren ? (state.expanded.has(n.item.id) ? '▾' : '▸') : ' ';
+        const badge = Array.isArray(n.item.tags) && n.item.tags.includes('do-not-delegate') ? '{yellow-fg}⚑{/yellow-fg} ' : '';
         const title = formatTitleOnlyTUI(n.item);
-        return `${indent}${marker} ${title} {gray-fg}({underline}${n.item.id}{/underline}){/gray-fg}`;
+        return `${indent}${marker} ${badge}${title} {gray-fg}({underline}${n.item.id}{/underline}){/gray-fg}`;
       });
       state.listLines = lines;
       list.setItems(lines);
@@ -1995,9 +2007,7 @@ export class TuiController {
       }
     }
 
-    function showToast(message: string) {
-      toastComponent.show(message);
-    }
+    // (showToast already defined above)
 
     let nextWorkItem: Item | null = null;
     let nextWorkItemReason = '';
@@ -2716,6 +2726,31 @@ export class TuiController {
     screen.key(KEY_UPDATE_ITEM, () => {
       if (detailModal.hidden && !helpMenu.isVisible() && closeDialog.hidden && updateDialog.hidden) {
         openUpdateDialog();
+      }
+    });
+
+    // Toggle do-not-delegate tag on selected item (shortcut D)
+    screen.key(KEY_TOGGLE_DO_NOT_DELEGATE, () => {
+      // Only act when no interfering overlays are visible
+      if (!detailModal.hidden || helpMenu.isVisible() || !closeDialog.hidden || !updateDialog.hidden || !nextDialog.hidden) return;
+      const item = getSelectedItem();
+      if (!item) {
+        showToast('No item selected');
+        return;
+      }
+      try {
+        const has = Array.isArray(item.tags) && item.tags.includes('do-not-delegate');
+        const newTags = has ? item.tags.filter(t => t !== 'do-not-delegate') : Array.from(new Set([...(item.tags || []), 'do-not-delegate']));
+        const updated = db.update(item.id, { tags: newTags });
+        if (!updated) {
+          showToast('Update failed');
+          return;
+        }
+        showToast(has ? 'Do-not-delegate: OFF' : 'Do-not-delegate: ON');
+        // Refresh list and detail keeping selection
+        refreshFromDatabase(list.selected as number);
+      } catch (err) {
+        showToast('Update failed');
       }
     });
 
